@@ -1,7 +1,9 @@
 name: Release
 
 # Pushing a tag such as v0.1.0 builds, tests and packs Invasor, and publishes
-# invasor-<version>.tar.gz with its .sha256 as a GitHub release.
+# invasor-<version>.tar.gz with its .sha256 as a GitHub release. The release text is
+# RELEASE_NOTES.md (a short plain-text summary, shown in the panel, then a line with only ---)
+# followed by GitHub's generated notes.
 on:
   push:
     tags: ["v*"]
@@ -26,9 +28,14 @@ jobs:
         run: |
           version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' backend/invasor/__init__.py)
           [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME does not match __version__ $version" >&2; exit 1; }
+      - name: RELEASE_NOTES.md must have a short summary, then a line with only ---
+        run: |
+          [ -s RELEASE_NOTES.md ] || { echo "RELEASE_NOTES.md is missing or empty" >&2; exit 1; }
+          grep -qx -- '---' RELEASE_NOTES.md || { echo "RELEASE_NOTES.md has no line with only ---" >&2; exit 1; }
+          [ "$(head -n 1 RELEASE_NOTES.md)" != "---" ] || { echo "RELEASE_NOTES.md has no summary before ---" >&2; exit 1; }
       - name: Build, test and pack
         run: python3 tools/pack_release.py --out dist
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "Invasor ${GITHUB_REF_NAME#v}" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "Invasor ${GITHUB_REF_NAME#v}" --notes-file RELEASE_NOTES.md --generate-notes

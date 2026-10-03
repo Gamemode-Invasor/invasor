@@ -64,6 +64,20 @@ class Check(unittest.TestCase):
         res = self.up(release("v0.2.0")).check()
         self.assertEqual((res["available"], res["latest"], res["checked"], res["notes"]), (True, "0.2.0", True, "notes"))
 
+    def test_notes_are_the_summary_before_the_separator(self):
+        cases = (
+            ("Short.\n---\n## What's Changed\n* x", "Short."),
+            ("Short.\r\n---\r\n## What's Changed", "Short."),
+            ("One.\nTwo.\n---\nA\n---\nB", "One.\nTwo."),
+            ("## What's Changed\n* x", "## What's Changed\n* x"),
+            ("a --- b", "a --- b"),
+            ("", ""),
+            (None, ""),
+        )
+        for body, want in cases:
+            with self.subTest(body=body):
+                self.assertEqual(self.up(release("v0.2.0", body=body)).check()["notes"], want)
+
     def test_same_or_older_is_up_to_date(self):
         for tag in ("v0.1.0", "v0.0.9"):
             with self.subTest(tag=tag):
