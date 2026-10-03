@@ -109,7 +109,7 @@ Los módulos de verdad viven en sus propios repositorios y se instalan como zip 
 module**:
 
 - [invasor-artwork](../invasor-artwork): arte de la comunidad de steamgriddb.com para tus juegos y accesos directos.
-- [invasor-ducky](../invasor-ducky): generación de fotogramas con lsfg-vk, configurada por juego.
+- [invasor-patito](../invasor-patito): generación de fotogramas con lsfg-vk, configurada por juego.
 
 Los módulos instalados viven en `~/.local/share/invasor/user-modules/`. Actualizar Invasor nunca los toca.
 

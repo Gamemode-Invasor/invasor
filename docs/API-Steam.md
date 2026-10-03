@@ -137,8 +137,8 @@ How it can fail:
 |---|---|---|
 | Artwork | Writes Steam's own custom art files in `userdata/<account>/config/grid/`. | The files are the source of truth. |
 | Artwork | `SteamClient.Apps.SetCustomArtworkForApp` / `ClearCustomArtworkForApp`, through `ctx.steam_call`, so the new art shows at once. | If the call fails, the art shows after restarting Steam. |
-| Ducky, Fishy | The game's Steam id (or shortcut id) in lsfg-vk's / MAKO's `active_in`. lsfg-vk and MAKO match it themselves when the game runs. | None needed from Steam. |
-| Fishy | MAKO only runs in games started with `mako-launch %command%` in their launch options. | Fishy shows the line and the user pastes it. Fishy never writes launch options. |
+| Patito, Pescao | The game's Steam id (or shortcut id) in lsfg-vk's / MAKO's `active_in`. lsfg-vk and MAKO match it themselves when the game runs. | None needed from Steam. |
+| Pescao | MAKO only runs in games started with `mako-launch %command%` in their launch options. | Pescao shows the line and the user pastes it. Pescao never writes launch options. |
 | Deckico | Reads custom art in `userdata/<account>/config/grid/` and Steam's icons in `appcache/librarycache/<appid>/`; writes a `.directory` file in each `steamapps/compatdata/<appid>/` and `steamapps/shadercache/<appid>/` of every library. Runs on `on_steam_start` (2.1). | Folders without an image are left alone; a file manager simply shows a plain folder. |
 | Noty | `ctx.notify` (2.3) for notifications sent by local scripts. | If Steam can't show them, the script's request gets a 503. |
 | GE-RR | Installs GE-Proton as `compatibilitytools.d/GE-Proton` with its own `compatibilitytool.vdf` (Steam's documented format for custom compatibility tools). Checks on `on_steam_start`; `ctx.notify` when a download starts and ends. | Steam reads the folder only when it starts: the module asks for a restart. Notifications are optional (the log has the same). |

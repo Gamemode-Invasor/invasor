@@ -109,7 +109,7 @@ Invasor ships with only `demo` (a showcase, also used by `tools/smoke.py`) and t
 Real modules live in their own repositories and install as a zip from **⚙ Settings › Install module**:
 
 - [invasor-artwork](../invasor-artwork): community artwork from steamgriddb.com for your games and shortcuts.
-- [invasor-ducky](../invasor-ducky): lsfg-vk frame generation, set up per game.
+- [invasor-patito](../invasor-patito): lsfg-vk frame generation, set up per game.
 
 Installed modules live in `~/.local/share/invasor/user-modules/`. Updating Invasor never touches them.
 

@@ -49,7 +49,7 @@ function moduleBuild(dir) {
 
 function moduleBuilds() {
   // Modules developed outside the core (their own repository):
-  //   node build.mjs --module ../../invasor-ducky/ducky [--module …]
+  //   node build.mjs --module ../../invasor-patito/patito [--module …]
   const external = process.argv.flatMap((a, i, all) => (a === "--module" && all[i + 1] ? [resolve(all[i + 1])] : []));
   for (const dir of external) {
     if (!existsSync(join(dir, "module.json")) || !existsSync(join(dir, "ui.ts"))) {

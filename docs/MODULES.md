@@ -140,7 +140,7 @@ it as usual. If one option changes others (e.g. a preset), do that in the module
   default, and the log says so.
 
 **Forms the module stores itself.** Sometimes the values belong to someone else, for example another program's
-config file (Ducky edits lsfg-vk's `conf.toml`). Declare them under `forms`, with the same field rules:
+config file (Patito edits lsfg-vk's `conf.toml`). Declare them under `forms`, with the same field rules:
 
 ```json
 "forms": {
@@ -351,7 +351,7 @@ A module doesn't have to live inside Invasor. Keep it in its own repository, nex
 
 - **Build** its UI with the core's kit: `node ~/Projects/invasor/frontend/build.mjs --module <id>`.
 - **Test:** the module's tests find the core through `$INVASOR_CORE`, which `check_module.py` sets for them. On
-  their own they look for `../invasor` next to the repository. See `ducky/tests/test_backend.py` in the invasor-ducky repository.
+  their own they look for `../invasor` next to the repository. See `patito/tests/test_backend.py` in the invasor-patito repository.
 - **Check and pack:** `python3 ~/Projects/invasor/tools/pack_module.py <id>`. It typechecks and builds `ui.ts`,
   runs `check_module.py` (tests included) and writes `<id>-<version>.zip` with only what the console needs:
   `module.json`, the Python files, `dist/ui.js`, README and LICENSE (the one at the root of your repository, if the

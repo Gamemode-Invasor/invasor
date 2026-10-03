@@ -1,3 +1,4 @@
-- rc1: Each line of the update notes now shows on its own line in the panel.
+- rc1: Each line of the update notes now shows on its own line in the panel
 - rc2: You can change from beta to stable channel and Invasor is downgraded
+- rc2: Rebranding ducky and fishy to patito and pescao
 ---
