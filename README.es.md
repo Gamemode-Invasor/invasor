@@ -30,7 +30,7 @@ instalado; si no, muestra su ayuda.
 - **Instalar / actualizar:** primero lo comprueba todo (Python 3.9+, servicios de usuario de systemd,
   Steam, un build del frontend al día), luego copia solo lo que ejecuta el servicio (sin tests ni la
   plantilla `_example`), lo cambia de golpe, y reinicia y comprueba el servicio. Los módulos instalados
-  desde un zip se conservan.
+  desde un zip se conservan. Si la versión nueva no arranca, se vuelve a poner la anterior.
 - **Desinstalar:** el overlay sale de Steam al momento, sin reiniciar Steam. Antes, cada módulo deshace
   lo que dejó fuera de su carpeta (su `uninstall()`). Se borra todo
   `~/.local/share/invasor`, incluidos los módulos instalados desde un zip. La configuración y los ajustes

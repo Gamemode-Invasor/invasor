@@ -118,7 +118,7 @@ stage() {  # stage <dir>: only what the service runs
 wait_healthy() {
   local port i
   port="$(cd "$DEST/backend" && $PYTHON -c 'from invasor import config; print(config.load()["api_port"])' 2>/dev/null)" || port=33801
-  for ((i = 0; i < 20; i++)); do
+  for ((i = 0; i < ${INVASOR_HEALTH_TRIES:-20}; i++)); do
     if systemctl --user is-active --quiet "$UNIT" &&
       $PYTHON -c 'import sys, urllib.request; urllib.request.urlopen(f"http://127.0.0.1:{sys.argv[1]}/health", timeout=1)' "$port" 2>/dev/null; then
       return 0
@@ -126,6 +126,25 @@ wait_healthy() {
     sleep 0.5
   done
   return 1
+}
+
+rollback() {  # rollback <old> <new>: put the previous install back; false if there is none
+  local old="$1" new="$2" part
+  [[ -d "$DEST/.old-backend" ]] || return 1
+  echo "Going back to Invasor $old..." >&2
+  systemctl --user stop "$UNIT" || true
+  for part in backend modules frontend; do
+    rm -rf "${DEST:?}/$part"
+    [[ -e "$DEST/.old-$part" ]] && mv "$DEST/.old-$part" "$DEST/$part"
+  done
+  [[ -f "$DEST/.old-unit" ]] && mv "$DEST/.old-unit" "$UNIT_DIR/$UNIT"
+  systemctl --user daemon-reload
+  systemctl --user restart "$UNIT"
+  if wait_healthy; then
+    echo "Invasor $old is back and running; the update to $new was not installed." >&2
+  else
+    echo "Invasor $old could not be started again. See: journalctl --user -u $UNIT" >&2
+  fi
 }
 
 do_install() {
@@ -139,11 +158,13 @@ do_install() {
   rm -rf "$stg" "$DEST"/.old-*
   trap "rm -rf '$stg'" EXIT
   stage "$stg"
+  # The previous install stays as .old-* until the new service is healthy (see rollback).
+  [[ -f "$UNIT_DIR/$UNIT" ]] && cp "$UNIT_DIR/$UNIT" "$DEST/.old-unit"
   for part in backend modules frontend; do
     [[ -e "$DEST/$part" ]] && mv "$DEST/$part" "$DEST/.old-$part"
     mv "$stg/$part" "$DEST/$part"
   done
-  rm -rf "$DEST"/.old-* "$stg"
+  rm -rf "$stg"
 
   write_unit
   systemctl --user daemon-reload
@@ -162,8 +183,10 @@ do_install() {
   if ! wait_healthy; then
     echo "The service didn't come up. Its last log lines:" >&2
     journalctl --user -u "$UNIT" -n 20 --no-pager >&2 || true
+    rollback "$old" "$version" || true
     exit 1
   fi
+  rm -rf "$DEST"/.old-*
   if [[ -n $old ]]; then
     echo "Invasor updated: $old -> $version."
   else
