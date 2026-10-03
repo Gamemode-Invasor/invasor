@@ -167,10 +167,19 @@ class Updater:
             "latest": version,
             "available": latest > mine,
             "checked": True,
-            "notes": notes[:2000] if isinstance(notes, str) else "",
+            "notes": self._summary(notes),
         }
         self._package = package
         return self.last
+
+    @staticmethod
+    def _summary(body):
+        """The short text of a release: what comes before the first line that is only ---
+        (RELEASE_NOTES.md; GitHub's own notes follow it). No such line: all of it."""
+        if not isinstance(body, str):
+            return ""
+        head = re.split(r"^---[ \t]*$", body.replace("\r\n", "\n"), maxsplit=1, flags=re.M)[0]
+        return head.strip()[:2000]
 
     @staticmethod
     def _find_package(release, version):
