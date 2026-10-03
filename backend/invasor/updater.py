@@ -145,11 +145,11 @@ class Updater:
 
     def _unknown(self, why):
         log.info("couldn't check for updates: %s", why)
-        self.last = {"current": self.current, "latest": None, "available": False, "checked": False, "notes": ""}
+        self.last = {"current": self.current, "latest": None, "available": False, "downgrade": False, "checked": False, "notes": ""}
         return self.last
 
     def check(self):
-        """{current, latest, available, checked, notes}. Offline, no release yet, a release
+        """{current, latest, available, downgrade, checked, notes}. Offline, no release yet, a release
         without a package…: checked is False (nothing to report, nothing wrong)."""
         beta = self._channel() == "beta"
         try:
@@ -171,13 +171,18 @@ class Updater:
             return self._unknown(f"{tag} is a pre-release")
         version = tag[1:] if tag.startswith("v") else tag
         package = self._find_package(release, version)
-        if latest > mine and package is None:
+        # A machine on a release candidate that follows the stable channel is offered the stable
+        # version even if it is older: the channel says what to follow. Never a downgrade otherwise.
+        down = not beta and mine[3] == 0 and latest < mine
+        available = latest > mine or down
+        if available and package is None:
             return self._unknown(f"release {version} has no package")
         notes = release.get("body")
         self.last = {
             "current": self.current,
             "latest": version,
-            "available": latest > mine,
+            "available": available,
+            "downgrade": down,
             "checked": True,
             "notes": self._summary(notes),
         }
@@ -287,7 +292,8 @@ async def _round(updater, cfg, steam):
     res = await asyncio.to_thread(updater.check)
     if not res["checked"]:
         return RETRY_NO_NET
-    if res["available"] and cfg.get("update_last_notified") != res["latest"]:
+    # A way back to stable is for the user to ask for in the panel, not something to announce.
+    if res["available"] and not res["downgrade"] and cfg.get("update_last_notified") != res["latest"]:
         try:
             await steam.notify(
                 "Invasor update available",

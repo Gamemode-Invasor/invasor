@@ -63,9 +63,10 @@ de GitHub comprometida. Los módulos instalados desde un zip no se tocan.
 
 **Canal de actualizaciones:** *Stable* (por defecto) solo ofrece versiones finales (`X.Y.Z`). *Beta (pre-releases)*
 (`update_channel`: `"beta"`) ofrece también candidatas (`X.Y.Z-rcN`, por ejemplo `0.1.3-rc1`), que pueden
-ser inestables. Al cambiar de canal se busca una actualización al momento. Las versiones nunca bajan: una
-candidata es anterior a su versión final (`0.1.3-rc1` < `0.1.3`), así que para salir del canal beta se elige
-*Stable* y se espera a la siguiente versión final.
+ser inestables. Al cambiar de canal se busca una actualización al momento. Una versión final es
+más nueva que sus candidatas (`0.1.3-rc1` < `0.1.3`) y las versiones nunca bajan, con una excepción: desde
+una candidata, elegir *Stable* ofrece la versión estable aunque sea más antigua (*Go back to 0.1.2*); antes
+se pide confirmación. Si es la misma versión, no se ofrece nada.
 
 Log: `journalctl --user -u invasor -f`. Configuración opcional:
 `~/.config/invasor/config.json` (`open_combo`, `panel_side`, `targets`, `disabled_modules`, `dev_desktop`,

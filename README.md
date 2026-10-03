@@ -63,9 +63,10 @@ compromised GitHub account. Modules installed from a zip are not touched.
 
 **Update channel:** *Stable* (the default) only offers final releases (`X.Y.Z`). *Beta (pre-releases)*
 (`update_channel`: `"beta"`) also offers release candidates (`X.Y.Z-rcN`, for example `0.1.3-rc1`), which
-may be unstable. Changing the channel looks for an update right away. Versions never go down: a release
-candidate is older than its final release (`0.1.3-rc1` < `0.1.3`), so to leave the beta channel choose
-*Stable* and wait for the next final version.
+may be unstable. Changing the channel looks for an update right away. A final release is newer than
+its candidates (`0.1.3-rc1` < `0.1.3`) and versions never go down, with one exception: on a release
+candidate, choosing *Stable* offers the stable version even if it is older (*Go back to 0.1.2*); you
+confirm it first. If it is the same version, nothing is offered.
 
 Log: `journalctl --user -u invasor -f`. Optional configuration:
 `~/.config/invasor/config.json` (`open_combo`, `panel_side`, `targets`, `disabled_modules`, `dev_desktop`,

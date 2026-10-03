@@ -46,6 +46,8 @@ interface UpdateInfo {
   current: string;
   latest: string | null;
   available: boolean;
+  /** `available` is the stable version, older than this pre-release: the way back. */
+  downgrade: boolean;
   checked: boolean;
   notes: string;
 }
@@ -282,7 +284,13 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
     else if (!u.checked) rows.push(ui.info(`Installed: ${u.current}. Couldn't check for updates right now.`));
     else if (!u.available) rows.push(ui.info(`Installed: ${u.current}. You're up to date.`));
     else {
-      rows.push(ui.info(`Installed: ${u.current}. New version available: ${u.latest}.`));
+      rows.push(
+        ui.info(
+          u.downgrade
+            ? `Installed: ${u.current} (pre-release). The stable version is ${u.latest}.`
+            : `Installed: ${u.current}. New version available: ${u.latest}.`,
+        ),
+      );
       // One row per line: a single paragraph would run the lines of the notes together.
       for (const line of u.notes.split("\n")) if (line.trim()) rows.push(ui.info(line.trim()));
     }
@@ -298,12 +306,12 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
         },
       }),
       ui.button({
-        label: u?.available ? `Install version ${u.latest}` : "Install update",
+        label: u?.available ? (u.downgrade ? `Go back to ${u.latest}` : `Install version ${u.latest}`) : "Install update",
         disabled: !u?.available,
         onClick: async () => {
           const ok = await ui.confirm(
-            `Install Invasor ${u?.latest}? The panel will reload in a few seconds; Steam and any running game are not restarted.`,
-            { ok: "Install and reload panel" },
+            `${u?.downgrade ? "Go back to" : "Install"} Invasor ${u?.latest}? The panel will reload in a few seconds; Steam and any running game are not restarted.`,
+            { ok: u?.downgrade ? "Go back and reload panel" : "Install and reload panel" },
           );
           if (!ok) return;
           try {
