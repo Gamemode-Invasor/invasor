@@ -32,7 +32,8 @@ from .storage import JsonStore
 log = logging.getLogger("invasor.updater")
 
 REPO = "Gamemode-Invasor/invasor"
-RELEASE_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
+RELEASE_URL = f"https://api.github.com/repos/{REPO}/releases/latest"  # stable channel: never a pre-release
+RELEASES_URL = f"https://api.github.com/repos/{REPO}/releases?per_page=30"  # beta channel: pre-releases too
 DOWNLOAD_PREFIX = f"https://github.com/{REPO}/releases/download/"
 USER_AGENT = f"invasor/{__version__}"  # GitHub's API refuses requests without one
 TIMEOUT = 20
@@ -46,7 +47,7 @@ RETRY_NO_NET = 3600
 RETRY_NO_STEAM = 900
 WHEN_OFF = 3600  # how often to see whether the user switched checking back on
 
-VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
+VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:-rc(\d+))?$")
 SHA_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 INIT_VERSION_RE = re.compile(r'^__version__ = "(.*)"$', re.M)
 
@@ -60,10 +61,14 @@ rm -rf "$2"
 
 
 def parse_version(text):
-    """(major, minor, patch) of a plain X.Y.Z tag (optional leading v), else None:
-    prereleases and anything unusual are never offered."""
+    """A sortable key for X.Y.Z or X.Y.Z-rcN (optional leading v), else None: anything else
+    is never offered. (X, Y, Z, 1, 0) is a stable release and (X, Y, Z, 0, N) its Nth
+    release candidate, so 0.1.2-rc1 < 0.1.2-rc10 < 0.1.2 < 0.1.3-rc1."""
     m = VERSION_RE.match(text) if isinstance(text, str) else None
-    return tuple(int(g) for g in m.groups()) if m else None
+    if not m:
+        return None
+    x, y, z, rc = m.groups()
+    return (int(x), int(y), int(z), 1, 0) if rc is None else (int(x), int(y), int(z), 0, int(rc))
 
 
 def _opener():
@@ -131,8 +136,9 @@ def safe_extract(archive, dest, root_name):
 
 
 class Updater:
-    def __init__(self, current=__version__, fetch=fetch_json, fetch_file=download, start=launch):
+    def __init__(self, current=__version__, fetch=fetch_json, fetch_file=download, start=launch, channel=lambda: "stable"):
         self.current = current
+        self._channel = channel  # "stable" or "beta", asked at each check: it can change while running
         self._fetch, self._download, self._start = fetch, fetch_file, start
         self.last = None  # the latest check()'s answer, for the panel to show on opening
         self._package = None  # (package URL, sha256 URL) of that check's release
@@ -145,19 +151,25 @@ class Updater:
     def check(self):
         """{current, latest, available, checked, notes}. Offline, no release yet, a release
         without a package…: checked is False (nothing to report, nothing wrong)."""
+        beta = self._channel() == "beta"
         try:
-            release = self._fetch(RELEASE_URL)
+            release = self._fetch(RELEASES_URL if beta else RELEASE_URL)
         except urllib.error.HTTPError as e:
             return self._unknown(f"GitHub answered {e.code}")
         except Exception as e:
             return self._unknown(e)
-        if not isinstance(release, dict) or release.get("draft") or release.get("prerelease"):
+        if beta:
+            release = self._newest(release)
+        if not isinstance(release, dict) or release.get("draft") or (release.get("prerelease") and not beta):
             return self._unknown("no usable release")
-        latest = parse_version(release.get("tag_name"))
+        tag = release.get("tag_name")
+        latest = parse_version(tag)
         mine = parse_version(self.current)
         if latest is None or mine is None:
-            return self._unknown(f"unreadable version ({release.get('tag_name')!r} / {self.current!r})")
-        version = ".".join(map(str, latest))
+            return self._unknown(f"unreadable version ({tag!r} / {self.current!r})")
+        if latest[3] == 0 and not beta:  # a release candidate nobody marked as a pre-release
+            return self._unknown(f"{tag} is a pre-release")
+        version = tag[1:] if tag.startswith("v") else tag
         package = self._find_package(release, version)
         if latest > mine and package is None:
             return self._unknown(f"release {version} has no package")
@@ -171,6 +183,13 @@ class Updater:
         }
         self._package = package
         return self.last
+
+    @staticmethod
+    def _newest(releases):
+        """The highest version among GitHub's list of releases (drafts and odd tags ignored), or None."""
+        found = [r for r in releases if isinstance(r, dict) and not r.get("draft") and parse_version(r.get("tag_name"))] \
+            if isinstance(releases, list) else []
+        return max(found, key=lambda r: parse_version(r["tag_name"]), default=None)
 
     @staticmethod
     def _summary(body):

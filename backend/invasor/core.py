@@ -136,6 +136,7 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
             "panel_side": cfg.get("panel_side", "auto"),
             "accent_color": cfg.get("accent_color", "blue"),
             "update_check": cfg.get("update_check", True),
+            "update_channel": cfg.get("update_channel", "stable"),
             # Learned, not user-set: visible width of the Quick Access column (see overlay.ts).
             "qam_visible_w": cfg.get("qam_visible_w"),
         }
@@ -168,6 +169,9 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
         elif key == "update_check":
             if not isinstance(value, bool):
                 raise InvalidArgument(f"invalid update_check {value!r}")
+        elif key == "update_channel":
+            if value not in config.UPDATE_CHANNELS:
+                raise InvalidArgument(f"invalid update_channel {value!r}")
         else:
             raise InvalidArgument(f"unknown preference {key!r}")
         cfg[key] = value

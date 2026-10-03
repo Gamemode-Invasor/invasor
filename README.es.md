@@ -61,9 +61,15 @@ cada versión nueva. Es la única conexión a Internet que hace Invasor; se desa
 automatically* (`update_check` en `config.json`). El checksum detecta una descarga corrupta, no una cuenta
 de GitHub comprometida. Los módulos instalados desde un zip no se tocan.
 
+**Canal de actualizaciones:** *Stable* (por defecto) solo ofrece versiones finales (`X.Y.Z`). *Beta (pre-releases)*
+(`update_channel`: `"beta"`) ofrece también candidatas (`X.Y.Z-rcN`, por ejemplo `0.1.3-rc1`), que pueden
+ser inestables. Al cambiar de canal se busca una actualización al momento. Las versiones nunca bajan: una
+candidata es anterior a su versión final (`0.1.3-rc1` < `0.1.3`), así que para salir del canal beta se elige
+*Stable* y se espera a la siguiente versión final.
+
 Log: `journalctl --user -u invasor -f`. Configuración opcional:
 `~/.config/invasor/config.json` (`open_combo`, `panel_side`, `targets`, `disabled_modules`, `dev_desktop`,
-`update_check`; los dos primeros y el último también se cambian desde la pestaña **⚙ Settings**).
+`update_check`, `update_channel`; los dos primeros y los dos últimos también se cambian desde la pestaña **⚙ Settings**).
 
 ## Uso con el mando
 La pestaña "I" está siempre en la biblioteca. En el menú rápido (···) solo aparece con un
