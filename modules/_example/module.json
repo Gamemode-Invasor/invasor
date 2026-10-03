@@ -1,0 +1,24 @@
+{
+  "api": 1,
+  "name": "Example",
+  "version": "0.1.0",
+  "author": "FranjeGueje",
+  "description": "Module template: copy this folder to modules/<id>/.",
+  "order": 100,
+  "tab": "Example",
+  "settings": [
+    { "key": "enabled", "type": "toggle", "label": "Enabled", "default": true },
+    { "key": "level", "type": "slider", "label": "Level", "min": 0, "max": 10, "default": 5, "hint": "how much" },
+    {
+      "section": "Advanced",
+      "open": false,
+      "items": [
+        {
+          "key": "mode", "type": "select", "label": "Mode", "default": "auto",
+          "options": [ { "value": "auto", "label": "Auto" }, { "value": "manual", "label": "Manual" } ]
+        },
+        { "key": "greeting", "type": "text", "label": "Greeting", "default": "hello", "max_length": 40 }
+      ]
+    }
+  ]
+}

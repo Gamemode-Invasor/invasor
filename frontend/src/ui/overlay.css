@@ -1,0 +1,692 @@
+:host {
+  all: initial;
+  /* Accent colour (Settings › Panel › Accent color): overlay.ts sets these on the host. */
+  --accent: #1a9fff;
+  --accent-rgb: 26, 159, 255;
+  --accent-fg: #fff;
+}
+.handle,
+.panel {
+  pointer-events: auto;
+}
+.panel {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  /* A share of the real screen (--panel-share of --screen-w: 40% in the Library, a third
+     elsewhere), but never wider than the part of the window that's on screen
+     (--visible-w; all set on open). Only .content scrolls. */
+  width: min(calc(var(--screen-w, 100vw) * var(--panel-share, 0.3333)), calc(var(--visible-w, 100vw) - 16px));
+  min-width: min(340px, calc(var(--visible-w, 100vw) - 16px));
+  max-height: calc(100vh - 16px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #1b2029;
+  color: #e6e9ef;
+  border: 1px solid #2f3746;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  font: 15px/1.4 system-ui, sans-serif;
+}
+.panel[hidden] {
+  display: none;
+}
+.panel > * {
+  flex: none;
+}
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #2f3746;
+  font-weight: 600;
+}
+small {
+  color: #8b94a7;
+  font-weight: 400;
+}
+button {
+  font: inherit;
+  color: inherit;
+  background: #2a3240;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+button:hover,
+button:focus-visible {
+  background: #3a4458;
+  outline: none;
+}
+.options {
+  padding: 12px 16px;
+}
+.empty {
+  color: #8b94a7;
+  margin: 0;
+}
+.status {
+  padding: 8px 16px;
+  border-top: 1px solid #2f3746;
+  font-size: 13px;
+  color: #8b94a7;
+}
+.status.ok {
+  color: #7fd18b;
+}
+.status.err {
+  color: #f08a8a;
+}
+.handle {
+  position: fixed;
+  top: 20%;
+  right: 0;
+  transform: translateY(-50%);
+  width: 24px;
+  height: 40px;
+  padding: 0;
+  border-radius: 8px 0 0 8px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: 1px solid rgba(255, 255, 255, 0.25); /* visible even when black on dark */
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 0 12px rgba(0, 0, 0, 0.6);
+}
+.handle:hover,
+.handle:focus-visible {
+  filter: brightness(1.15);
+}
+:host(.side-left) .handle {
+  right: auto;
+  left: 0;
+  border-radius: 0 8px 8px 0;
+}
+:host(.side-left) .panel {
+  right: auto;
+  left: 8px;
+}
+.game {
+  padding: 10px 16px;
+  border-bottom: 1px solid #2f3746;
+  font-size: 14px;
+}
+.k {
+  color: #8b94a7;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-right: 6px;
+}
+details > summary {
+  cursor: pointer;
+  padding: 10px 16px;
+  font-weight: 600;
+  list-style: none;
+}
+details > summary::before {
+  content: "▸ ";
+  color: #8b94a7;
+}
+details[open] > summary::before {
+  content: "▾ ";
+}
+/* Disabled controls stay selectable (the hint says why) but look inactive. */
+.ctl.disabled,
+.ctl-button.disabled {
+  opacity: 0.45;
+}
+.mod-error {
+  color: #f08a8a;
+  margin: 0;
+}
+.nav-focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 6px;
+  background-color: rgba(var(--accent-rgb), 0.12);
+}
+.hints {
+  padding: 6px 16px;
+  border-top: 1px solid #2f3746;
+  font-size: 12px;
+  color: #8b94a7;
+}
+.hints:empty {
+  display: none;
+}
+/* ---- form controls (controls.ts) ---- */
+.ctl {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  margin: 2px -10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.ctl-label {
+  flex: 1 1 auto;
+}
+.ctl-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ctl-value {
+  min-width: 2.5em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: #cfd6e4;
+}
+.ctl-arrow {
+  color: #8b94a7;
+  padding: 0 4px;
+}
+.ctl input[type="range"] {
+  width: clamp(120px, 12vw, 220px);
+  accent-color: var(--accent);
+}
+.switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  background: #3a4458;
+  transition: background 0.15s;
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #e6e9ef;
+  transition: left 0.15s;
+}
+.ctl.on .switch {
+  background: var(--accent);
+}
+.ctl.on .switch::after {
+  left: 21px;
+}
+.box {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 2px solid #8b94a7;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+}
+.ctl.on .box {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.ctl.on .box::after {
+  content: "✓";
+  color: var(--accent-fg);
+}
+.radio .ctl-body {
+  gap: 0;
+  background: #2a3240;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.seg {
+  padding: 4px 10px;
+  font-size: 13px;
+}
+.seg.on {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+/* Colour choices: a dot per option, the chosen one ringed. */
+.seg.swatch {
+  padding: 4px 6px;
+  display: flex;
+  align-items: center;
+}
+.seg.swatch .dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  box-sizing: border-box;
+}
+.seg.swatch.on {
+  background: transparent;
+}
+.seg.swatch.on .dot {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.select-list {
+  flex-basis: 100%;
+  max-height: 180px;
+  overflow: auto;
+  background: #141922;
+  border: 1px solid #2f3746;
+  border-radius: 6px;
+}
+.select-list[hidden] {
+  display: none;
+}
+.select-item {
+  padding: 6px 10px;
+}
+.select-item.chosen {
+  color: var(--accent);
+}
+.select-item.on {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.ctl.text input {
+  width: clamp(150px, 14vw, 260px);
+  font: inherit;
+  color: inherit;
+  background: #141922;
+  border: 1px solid #2f3746;
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+.ctl.text.editing input {
+  border-color: var(--accent);
+}
+.ctl-button {
+  display: block;
+  width: 100%;
+  margin: 6px 0;
+  padding: 8px;
+}
+.ctl-info {
+  margin: 6px 0;
+  color: #8b94a7;
+  font-size: 13px;
+}
+.ctl-sep {
+  border: 0;
+  border-top: 1px solid #2f3746;
+  margin: 8px 0;
+}
+.kbd {
+  flex-basis: 100%;
+  display: grid;
+  gap: 4px;
+  padding-top: 6px;
+}
+.kbd-row {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+}
+.kbd-key {
+  min-width: 24px;
+  padding: 5px 0;
+  text-align: center;
+  background: #2a3240;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.kbd-key.wide {
+  padding: 5px 10px;
+}
+.kbd-key.on {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+/* ---- tabs (overlay.ts) ---- */
+.tabbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid #2f3746;
+}
+.tabbar[hidden] {
+  display: none;
+}
+.tabbar.sub {
+  background: #171c24;
+}
+.tab-key {
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  color: #8b94a7;
+  border: 1px solid #3a4458;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+.tabs {
+  flex: 1;
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tab {
+  flex: none;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #b8c0cf;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tab.on {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+/* Module row (L1/R1): the main navigation, so it stands out — own darker band,
+   accent underline, centred, bigger and higher-contrast labels. */
+.tabbar.main {
+  background: #0d1117;
+  border-bottom: 2px solid var(--accent);
+  padding: 8px 10px;
+}
+/* Centred with auto margins (works on any Chromium, and still scrolls normally if
+   the tabs overflow, unlike justify-content: center). */
+.tabbar.main .tab:first-child {
+  margin-left: auto;
+}
+.tabbar.main .tab:last-child {
+  margin-right: auto;
+}
+.tabbar.main .tab {
+  font-size: 15px;
+  font-weight: 600;
+  padding: 6px 14px;
+  color: #f2f5fa;
+}
+.tabbar.main .tab.on {
+  background: var(--accent);
+  color: var(--accent-fg);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35) inset;
+}
+.tabbar.main .tab-key {
+  font-size: 11px;
+  color: #e6e9ef;
+  border-color: #8b94a7;
+}
+/* Sub-tab row alignment, chosen by each module (tabsAlign). Auto margins and flex
+   only: works on any Chromium and still scrolls if the tabs overflow. */
+.tabbar.sub[data-align="center"] .tab:first-child,
+.tabbar.sub[data-align="end"] .tab:first-child {
+  margin-left: auto;
+}
+.tabbar.sub[data-align="center"] .tab:last-child {
+  margin-right: auto;
+}
+.tabbar.sub[data-align="justify"] .tab {
+  flex: 1 0 auto;
+  text-align: center;
+}
+.tabbar.sub .tab.on {
+  background: #2a3240;
+  color: #fff;
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.content-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 16px 12px;
+  /* Native scrollbar hidden: we draw our own (.scrollbar) so it looks the same everywhere. */
+  scrollbar-width: none;
+}
+.content::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  right: 3px;
+  width: 4px;
+  pointer-events: none; /* touch scrolls the content itself */
+}
+.scrollbar[hidden] {
+  display: none;
+}
+.thumb {
+  width: 100%;
+  border-radius: 2px;
+  background: rgba(var(--accent-rgb), 0.45);
+  transition: background 0.3s;
+}
+.thumb.active {
+  background: rgba(var(--accent-rgb), 0.85);
+}
+/* "There's more" shadows at the edges of the scrolling area. */
+.content.more-above {
+  box-shadow: inset 0 14px 10px -10px rgba(0, 0, 0, 0.6);
+}
+.content.more-below {
+  box-shadow: inset 0 -14px 10px -10px rgba(0, 0, 0, 0.6);
+}
+.content.more-above.more-below {
+  box-shadow: inset 0 14px 10px -10px rgba(0, 0, 0, 0.6), inset 0 -14px 10px -10px rgba(0, 0, 0, 0.6);
+}
+.pane[hidden],
+.subpane[hidden] {
+  display: none;
+}
+.toast {
+  margin: 0 16px 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  background: #1f3a2a;
+  color: #9be0a8;
+}
+.toast.error {
+  background: #3d2224;
+  color: #f2a3a3;
+}
+.toast[hidden] {
+  display: none;
+}
+/* ---- section / confirm (controls.ts) ---- */
+.section > summary {
+  padding: 8px 10px;
+  margin: 2px -10px;
+  border-radius: 6px;
+}
+.section-body {
+  padding: 0 0 6px 4px;
+}
+.modal {
+  /* top/height set inline to the panel's visible area (it may be scrolled) */
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  background: rgba(10, 13, 18, 0.7);
+  border-radius: 10px;
+}
+.modal-box {
+  width: calc(100% - 48px);
+  padding: 16px;
+  background: #222937;
+  border: 1px solid #3a4458;
+  border-radius: 10px;
+}
+.modal-box p {
+  margin: 0 0 12px;
+}
+.modal-buttons {
+  display: flex;
+  gap: 8px;
+}
+.modal-buttons .ctl-button {
+  margin: 0;
+}
+.modal-buttons.stacked {
+  flex-direction: column;
+}
+/* ---- big windows (window.ts) ---- */
+.iwin {
+  /* Covers the on-screen part of the window, dims what's behind. */
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: var(--visible-w, 100vw);
+  height: 100vh;
+  pointer-events: auto;
+  background: rgba(8, 10, 14, 0.6);
+}
+.iwin-box {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  bottom: 16px;
+  left: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #1b2029;
+  color: #e6e9ef;
+  border: 1px solid #2f3746;
+  border-radius: 12px;
+  box-shadow: 0 16px 60px rgba(0, 0, 0, 0.6);
+  font: 15px/1.4 system-ui, sans-serif;
+}
+.iwin-box > * {
+  flex: none;
+}
+.iwin-box > .content-wrap {
+  flex: 1 1 auto;
+}
+/* ---- image grid (controls.ts) ---- */
+.ctl.image-grid {
+  display: block;
+  cursor: default;
+}
+.image-grid .grid {
+  display: grid;
+  gap: 10px;
+}
+.image-grid .tile {
+  border-radius: 6px;
+  padding: 3px;
+  cursor: pointer;
+}
+.image-grid .frame {
+  position: relative;
+  background: #2a3240;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.image-grid .frame img,
+.image-grid .frame video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.image-grid .frame.broken img,
+.image-grid .frame.broken video {
+  display: none;
+}
+.image-grid .frame.broken::after {
+  content: "⚠";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #f08a8a;
+  font-size: 20px;
+}
+.ctl-image {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  min-width: 64px;
+  min-height: 40px;
+  margin: 6px 0;
+  background: #2a3240;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.ctl-image.loaded {
+  min-width: 0;
+  min-height: 0;
+  background: none;
+}
+.ctl-image img {
+  display: block;
+  max-width: 100%;
+}
+.ctl-image.broken img {
+  display: none;
+}
+.ctl-image.broken::after {
+  content: "⚠";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #f08a8a;
+}
+.image-grid .frame.novideo::after {
+  content: "▶";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: #8b94a7;
+  font-size: 22px;
+}
+.image-grid .cap {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #b8c0cf;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The grid is one nav stop: its outline stays subtle, the tile under the pad stands out. */
+.ctl.image-grid.nav-focus {
+  background-color: transparent;
+}
+.image-grid.nav-focus .tile.hi {
+  outline: 3px solid var(--accent);
+  background: rgba(var(--accent-rgb), 0.15);
+}
+.image-grid .tile.selected .frame {
+  box-shadow: 0 0 0 3px #7fd18b inset;
+}
+/* ---- window button (controls.ts) ---- */
+.window-button .ctl-button.locked {
+  opacity: 0.55;
+}
+.locked-note {
+  margin: -2px 0 6px;
+  font-size: 12px;
+  color: #8b94a7;
+}
+.locked-note[hidden] {
+  display: none;
+}

@@ -1,0 +1,88 @@
+name: Module
+
+# Reusable workflow for module repositories (see docs/MODULES.md, section 8). It lays the repository
+# out the way the module tools expect (<module repo>/<id>/ next to a checkout of the core), then runs
+# tools/pack_module.py: typecheck, build, the module contract checks, the module's tests, and the zip.
+# With `release: true` it also publishes the zip as a GitHub release.
+#
+# A module repository calls it with:
+#   jobs:
+#     module:
+#       uses: Gamemode-Invasor/invasor/.github/workflows/module.yml@main
+#       secrets: inherit
+on:
+  workflow_call:
+    inputs:
+      core-ref:
+        description: Branch or tag of the core to build and test against
+        type: string
+        default: main
+      release:
+        description: Publish the zip as a GitHub release (for a v* tag)
+        type: boolean
+        default: false
+    secrets:
+      CORE_READ_TOKEN:
+        description: Token that can read the core repository, only needed while it is private
+        required: false
+
+jobs:
+  module:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: module
+      - name: Make sure the core can be read
+        env:
+          CORE_TOKEN: ${{ secrets.CORE_READ_TOKEN || github.token }}
+          HAS_SECRET: ${{ secrets.CORE_READ_TOKEN != '' }}
+        run: |
+          status=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $CORE_TOKEN" \
+            -H "Accept: application/vnd.github+json" https://api.github.com/repos/Gamemode-Invasor/invasor)
+          if [ "$status" != 200 ]; then
+            echo "::error::Can't read Gamemode-Invasor/invasor: HTTP $status (CORE_READ_TOKEN is set: $HAS_SECRET, token length: ${#CORE_TOKEN}). While the core is private, the organization needs a CORE_READ_TOKEN secret with read access to it."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+        with:
+          repository: Gamemode-Invasor/invasor
+          ref: ${{ inputs.core-ref }}
+          path: invasor
+          token: ${{ secrets.CORE_READ_TOKEN || github.token }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: invasor/frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: npm ci --no-audit --no-fund
+        working-directory: invasor/frontend
+      - name: Find the module
+        run: |
+          mapfile -t found < <(cd module && ls -d */module.json 2>/dev/null)
+          [ "${#found[@]}" -eq 1 ] || { echo "expected one <id>/module.json in the repository, found ${#found[@]}" >&2; exit 1; }
+          echo "MODULE_ID=${found[0]%/module.json}" >> "$GITHUB_ENV"
+      - name: Check, test and pack
+        working-directory: module
+        run: python3 ../invasor/tools/pack_module.py "$MODULE_ID" --out "$GITHUB_WORKSPACE/dist"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.MODULE_ID }}-zip
+          path: dist/*.zip
+      - name: The tag must match the version in module.json
+        if: inputs.release
+        run: |
+          version=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "module/$MODULE_ID/module.json")
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME does not match module.json version $version" >&2; exit 1; }
+          echo "MODULE_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Publish
+        if: inputs.release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          sha256sum -- *.zip > "$MODULE_ID-$MODULE_VERSION.zip.sha256"
+          gh release create "$GITHUB_REF_NAME" ./* --repo "$GITHUB_REPOSITORY" --title "$MODULE_ID $MODULE_VERSION" --generate-notes

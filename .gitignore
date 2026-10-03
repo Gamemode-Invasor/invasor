@@ -1,0 +1,31 @@
+# Dependencies and build output (recreated by `npm install` / `npm run build`)
+node_modules/
+dist/
+frontend/test/.out/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Local editor/tool files: may hold personal paths or settings
+.claude/
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Secrets and logs
+.env
+.env.*
+*.log
+
+# Data files Invasor moves aside (it keeps its data in ~/.config/invasor, not here)
+*.corrupt
+frontend/.tsconfig.module.json
+*.zip
+*.tar.gz
+*.tar.gz.sha256
+release/
+AGENTS.md
+CLAUDE.md
