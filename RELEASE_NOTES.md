@@ -1,2 +1,3 @@
-The update panel now shows a short summary of what changed.
+- The update panel now shows a short summary of what changed.
+- Adds an update channel in Settings > Updates: Stable (default) or Beta, which also offers pre-releases to try.
 ---
