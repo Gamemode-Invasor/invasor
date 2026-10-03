@@ -30,6 +30,7 @@ installed; otherwise it shows its help.
 - **Install / update:** everything is checked first (Python 3.9+, systemd user services, Steam, an up to
   date frontend build), then only what the service runs is copied (no tests, no `_example` template),
   swapped in at once, and the service is restarted and checked. Modules installed from a zip are kept.
+  If the new version doesn't come up, the previous one is put back.
 - **Uninstall:** the overlay is taken out of Steam right away, with no Steam restart. Each module first
   undoes what it left outside its folder (its `uninstall()`). Everything in
   `~/.local/share/invasor` goes, modules installed from a zip included. The configuration and module
