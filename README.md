@@ -61,9 +61,15 @@ That is the only connection Invasor makes to the Internet; switch it off with *C
 automatically* (`update_check` in `config.json`). The checksum catches a corrupt download, not a
 compromised GitHub account. Modules installed from a zip are not touched.
 
+**Update channel:** *Stable* (the default) only offers final releases (`X.Y.Z`). *Beta (pre-releases)*
+(`update_channel`: `"beta"`) also offers release candidates (`X.Y.Z-rcN`, for example `0.1.3-rc1`), which
+may be unstable. Changing the channel looks for an update right away. Versions never go down: a release
+candidate is older than its final release (`0.1.3-rc1` < `0.1.3`), so to leave the beta channel choose
+*Stable* and wait for the next final version.
+
 Log: `journalctl --user -u invasor -f`. Optional configuration:
 `~/.config/invasor/config.json` (`open_combo`, `panel_side`, `targets`, `disabled_modules`, `dev_desktop`,
-`update_check`; the first two and the last can also be changed from the **⚙ Settings** tab).
+`update_check`, `update_channel`; the first two and the last two can also be changed from the **⚙ Settings** tab).
 
 ## Using it with a controller
 The "I" handle is always there in the library. In Quick Access (···) it only shows while a

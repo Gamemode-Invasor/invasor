@@ -37,6 +37,7 @@ interface Prefs {
   panel_side: "auto" | "left" | "right";
   accent_color: string;
   update_check: boolean;
+  update_channel: "stable" | "beta";
 }
 
 /** core.update_check / core.update_status (backend/invasor/updater.py). `checked` is false
@@ -313,6 +314,7 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
         },
       }),
       autoCheck,
+      channel,
     );
     updates.replaceChildren(...rows);
   };
@@ -328,6 +330,32 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
       } catch (e) {
         autoCheck.set(savedAuto);
         toast(`Couldn't save: ${(e as Error).message}`, "error");
+      }
+    },
+  });
+  let savedChannel = prefs.update_channel;
+  const channel = ui.radio({
+    label: "Update channel",
+    value: prefs.update_channel,
+    hint: "Beta also offers pre-releases (X.Y.Z-rcN) to try before they are final. They may be unstable.",
+    options: [
+      { value: "stable" as const, label: "Stable" },
+      { value: "beta" as const, label: "Beta (pre-releases)" },
+    ],
+    onChange: async (value) => {
+      try {
+        await api.call("core", "set_pref", { key: "update_channel", value });
+        savedChannel = value;
+      } catch (e) {
+        channel.set(savedChannel);
+        toast(`Couldn't save: ${(e as Error).message}`, "error");
+        return;
+      }
+      // Like the "Check for updates" button: look for a version on the chosen channel right away.
+      try {
+        showUpdate(await api.call<UpdateInfo>("core", "update_check"));
+      } catch (e) {
+        toast(`Couldn't check for updates: ${(e as Error).message}`, "error");
       }
     },
   });

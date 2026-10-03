@@ -55,7 +55,7 @@ async def main():
 
     watcher = ComboWatcher(cfg["open_combo"], on_combo)
     # "core" is reserved for the overlay's own API; a module can't shadow it.
-    updater = updates.Updater()
+    updater = updates.Updater(channel=lambda: cfg.get("update_channel", "stable"))
     manager.registry["core"] = core.make_methods(manager, game, watcher, cfg, injector, steam, updater)
 
     # Stop cleanly on SIGTERM (systemctl stop/restart) so modules get their teardown().

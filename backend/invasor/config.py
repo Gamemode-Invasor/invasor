@@ -47,11 +47,14 @@ DEFAULTS = {
     "qam_visible_w": None,
     # Look for a newer Invasor release on GitHub (at startup, then daily) and tell Steam about it.
     "update_check": True,
+    # Which releases to follow: "stable", or "beta" (also the pre-releases, X.Y.Z-rcN).
+    "update_channel": "stable",
     # Learned: the last version announced in a Steam notification, so each is announced once.
     "update_last_notified": "",
 }
 
 PANEL_SIDES = ("auto", "left", "right")
+UPDATE_CHANNELS = ("stable", "beta")
 ACCENT_COLORS = ("blue", "yellow", "green", "red", "purple", "white")
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 
@@ -90,6 +93,7 @@ VALID = {
     "dev_desktop": lambda v: isinstance(v, bool),
     "qam_visible_w": lambda v: v is None or (_is_int(v) and 200 <= v <= 4000),
     "update_check": lambda v: isinstance(v, bool),
+    "update_channel": lambda v: v in UPDATE_CHANNELS,
     "update_last_notified": lambda v: isinstance(v, str),
 }
 

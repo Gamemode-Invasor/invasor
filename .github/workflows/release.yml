@@ -28,6 +28,9 @@ jobs:
         run: |
           version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' backend/invasor/__init__.py)
           [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME does not match __version__ $version" >&2; exit 1; }
+      - name: The tag must be a release (vX.Y.Z) or a release candidate (vX.Y.Z-rcN)
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]] || { echo "tag $GITHUB_REF_NAME is neither vX.Y.Z nor vX.Y.Z-rcN" >&2; exit 1; }
       - name: RELEASE_NOTES.md must have a short summary, then a line with only ---
         run: |
           [ -s RELEASE_NOTES.md ] || { echo "RELEASE_NOTES.md is missing or empty" >&2; exit 1; }
@@ -38,4 +41,7 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "Invasor ${GITHUB_REF_NAME#v}" --notes-file RELEASE_NOTES.md --generate-notes
+        run: |
+          pre=()
+          [[ "$GITHUB_REF_NAME" == *-* ]] && pre=(--prerelease)
+          gh release create "$GITHUB_REF_NAME" dist/* --title "Invasor ${GITHUB_REF_NAME#v}" --notes-file RELEASE_NOTES.md --generate-notes "${pre[@]}"

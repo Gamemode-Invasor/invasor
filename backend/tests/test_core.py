@@ -29,7 +29,7 @@ class Prefs(unittest.TestCase):
         self.api = core.make_methods(manager, GameContext(), self.watcher, self.cfg)
 
     def test_defaults(self):
-        self.assertEqual(self.api["prefs"](), {"open_combo": ["L3", "R3"], "panel_side": "auto", "accent_color": "blue", "update_check": True, "qam_visible_w": None})
+        self.assertEqual(self.api["prefs"](), {"open_combo": ["L3", "R3"], "panel_side": "auto", "accent_color": "blue", "update_check": True, "update_channel": "stable", "qam_visible_w": None})
 
     def test_combo_changes_live_and_persists(self):
         self.api["set_pref"]("open_combo", ["back", "START"])
@@ -49,6 +49,14 @@ class Prefs(unittest.TestCase):
         for bad in ("yes", 1, None):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 self.api["set_pref"]("update_check", bad)
+
+    def test_update_channel_pref(self):
+        self.assertEqual(self.api["set_pref"]("update_channel", "beta")["update_channel"], "beta")
+        self.assertEqual(json.loads(self.config_file.read_text())["update_channel"], "beta")
+        self.assertEqual(self.api["set_pref"]("update_channel", "stable")["update_channel"], "stable")
+        for bad in ("alpha", "Beta", True, None, ["beta"]):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.api["set_pref"]("update_channel", bad)
 
     def test_update_status_is_empty_until_a_check(self):
         self.assertIsNone(self.api["update_status"]())

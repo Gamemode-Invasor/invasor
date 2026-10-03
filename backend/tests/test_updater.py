@@ -42,11 +42,18 @@ def package(version="0.2.0", root=None, extra=(), init=None):
 
 class Versions(unittest.TestCase):
     def test_plain_versions_compare_numerically(self):
-        self.assertEqual(updater.parse_version("v0.10.0"), (0, 10, 0))
+        self.assertEqual(updater.parse_version("v0.10.0"), (0, 10, 0, 1, 0))
         self.assertGreater(updater.parse_version("0.10.0"), updater.parse_version("0.9.0"))
 
-    def test_prereleases_and_junk_are_not_versions(self):
-        for bad in ("1.0.0-rc1", "1.0", "latest", "", None, 5):
+    def test_release_candidates_sort_before_their_release(self):
+        order = ["0.1.2-rc1", "0.1.2-rc2", "0.1.2-rc10", "0.1.2", "0.1.3-rc1", "0.1.3", "0.2.0-rc1"]
+        keys = [updater.parse_version(v) for v in order]
+        self.assertEqual(keys, sorted(keys))
+        self.assertEqual(len(set(keys)), len(keys))
+        self.assertEqual(updater.parse_version("v0.1.2-rc1"), updater.parse_version("0.1.2-rc1"))
+
+    def test_other_pre_release_names_and_junk_are_not_versions(self):
+        for bad in ("1.0.0-beta1", "1.0.0-alpha1", "1.0.0-rc", "1.0.0-rc.1", "1.0.0-rc1-x", "1.0.0-", "1.0", "latest", "", None, 5):
             with self.subTest(bad=bad):
                 self.assertIsNone(updater.parse_version(bad))
 
@@ -99,6 +106,78 @@ class Check(unittest.TestCase):
         for a in rel["assets"]:
             a["browser_download_url"] = "https://evil.example/" + a["name"]
         self.assertFalse(self.up(rel).check()["checked"])
+
+
+class BetaChannel(unittest.TestCase):
+    """The beta channel reads GitHub's list of releases (pre-releases included); stable keeps releases/latest."""
+
+    def up(self, releases, current="0.1.2", channel="beta"):
+        self.channel = channel
+        self.asked = []
+
+        def fetch(url):
+            self.asked.append(url)
+            if url == updater.RELEASE_URL:  # GitHub's "latest": the newest stable one
+                return next(r for r in releases if not r.get("prerelease") and not r.get("draft"))
+            return releases
+        return updater.Updater(current, fetch=fetch, channel=lambda: self.channel)
+
+    def test_beta_offers_a_newer_pre_release_and_stable_does_not(self):
+        rels = [release("v0.1.3-rc1", prerelease=True), release("v0.1.2")]
+        res = self.up(rels).check()
+        self.assertEqual((res["checked"], res["available"], res["latest"]), (True, True, "0.1.3-rc1"))
+        self.assertEqual(self.asked, [updater.RELEASES_URL])
+        res = self.up(rels, channel="stable").check()
+        self.assertEqual((res["available"], res["latest"]), (False, "0.1.2"))
+        self.assertEqual(self.asked, [updater.RELEASE_URL])
+
+    def test_the_channel_is_read_at_each_check(self):
+        up = self.up([release("v0.1.3-rc1", prerelease=True), release("v0.1.2")])
+        self.assertTrue(up.check()["available"])
+        self.channel = "stable"
+        self.assertFalse(up.check()["available"])
+        self.channel = "beta"
+        self.assertTrue(up.check()["available"])
+
+    def test_the_highest_version_wins_whatever_the_order_and_a_stable_beats_its_rc(self):
+        rels = [release("v0.1.3-rc2", prerelease=True), release("v0.1.3", assets=True), release("v0.1.3-rc10", prerelease=True),
+                release("v0.1.4-rc1", draft=True), release("nightly"), release("v0.1.2")]
+        self.assertEqual(self.up(rels).check()["latest"], "0.1.3")
+        rels = [release("v0.1.3-rc2", prerelease=True), release("v0.1.3-rc10", prerelease=True), release("v0.1.3-rc1", prerelease=True)]
+        self.assertEqual(self.up(rels).check()["latest"], "0.1.3-rc10")
+
+    def test_a_pre_release_machine_is_never_offered_something_older(self):
+        rels = [release("v0.1.3-rc1", prerelease=True), release("v0.1.2")]
+        for channel in ("beta", "stable"):
+            with self.subTest(channel=channel):
+                res = self.up(rels, current="0.1.3-rc1", channel=channel).check()
+                self.assertEqual((res["checked"], res["available"]), (True, False))
+
+    def test_a_stable_release_is_offered_to_a_pre_release_machine_on_either_channel(self):
+        rels = [release("v0.1.3"), release("v0.1.3-rc1", prerelease=True)]
+        for channel in ("beta", "stable"):
+            with self.subTest(channel=channel):
+                self.assertEqual(self.up(rels, current="0.1.3-rc1", channel=channel).check()["latest"], "0.1.3")
+
+    def test_stable_never_offers_an_rc_even_if_nobody_marked_it_as_pre_release(self):
+        res = self.up([release("v0.1.3-rc1"), release("v0.1.2")], channel="stable").check()
+        self.assertEqual(res["checked"], False)  # releases/latest answered the rc
+
+    def test_beta_needs_the_package_of_the_version_it_offers(self):
+        rels = [release("v0.1.3-rc1", prerelease=True, assets=False), release("v0.1.2")]
+        res = self.up(rels).check()
+        self.assertEqual((res["checked"], res["available"]), (False, False))
+
+    def test_empty_or_odd_lists_are_just_not_checked(self):
+        for answer in ([], [release("v0.1.3", draft=True)], {"message": "nope"}, "x", None):
+            with self.subTest(answer=repr(answer)[:30]):
+                self.assertFalse(self.up(answer).check()["checked"])
+
+    def test_the_package_is_found_by_the_pre_release_name(self):
+        up = self.up([release("v0.1.3-rc1", prerelease=True)])
+        up.check()
+        self.assertEqual(up._package, (updater.DOWNLOAD_PREFIX + "v0.1.3-rc1/invasor-0.1.3-rc1.tar.gz",
+                                       updater.DOWNLOAD_PREFIX + "v0.1.3-rc1/invasor-0.1.3-rc1.tar.gz.sha256"))
 
 
 class Apply(unittest.TestCase):
