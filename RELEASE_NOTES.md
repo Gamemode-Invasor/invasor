@@ -1,3 +1,3 @@
-- The update panel now shows a short summary of what changed.
-- Adds an update channel in Settings > Updates: Stable (default) or Beta, which also offers pre-releases to try.
+- Each line of the update notes now shows on its own line in the panel.
+- I'm testing it
 ---

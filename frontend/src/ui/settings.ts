@@ -283,7 +283,8 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
     else if (!u.available) rows.push(ui.info(`Installed: ${u.current}. You're up to date.`));
     else {
       rows.push(ui.info(`Installed: ${u.current}. New version available: ${u.latest}.`));
-      if (u.notes) rows.push(ui.info(u.notes));
+      // One row per line: a single paragraph would run the lines of the notes together.
+      for (const line of u.notes.split("\n")) if (line.trim()) rows.push(ui.info(line.trim()));
     }
     rows.push(
       ui.button({
