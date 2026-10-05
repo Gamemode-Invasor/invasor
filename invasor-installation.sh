@@ -166,12 +166,9 @@ do_install() {
   done
   rm -rf "$stg"
 
-  write_unit
-  systemctl --user daemon-reload
-  systemctl --user enable --quiet "$UNIT"
-  systemctl --user restart "$UNIT"
-
   # Same entry point as Decky: Steam exposes CEF DevTools on :8080 when this file exists.
+  # Before the service starts: the service puts the file back too (backend/invasor/cef_flag.py),
+  # and it would get here first, leaving us thinking someone else had made it.
   flag="$(steam_dir)/.cef-enable-remote-debugging"
   local restart_steam=""
   if [[ ! -e "$flag" ]]; then
@@ -179,6 +176,11 @@ do_install() {
     touch "$CEF_MARKER"
     restart_steam=1
   fi
+
+  write_unit
+  systemctl --user daemon-reload
+  systemctl --user enable --quiet "$UNIT"
+  systemctl --user restart "$UNIT"
 
   if ! wait_healthy; then
     echo "The service didn't come up. Its last log lines:" >&2

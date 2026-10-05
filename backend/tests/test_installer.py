@@ -115,6 +115,22 @@ class Installer(unittest.TestCase):
         self.assertEqual(self.restarts(), 3)  # first install, the broken update, the way back
         self.assertIn("Going back to Invasor 1.0.0", r.stderr)
 
+    def test_the_installer_makes_the_cef_flag_and_says_to_restart_steam(self):
+        flag = self.home / ".steam/steam/.cef-enable-remote-debugging"
+        r = self.install(self.release("1.0.0"))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(flag.exists())
+        self.assertTrue((self.dest / ".cef-flag-created").exists())  # ours: --uninstall may remove it
+        self.assertIn("Restart Steam once", r.stdout)
+
+    def test_someone_elses_cef_flag_is_not_ours(self):
+        flag = self.home / ".steam/steam/.cef-enable-remote-debugging"
+        flag.touch()
+        r = self.install(self.release("1.0.0"))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertFalse((self.dest / ".cef-flag-created").exists())
+        self.assertNotIn("Restart Steam once", r.stdout)
+
     def test_a_broken_first_install_has_nothing_to_go_back_to(self):
         r = self.install(self.release("1.0.0", broken=True))
         self.assertNotEqual(r.returncode, 0)

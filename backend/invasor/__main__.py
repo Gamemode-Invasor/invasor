@@ -3,7 +3,7 @@ import logging
 import signal
 import sys
 
-from . import __version__, config, core, updater as updates
+from . import __version__, cef_flag, config, core, updater as updates
 from .combo import decide_combo
 from .context import GameContext
 from .gamepad import ComboWatcher
@@ -19,6 +19,7 @@ async def main():
     cfg = config.load()
     logging.getLogger().setLevel(cfg["log_level"])
     logging.getLogger("invasor").info("invasor %s starting", __version__)
+    cef_flag.ensure()  # something may have deleted Steam's debugging flag: put it back before Steam next starts
 
     game = GameContext()
     # The bridge needs the injector, the injector needs the module list: wire lazily.

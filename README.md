@@ -37,8 +37,9 @@ installed; otherwise it shows its help.
   settings in `~/.config/invasor` are kept unless `--purge` is given (the dialog asks).
 
 After the first install, restart Steam once: the installer creates
-`~/.steam/steam/.cef-enable-remote-debugging`, like Decky does. Uninstalling removes it only if the
-installer created it and Decky isn't installed.
+`~/.steam/steam/.cef-enable-remote-debugging`, like Decky does. If something deletes it later, the
+service puts it back the next time it starts (Steam needs a restart for it to apply). Uninstalling removes it
+only if Invasor created it, the installer or the service, and Decky isn't installed.
 
 ### Release for other machines
 ```sh

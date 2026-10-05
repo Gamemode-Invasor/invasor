@@ -12,7 +12,8 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 # Modules installed by the user (zip from Settings, tools/install_module.py): outside the
 # core's install folder, so updating Invasor never touches them.
 CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "invasor"
-USER_MODULES_DIR = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "invasor" / "user-modules"
+DATA_DIR = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "invasor"
+USER_MODULES_DIR = DATA_DIR / "user-modules"
 
 DEFAULTS = {
     # STEAM TOUCHPOINT: which CEF windows get the overlay, and in which role. Window titles are

@@ -36,15 +36,17 @@ that needs it stops working: never the panel, never Steam.
 
 | What | Where | Used for |
 |---|---|---|
-| `~/.steam/steam/.cef-enable-remote-debugging` (empty file) | `invasor-installation.sh` | Steam opens CEF DevTools on port 8080 at its next start. The same entry point Decky uses. |
+| `~/.steam/steam/.cef-enable-remote-debugging` (empty file) | `invasor-installation.sh`, and `backend/invasor/cef_flag.py` each time the service starts | Steam opens CEF DevTools on port 8080 at its next start. The same entry point Decky uses. |
 | `http://127.0.0.1:8080/json` (window list) | `backend/invasor/cef.py` `list_targets` | Finding Steam's windows. Polled by `injector.Injector.run`, a loop that logs and retries on any error and never stops. |
 | `http://127.0.0.1:8080/json/version` (the browser's WebSocket URL, `…/devtools/browser/<id>`) | `cef.browser_id`, polled by `injector._round` | Telling Steam instances apart: the id is new each time Steam starts, so a new one is a Steam (re)start and modules' `on_steam_start` callbacks run. A moment without an answer keeps the last id, so it never counts as a restart. |
 | CDP over WebSocket: `Runtime.enable`, `Runtime.evaluate`, `Runtime.executionContextCreated` | `cef.CDPSession`, `injector._handle` / `_inject` | Evaluating the bundle in a window, and evaluating it again when the window reloads (a new default execution context). The WebSocket client is written with the stdlib only. |
 
 How it can fail:
-- **The file is removed** (a Steam reset or reinstall) **or the port changes:** nothing is injected. The log
-  says `waiting for Steam CEF on 127.0.0.1:8080`. Fix: run `invasor-installation.sh --install` again and restart Steam; if
-  the port moved, change `CEF_PORT` in `cef.py`.
+- **The file is removed** (a Steam reset or reinstall): the service puts it back the next time it starts (it logs
+  `recreated Steam's CEF debugging flag`), but Steam only reads it when it starts, so restart Steam. It isn't
+  checked while the service runs: if the file goes while Steam is closed, restart the service (or log in again)
+  before starting Steam. Nothing is injected meanwhile and the log says `waiting for Steam CEF on 127.0.0.1:8080`.
+- **The port changes:** same symptom. Fix: change `CEF_PORT` in `cef.py`.
 - **Steam restarts or crashes:** the window list is empty for a while, then the windows come back with new
   ids and the next round injects them again. Nothing to do.
 - **A window reloads** (Steam does it after some updates or when it changes mode): `executionContextCreated`
@@ -158,7 +160,7 @@ drive Steam's pages through port 8080. That's a property of Steam's debugging po
 
 | Steam change | What you see | What Invasor does | What to check |
 |---|---|---|---|
-| Debugging file gone / CEF port moved | No "I" anywhere | Keeps polling, logs "waiting for Steam CEF" | `invasor-installation.sh --install`, restart Steam; `CEF_PORT` |
+| Debugging file gone / CEF port moved | No "I" anywhere | Keeps polling, logs "waiting for Steam CEF"; puts the file back when the service next starts | Restart the service, then Steam; `CEF_PORT` |
 | Steam restarts or crashes | Panel gone for a moment | Re-injects on the next round | Nothing |
 | `/json/version` without a browser id | Modules' `on_steam_start` never runs (e.g. Deckico) | Nothing else changes | `cef.browser_id`; the smoke test's "Steam instance id" line |
 | A window reloads | Panel gone for a moment | Re-injects on `executionContextCreated` | Nothing |

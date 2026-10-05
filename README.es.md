@@ -37,8 +37,9 @@ instalado; si no, muestra su ayuda.
   de los módulos en `~/.config/invasor` se conservan salvo con `--purge` (el diálogo lo pregunta).
 
 Después de instalar por primera vez, reinicia Steam una vez: el instalador crea
-`~/.steam/steam/.cef-enable-remote-debugging`, igual que Decky. Al desinstalar solo se borra si lo creó
-el instalador y Decky no está instalado.
+`~/.steam/steam/.cef-enable-remote-debugging`, igual que Decky. Si algo lo borra más tarde, el servicio lo
+vuelve a crear la próxima vez que arranca (Steam necesita reiniciarse para que surta efecto). Al desinstalar solo
+se borra si lo creó Invasor, el instalador o el servicio, y Decky no está instalado.
 
 ### Paquete para otras máquinas
 ```sh
