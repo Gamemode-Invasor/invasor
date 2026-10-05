@@ -6,6 +6,7 @@ import type { SettingsSchema } from "../module-api";
 import { steamAvailable } from "../steam";
 import { ui } from "./controls";
 import { ACCENT_COLORS } from "./palette";
+import { reorderList } from "./reorder";
 
 /** One entry of core.modules (backend/invasor/modules.py listing()). */
 export interface ModuleInfo {
@@ -37,6 +38,7 @@ interface Prefs {
   panel_side: "auto" | "left" | "right";
   accent_color: string;
   handle_icon: "icon" | "letter" | "none";
+  module_order: string[];
   update_check: boolean;
   update_channel: "stable" | "beta";
 }
@@ -95,7 +97,6 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
   ]);
 
   // --- Modules
-  modules.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const moduleControls = modules.length
     ? modules.flatMap((m, i) => {
         // A change the backend rejects is undone on screen too (same below).
@@ -301,6 +302,36 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
     },
   });
 
+  // --- Module order: the backend lists the modules already in the user's order
+  const orderControls = [
+    ...reorderList(
+      modules.map((m) => ({ id: m.id, label: m.name, dim: !m.enabled || !!m.error })),
+      async (ids) => {
+        try {
+          await api.call("core", "set_pref", { key: "module_order", value: ids });
+        } catch (e) {
+          toast(`Couldn't save the order: ${(e as Error).message}`, "error");
+          throw e;
+        }
+        await deps.onModulesChanged();
+      },
+    ),
+    ui.separator(),
+    ui.button({
+      label: "Reset order",
+      onClick: async () => {
+        try {
+          await api.call("core", "set_pref", { key: "module_order", value: [] });
+          toast("Module order reset");
+        } catch (e) {
+          toast(`Couldn't reset the order: ${(e as Error).message}`, "error");
+        }
+        await deps.onModulesChanged();
+        rerender();
+      },
+    }),
+  ];
+
   // --- Updates
   const updates = document.createElement("div");
   const showUpdate = (u: UpdateInfo | null) => {
@@ -419,6 +450,7 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
   el.append(
     ui.section("Updates", [updates], { open: false }),
     ui.section("Modules", moduleControls, { open: false }),
+    ...(modules.length > 1 ? [ui.section("Module order", orderControls, { open: false })] : []),
     ui.section("Install module", [ui.info("Module zips are checked before anything is installed."), picker], { open: false }),
     ui.section("Controller", [combo], { open: false }),
     ui.section("Panel", [side, handleIcon, color], { open: false }),

@@ -44,3 +44,13 @@ export function whenMet(when: Record<string, unknown> | undefined, value: (key: 
   if (!when) return true;
   return Object.entries(when).every(([k, v]) => (Array.isArray(v) ? v.includes(value(k)) : value(k) === v));
 }
+
+/** `list` with the item at `from` moved to `to` (both clamped into the list): a new array. */
+export function moveItem<T>(list: T[], from: number, to: number): T[] {
+  if (!list.length || from < 0 || from >= list.length) return [...list];
+  const target = Math.min(list.length - 1, Math.max(0, to));
+  const out = [...list];
+  const [item] = out.splice(from, 1);
+  out.splice(target, 0, item);
+  return out;
+}

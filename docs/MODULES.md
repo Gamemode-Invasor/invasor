@@ -54,7 +54,7 @@ modules/<id>/
 | `version` | yes | Your module's version (free text, e.g. `"1.0.0"`). |
 | `author` | no | Who made it: free text, one line, up to 128 characters, e.g. `"Jane Doe"` or `"Jane Doe <jane@example.com>"`. Invasor shows only the name (never the email): "Name (version) by Jane Doe" in ⚙ Settings › Modules, and when installing the zip. Default: empty. |
 | `description` | no | One line, shown in the hint bar when the module is selected in ⚙ Settings › Modules, and when installing the zip. |
-| `order` | no | Integer, tab position (lower first). Default 100. |
+| `order` | no | Integer, default tab position (lower first, then by name). Default 100. The user can reorder the modules in ⚙ Settings › Module order, and what they choose wins over this; a module they never placed goes after the ones they did, by this value. |
 | `tab` | no | Short tab label. Default: `name`. |
 | `min_core` | no | Oldest Invasor the module works with, as `"0.1.3"` (or `"0.1.3-rc1"`). A module that needs a newer one is refused when installing and, if it's already installed, isn't loaded and ⚙ Settings says why. A release candidate counts as older than its release: `0.1.3-rc2` doesn't meet `"0.1.3"`. Invasor versions that predate this key reject it as an unknown key. Default: any. |
 | `no_qam` | no | `true`: not shown in the Quick Access (···) panel, only in the library's (for modules with nothing to do during a game). Default `false`. |

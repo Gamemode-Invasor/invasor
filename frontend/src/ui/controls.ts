@@ -85,7 +85,7 @@ export function setTopLayer(fn: (() => HTMLElement | null) | null) {
 }
 
 /** Tell the nav bar this control's hint changed (e.g. a list opened). */
-function hintsChanged(el: HTMLElement) {
+export function hintsChanged(el: HTMLElement) {
   el.dispatchEvent(new CustomEvent("invasor:hints", { bubbles: true }));
 }
 
@@ -126,7 +126,7 @@ function withHint(own: string, extra?: string) {
   return extra ? `${own} · ${extra}` : own;
 }
 
-function row(label: string, hint: string, extra?: string): { el: HTMLElement; body: HTMLElement } {
+export function row(label: string, hint: string, extra?: string): { el: HTMLElement; body: HTMLElement } {
   const el = document.createElement("div");
   el.className = "ctl";
   el.dataset.nav = "";
@@ -141,7 +141,7 @@ function row(label: string, hint: string, extra?: string): { el: HTMLElement; bo
 }
 
 /** Handle gamepad buttons on a control: return true from fn to consume the button. */
-function onButton(el: HTMLElement, fn: (button: string) => boolean | void) {
+export function onButton(el: HTMLElement, fn: (button: string) => boolean | void) {
   el.addEventListener("invasor:button", (e) => {
     if (fn(e.detail.button)) e.preventDefault();
   });

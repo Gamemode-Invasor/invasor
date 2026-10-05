@@ -70,7 +70,7 @@ se pide confirmación. Si es la misma versión, no se ofrece nada.
 
 Log: `journalctl --user -u invasor -f`. Configuración opcional:
 `~/.config/invasor/config.json` (`open_combo`, `panel_side`, `targets`, `disabled_modules`, `dev_desktop`,
-`handle_icon`, `update_check`, `update_channel`; la mayoría también se cambian desde la pestaña **⚙ Settings**).
+`handle_icon`, `module_order`, `update_check`, `update_channel`; la mayoría también se cambian desde la pestaña **⚙ Settings**).
 
 ## Uso con el mando
 La pestaña de Invasor (de color, con el icono o con la letra "I") está siempre en la biblioteca. En el menú rápido (···) solo aparece con un
@@ -99,7 +99,7 @@ Steam Deck: una Steam Deck real, o handhelds como la Legion Go virtualizados por
 InputPlumber. Para ver qué botones detecta el servicio: `python3 tools/pad.py`.
 
 **Pestaña ⚙ Settings** (siempre presente, aunque no haya módulos): activar o
-desactivar módulos, atajo para abrir el panel, lado del panel, qué muestra la pestaña (el icono, la letra "I" o nada), color de acento (también de la pestaña) y "About" (versión,
+desactivar módulos, atajo para abrir el panel, lado del panel, el orden de las pestañas de los módulos (se agarra un módulo con A y se mueve con la cruceta), qué muestra la pestaña (el icono, la letra "I" o nada), color de acento (también de la pestaña) y "About" (versión,
 estado y mandos detectados). La interfaz de invasor está en inglés; cada módulo
 elige su propio idioma.
 

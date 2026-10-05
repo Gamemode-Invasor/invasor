@@ -70,7 +70,7 @@ confirm it first. If it is the same version, nothing is offered.
 
 Log: `journalctl --user -u invasor -f`. Optional configuration:
 `~/.config/invasor/config.json` (`open_combo`, `panel_side`, `targets`, `disabled_modules`, `dev_desktop`,
-`handle_icon`, `update_check`, `update_channel`; most of them can also be changed from the **⚙ Settings** tab).
+`handle_icon`, `module_order`, `update_check`, `update_channel`; most of them can also be changed from the **⚙ Settings** tab).
 
 ## Using it with a controller
 The Invasor handle (a coloured tab with the icon, or the letter "I") is always there in the library. In Quick Access (···) it only shows while a
@@ -100,7 +100,7 @@ read: a real Steam Deck, or handhelds such as the Legion Go virtualised by
 InputPlumber. To see which buttons the service detects: `python3 tools/pad.py`.
 
 **⚙ Settings tab** (always there, even with no modules): enable or disable modules,
-the shortcut that opens the panel, the panel side, what the handle shows (the icon, the letter "I" or nothing), the accent colour (also of the handle), and "About" (version, status and
+the shortcut that opens the panel, the panel side, the order of the modules' tabs (grab a module with A, move it with the D-pad), what the handle shows (the icon, the letter "I" or nothing), the accent colour (also of the handle), and "About" (version, status and
 detected controllers). Invasor's own UI is in English; each module chooses its own
 language.
 

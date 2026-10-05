@@ -44,8 +44,8 @@ class DevDesktop(unittest.TestCase):
     def test_bad_values_fall_back_to_defaults(self):
         with self.assertLogs("invasor.config", "WARNING") as logs:
             cfg = self.load(api_port="x", panel_side="up", open_combo="L3", dev_desktop="yes",
-                            disabled_modules=[1], log_level="LOUD", qam_visible_w=5, accent_color="pink", handle_icon="image", update_channel="nightly", nope=1)
-        for key in ("accent_color", "handle_icon", "api_port", "panel_side", "open_combo", "dev_desktop", "disabled_modules", "log_level", "qam_visible_w", "update_channel"):
+                            disabled_modules=[1], log_level="LOUD", qam_visible_w=5, accent_color="pink", handle_icon="image", module_order=["a", "a"], update_channel="nightly", nope=1)
+        for key in ("accent_color", "handle_icon", "module_order", "api_port", "panel_side", "open_combo", "dev_desktop", "disabled_modules", "log_level", "qam_visible_w", "update_channel"):
             self.assertEqual(cfg[key], config.DEFAULTS[key], key)
         self.assertNotIn("nope", cfg)
         self.assertTrue(any("unknown key 'nope'" in line for line in logs.output))

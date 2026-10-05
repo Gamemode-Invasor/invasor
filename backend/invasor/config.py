@@ -40,6 +40,8 @@ DEFAULTS = {
     "accent_color": "blue",
     # What the handle shows: the Invasor icon, the letter "I", or nothing but the coloured tab (HANDLE_ICONS).
     "handle_icon": "icon",
+    # Module ids in the order the user wants their tabs; the ones not listed follow, by their module.json order.
+    "module_order": [],
     # Module ids switched off from the panel.
     "disabled_modules": [],
     # DEVELOPMENT ONLY: also inject into the desktop client window, so the UI can be
@@ -70,6 +72,14 @@ def _str_list(v):
     return isinstance(v, list) and all(isinstance(x, str) for x in v)
 
 
+MODULE_ORDER_MAX = 200
+
+
+def _id_list(v):
+    """A module order: module ids, each once."""
+    return _str_list(v) and len(v) <= MODULE_ORDER_MAX and len(set(v)) == len(v)
+
+
 # What a valid value looks like for each key. A bad one falls back to its default with
 # a warning: a typo in config.json must never stop the service from starting.
 def _target_rule(t):
@@ -94,6 +104,7 @@ VALID = {
     "accent_color": lambda v: v in ACCENT_COLORS,
     "handle_icon": lambda v: v in HANDLE_ICONS,
     "disabled_modules": _str_list,
+    "module_order": _id_list,
     "dev_desktop": lambda v: isinstance(v, bool),
     "qam_visible_w": lambda v: v is None or (_is_int(v) and 200 <= v <= 4000),
     "update_check": lambda v: isinstance(v, bool),

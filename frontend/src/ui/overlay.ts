@@ -340,7 +340,6 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       return false;
     }
     const keep = tabs.activeId();
-    list.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
     const before = modules;
     modules = new Map();
     for (const m of list) {

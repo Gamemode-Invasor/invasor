@@ -531,4 +531,8 @@ class ModuleManager:
                     "no_qam": m.get("no_qam", False),
                     "forms": m.get("forms", {}),
                 })
+            # The user's order first; the modules it doesn't mention follow by their module.json order.
+            rank = {mid: i for i, mid in enumerate(self.cfg.get("module_order", []))}
+            out.sort(key=lambda m: (0, rank[m["id"]], 0, "") if m["id"] in rank
+                     else (1, m["order"], m["name"].lower(), m["id"]))
             return out

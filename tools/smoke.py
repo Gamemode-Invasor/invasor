@@ -241,6 +241,30 @@ class Smoke:
             await self.unfold("Modules")
             await self.goto("Rescan modules", limit=60)
             await self.press("A", wait=3.0)
+            # Reordering (two modules are listed now): grab Smoke Demo, move it up, drop it.
+            def saved_order():
+                return json.loads(CONFIG_FILE.read_text()).get("module_order") if CONFIG_FILE.exists() else None
+
+            await self.unfold("Module order")
+            st = await self.goto("Smoke Demo")
+            st = await self.press("A", wait=0.3)
+            self.check("reorder: A grabs the row and the hint says how to drop it", "drop" in await self.js(f"{SR}.querySelector('.panel .hints').textContent"), st)
+            await self.press("UP", wait=0.3)
+            st = await self.state()
+            self.check("reorder: the ring follows the moved row", st["label"] == "Smoke Demo", st)
+            await self.press("B", wait=0.3)
+            self.check("reorder: B puts it back and saves nothing", not saved_order(), saved_order())
+            await self.press("A", wait=0.3)
+            await self.press("UP", wait=0.3)
+            await self.press("A", wait=1.0)
+            st, body = await self.api("modules")
+            ids = [m["id"] for m in body["result"]] if st == 200 else body
+            self.check("reorder: dropping saves it and the module list follows", saved_order() and saved_order()[0] == "smoke-demo" and ids[0] == "smoke-demo", (saved_order(), ids))
+            await self.goto("Reset order", limit=20)
+            await self.press("A", wait=1.5)
+            self.check("reorder: Reset order forgets it", not saved_order(), saved_order())
+            await self.unfold("Modules")
+            await self.goto("Rescan modules", limit=60)
             st = await self.goto("Uninstall Smoke Demo", limit=60, button="UP")  # it's above Rescan
             st = await self.press("A", wait=0.3)
             self.check("uninstall: a dialog that starts on Cancel", st["modal"] and st["label"] == "Cancel", st)
