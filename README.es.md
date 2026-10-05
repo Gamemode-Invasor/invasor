@@ -70,10 +70,10 @@ se pide confirmación. Si es la misma versión, no se ofrece nada.
 
 Log: `journalctl --user -u invasor -f`. Configuración opcional:
 `~/.config/invasor/config.json` (`open_combo`, `panel_side`, `targets`, `disabled_modules`, `dev_desktop`,
-`update_check`, `update_channel`; los dos primeros y los dos últimos también se cambian desde la pestaña **⚙ Settings**).
+`handle_icon`, `update_check`, `update_channel`; la mayoría también se cambian desde la pestaña **⚙ Settings**).
 
 ## Uso con el mando
-La pestaña "I" está siempre en la biblioteca. En el menú rápido (···) solo aparece con un
+La pestaña de Invasor (de color, con el icono o con la letra "I") está siempre en la biblioteca. En el menú rápido (···) solo aparece con un
 juego en marcha, y el panel de ahí omite los módulos que no pintan nada durante la partida
 (`"no_qam": true`, p. ej. Artwork).
 
@@ -92,14 +92,14 @@ El panel ocupa el 40 % del ancho de la pantalla en la biblioteca (en Quick Acces
 sombras arriba y abajo indican que hay más por ver.
 
 Mientras el panel está abierto, Steam no recibe ninguna pulsación del mando. También
-se puede abrir con la pestaña azul "I", con el dedo o con F10.
+se puede abrir con la pestaña azul, con el dedo o con F10.
 
 Se leen tanto los mandos normales (evdev: DualSense, Xbox…) como los de protocolo
 Steam Deck: una Steam Deck real, o handhelds como la Legion Go virtualizados por
 InputPlumber. Para ver qué botones detecta el servicio: `python3 tools/pad.py`.
 
 **Pestaña ⚙ Settings** (siempre presente, aunque no haya módulos): activar o
-desactivar módulos, atajo para abrir el panel, lado del panel, color de acento (también de la pestaña "I") y "About" (versión,
+desactivar módulos, atajo para abrir el panel, lado del panel, qué muestra la pestaña (el icono, la letra "I" o nada), color de acento (también de la pestaña) y "About" (versión,
 estado y mandos detectados). La interfaz de invasor está en inglés; cada módulo
 elige su propio idioma.
 

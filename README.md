@@ -70,10 +70,10 @@ confirm it first. If it is the same version, nothing is offered.
 
 Log: `journalctl --user -u invasor -f`. Optional configuration:
 `~/.config/invasor/config.json` (`open_combo`, `panel_side`, `targets`, `disabled_modules`, `dev_desktop`,
-`update_check`, `update_channel`; the first two and the last two can also be changed from the **⚙ Settings** tab).
+`handle_icon`, `update_check`, `update_channel`; most of them can also be changed from the **⚙ Settings** tab).
 
 ## Using it with a controller
-The "I" handle is always there in the library. In Quick Access (···) it only shows while a
+The Invasor handle (a coloured tab with the icon, or the letter "I") is always there in the library. In Quick Access (···) it only shows while a
 game is running, and the panel there leaves out modules that have nothing to do in-game
 (`"no_qam": true`, e.g. Artwork).
 
@@ -92,7 +92,7 @@ The panel takes 40% of the screen width in the Library (in Quick Access, the vis
 top and bottom show there's more to see.
 
 While the panel is open, Steam gets none of the panel's buttons (its own Steam and ···
-buttons always go through). It can also be opened with the blue "I" tab, by touch, or
+buttons always go through). It can also be opened with the blue tab, by touch, or
 with F10.
 
 Both regular controllers (evdev: DualSense, Xbox…) and Steam Deck-protocol ones are
@@ -100,7 +100,7 @@ read: a real Steam Deck, or handhelds such as the Legion Go virtualised by
 InputPlumber. To see which buttons the service detects: `python3 tools/pad.py`.
 
 **⚙ Settings tab** (always there, even with no modules): enable or disable modules,
-the shortcut that opens the panel, the panel side, the accent colour (also of the "I" handle), and "About" (version, status and
+the shortcut that opens the panel, the panel side, what the handle shows (the icon, the letter "I" or nothing), the accent colour (also of the handle), and "About" (version, status and
 detected controllers). Invasor's own UI is in English; each module chooses its own
 language.
 

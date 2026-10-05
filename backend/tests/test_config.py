@@ -44,8 +44,8 @@ class DevDesktop(unittest.TestCase):
     def test_bad_values_fall_back_to_defaults(self):
         with self.assertLogs("invasor.config", "WARNING") as logs:
             cfg = self.load(api_port="x", panel_side="up", open_combo="L3", dev_desktop="yes",
-                            disabled_modules=[1], log_level="LOUD", qam_visible_w=5, accent_color="pink", update_channel="nightly", nope=1)
-        for key in ("accent_color", "api_port", "panel_side", "open_combo", "dev_desktop", "disabled_modules", "log_level", "qam_visible_w", "update_channel"):
+                            disabled_modules=[1], log_level="LOUD", qam_visible_w=5, accent_color="pink", handle_icon="image", update_channel="nightly", nope=1)
+        for key in ("accent_color", "handle_icon", "api_port", "panel_side", "open_combo", "dev_desktop", "disabled_modules", "log_level", "qam_visible_w", "update_channel"):
             self.assertEqual(cfg[key], config.DEFAULTS[key], key)
         self.assertNotIn("nope", cfg)
         self.assertTrue(any("unknown key 'nope'" in line for line in logs.output))
@@ -59,9 +59,9 @@ class DevDesktop(unittest.TestCase):
         self.assertEqual(self.load(targets=ok)["targets"], ok)
 
     def test_good_values_are_kept(self):
-        cfg = self.load(api_port=40000, panel_side="left", open_combo=["L4", "R4"], qam_visible_w=348)
-        self.assertEqual((cfg["api_port"], cfg["panel_side"], cfg["open_combo"], cfg["qam_visible_w"]),
-                         (40000, "left", ["L4", "R4"], 348))
+        cfg = self.load(api_port=40000, panel_side="left", open_combo=["L4", "R4"], qam_visible_w=348, handle_icon="none")
+        self.assertEqual((cfg["api_port"], cfg["panel_side"], cfg["open_combo"], cfg["qam_visible_w"], cfg["handle_icon"]),
+                         (40000, "left", ["L4", "R4"], 348, "none"))
 
     def test_not_an_object(self):
         self.file.write_text("[1, 2]")

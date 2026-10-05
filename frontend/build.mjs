@@ -26,7 +26,7 @@ const common = {
 const core = {
   ...common,
   entryPoints: [join(here, "src/main.ts")],
-  loader: { ".css": "text" },
+  loader: { ".css": "text", ".svg": "text" },
   outfile: join(here, "dist/invasor.js"),
 };
 

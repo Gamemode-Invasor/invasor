@@ -38,6 +38,8 @@ DEFAULTS = {
     "panel_side": "auto",
     # Accent colour of the overlay and its "I" handle (one of ACCENT_COLORS).
     "accent_color": "blue",
+    # What the handle shows: the Invasor icon, the letter "I", or nothing but the coloured tab (HANDLE_ICONS).
+    "handle_icon": "icon",
     # Module ids switched off from the panel.
     "disabled_modules": [],
     # DEVELOPMENT ONLY: also inject into the desktop client window, so the UI can be
@@ -55,6 +57,7 @@ DEFAULTS = {
 
 PANEL_SIDES = ("auto", "left", "right")
 UPDATE_CHANNELS = ("stable", "beta")
+HANDLE_ICONS = ("icon", "letter", "none")
 ACCENT_COLORS = ("blue", "yellow", "green", "red", "purple", "white")
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 
@@ -89,6 +92,7 @@ VALID = {
     "open_combo": lambda v: _str_list(v) and bool(v),  # button names are checked by gamepad.parse_combo
     "panel_side": lambda v: v in PANEL_SIDES,
     "accent_color": lambda v: v in ACCENT_COLORS,
+    "handle_icon": lambda v: v in HANDLE_ICONS,
     "disabled_modules": _str_list,
     "dev_desktop": lambda v: isinstance(v, bool),
     "qam_visible_w": lambda v: v is None or (_is_int(v) and 200 <= v <= 4000),

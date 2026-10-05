@@ -96,6 +96,12 @@ button:focus-visible {
   font-weight: 700;
   box-shadow: 0 0 12px rgba(0, 0, 0, 0.6);
 }
+.handle svg {
+  display: block;
+  width: 20px;
+  height: 20px;
+  margin: auto;
+}
 .handle:hover,
 .handle:focus-visible {
   filter: brightness(1.15);

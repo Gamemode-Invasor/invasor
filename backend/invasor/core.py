@@ -135,6 +135,7 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
             "open_combo": sorted(watcher.combo),
             "panel_side": cfg.get("panel_side", "auto"),
             "accent_color": cfg.get("accent_color", "blue"),
+            "handle_icon": cfg.get("handle_icon", "icon"),
             "update_check": cfg.get("update_check", True),
             "update_channel": cfg.get("update_channel", "stable"),
             # Learned, not user-set: visible width of the Quick Access column (see overlay.ts).
@@ -163,6 +164,9 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
         elif key == "accent_color":
             if value not in config.ACCENT_COLORS:
                 raise InvalidArgument(f"invalid accent_color {value!r}")
+        elif key == "handle_icon":
+            if value not in config.HANDLE_ICONS:
+                raise InvalidArgument(f"invalid handle_icon {value!r}")
         elif key == "panel_side":
             if value not in config.PANEL_SIDES:
                 raise InvalidArgument(f"invalid panel_side {value!r}")

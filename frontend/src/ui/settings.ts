@@ -36,6 +36,7 @@ interface Prefs {
   open_combo: string[];
   panel_side: "auto" | "left" | "right";
   accent_color: string;
+  handle_icon: "icon" | "letter" | "none";
   update_check: boolean;
   update_channel: "stable" | "beta";
 }
@@ -68,6 +69,8 @@ export interface SettingsDeps {
   onPanelSide(side: Prefs["panel_side"]): void;
   /** Accent colour preference changed: apply it now. */
   onAccentColor(name: string): void;
+  /** Handle icon preference changed: apply it now. */
+  onHandleIcon(mode: string): void;
 }
 
 // Combos offered in the UI. L4/R4/L5/R5 only exist on Steam Deck-protocol pads (Deck, Legion Go…).
@@ -258,6 +261,28 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
     },
   });
 
+  let savedHandle: string = prefs.handle_icon ?? "icon";
+  const handleIcon = ui.radio({
+    label: "Handle icon",
+    value: savedHandle,
+    options: [
+      { value: "icon", label: "Icon" },
+      { value: "letter", label: "Letter I" },
+      { value: "none", label: "None" },
+    ],
+    onChange: async (value) => {
+      deps.onHandleIcon(value);
+      try {
+        await api.call("core", "set_pref", { key: "handle_icon", value });
+        savedHandle = value;
+      } catch (e) {
+        handleIcon.set(savedHandle);
+        deps.onHandleIcon(savedHandle);
+        toast(`Couldn't save: ${(e as Error).message}`, "error");
+      }
+    },
+  });
+
   let savedColor = prefs.accent_color;
   const color = ui.radio({
     label: "Accent color",
@@ -396,7 +421,7 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
     ui.section("Modules", moduleControls, { open: false }),
     ui.section("Install module", [ui.info("Module zips are checked before anything is installed."), picker], { open: false }),
     ui.section("Controller", [combo], { open: false }),
-    ui.section("Panel", [side, color], { open: false }),
+    ui.section("Panel", [side, handleIcon, color], { open: false }),
     ui.section("About", [about, ui.button({ label: "Refresh", onClick: () => void refreshAbout() })], { open: false }),
   );
 }

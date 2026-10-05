@@ -564,6 +564,21 @@ class Smoke:
         changed = (CONFIG_FILE.read_text() if CONFIG_FILE.exists() else "") != before_cfg
         self.check("shortcut: changing it is saved", st["value"] != before["value"] and changed, st)
         await self.press(undo, wait=0.4)
+        # The handle: icon by default, then the letter or nothing from Settings > Panel.
+        handle = f"{SR}.querySelector('.handle')"
+        st = await self.unfold("Panel")
+        st = await self.goto("Handle icon")
+        self.check("handle: shows the icon by default", await self.js(f"!!{handle}.querySelector('svg')"), st)
+        before_cfg = CONFIG_FILE.read_text() if CONFIG_FILE.exists() else ""
+        before, st, undo = await self.nudge()
+        await asyncio.sleep(0.4)
+        mode = await self.js(f"{handle}.dataset.mode")
+        text = await self.js(f"{handle}.textContent.trim()")
+        saved = (CONFIG_FILE.read_text() if CONFIG_FILE.exists() else "") != before_cfg
+        self.check("handle: changing it is applied at once and saved",
+                   mode != "icon" and saved and (text == "I" if mode == "letter" else text == ""), (mode, text, saved))
+        await self.press(undo, wait=0.4)
+        self.check("handle: undoing brings the icon back", await self.js(f"!!{handle}.querySelector('svg')"), st)
         st = await self.goto("About")
         await self.press("A", wait=1.0)
         st = await self.state()

@@ -329,13 +329,15 @@ class Background(unittest.TestCase):
 
     def test_unexpected_errors_never_end_the_task(self):
         # A task that ends stops the whole service: only the log hears about it.
-        for failure in (OSError("disk full"), TimeoutError("steam"), RuntimeError("bug")):
-            with self.subTest(failure=repr(failure)):
-                self.steam.notify.side_effect = failure
-                self.assertEqual(self.run_once(self.up(), {}, self.steam), updater.RETRY_NO_NET)
-        self.steam.notify.side_effect = None
-        patch(self, "invasor.updater.JsonStore", mock.Mock(side_effect=OSError("read-only")))
-        self.assertEqual(self.run_once(self.up(), {}, self.steam), updater.RETRY_NO_NET)
+        with self.assertLogs("invasor.updater", "ERROR") as logs:  # also keeps the tracebacks off the test output
+            for failure in (OSError("disk full"), TimeoutError("steam"), RuntimeError("bug")):
+                with self.subTest(failure=repr(failure)):
+                    self.steam.notify.side_effect = failure
+                    self.assertEqual(self.run_once(self.up(), {}, self.steam), updater.RETRY_NO_NET)
+            self.steam.notify.side_effect = None
+            patch(self, "invasor.updater.JsonStore", mock.Mock(side_effect=OSError("read-only")))
+            self.assertEqual(self.run_once(self.up(), {}, self.steam), updater.RETRY_NO_NET)
+        self.assertEqual(len(logs.records), 4)
 
     def test_offline_retries_in_an_hour(self):
         up = updater.Updater("0.1.0", fetch=mock.Mock(side_effect=OSError("offline")))
