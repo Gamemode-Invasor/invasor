@@ -8,9 +8,11 @@ import math
 import re
 from decimal import Decimal
 
+from .version import parse_version
+
 API_VERSION = 1
 
-MANIFEST_KEYS = {"api", "name", "version", "description", "author", "order", "tab", "settings", "forms", "no_qam"}
+MANIFEST_KEYS = {"api", "name", "version", "description", "author", "order", "tab", "settings", "forms", "no_qam", "min_core"}
 AUTHOR_MAX = 128
 KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
@@ -292,6 +294,18 @@ def _condition(item, when, path, fields):
     return out
 
 
+def core_problem(manifest, core_version):
+    """Why this Invasor can't run the module (its min_core is newer), or None. A release
+    candidate is older than its release: 0.1.3-rc2 doesn't meet min_core 0.1.3."""
+    need = manifest.get("min_core")
+    if need is None:
+        return None
+    have = parse_version(core_version)
+    if have is None or have >= parse_version(need):
+        return None  # an unparseable core version (a dev build) is never blamed
+    return f"needs Invasor {need} or newer (this is {core_version})"
+
+
 def author_name(text):
     """What the UI shows of module.json "author": "Name <email>" -> "Name"."""
     text = text.strip()
@@ -317,6 +331,9 @@ def parse_manifest(data, module_id):
     no_qam = data.get("no_qam", False)
     if not isinstance(no_qam, bool):
         _fail("no_qam", "must be true or false")
+    min_core = data.get("min_core")
+    if min_core is not None and (not isinstance(min_core, str) or min_core.startswith("v") or parse_version(min_core) is None):
+        _fail("min_core", "must be a version like 0.1.3 (or 0.1.3-rc1)")
     tree, fields = parse_settings(data.get("settings"))
     forms, form_fields = parse_forms(data.get("forms"))
     name = _str(data, "name", "", required=True)
@@ -326,6 +343,8 @@ def parse_manifest(data, module_id):
     return {
         "id": module_id,
         "api": api,
+        # Oldest Invasor this module works with (see core_problem), or None.
+        "min_core": min_core,
         "name": name,
         "version": _str(data, "version", "", required=True),
         "description": _str(data, "description", "", default=""),

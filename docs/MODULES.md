@@ -56,6 +56,7 @@ modules/<id>/
 | `description` | no | One line, shown in the hint bar when the module is selected in ⚙ Settings › Modules, and when installing the zip. |
 | `order` | no | Integer, tab position (lower first). Default 100. |
 | `tab` | no | Short tab label. Default: `name`. |
+| `min_core` | no | Oldest Invasor the module works with, as `"0.1.3"` (or `"0.1.3-rc1"`). A module that needs a newer one is refused when installing and, if it's already installed, isn't loaded and ⚙ Settings says why. A release candidate counts as older than its release: `0.1.3-rc2` doesn't meet `"0.1.3"`. Invasor versions that predate this key reject it as an unknown key. Default: any. |
 | `no_qam` | no | `true`: not shown in the Quick Access (···) panel, only in the library's (for modules with nothing to do during a game). Default `false`. |
 | `settings` | no | The settings form (below). |
 | `forms` | no | Named forms whose values the module stores itself (section 3, at the end). |

@@ -20,7 +20,7 @@ import shutil
 import sys
 import threading
 
-from . import config, schema, tomlio
+from . import __version__, config, schema, tomlio
 from .schema import Unavailable
 from .storage import JsonStore
 
@@ -300,6 +300,12 @@ class ModuleManager:
             log.error("module %s: invalid module.json: %s", d.name, e)
             self.manifests[d.name] = {"id": d.name, "name": d.name, "dir": d, "source": source,
                                       "error": f"invalid module.json: {e}"}
+            return
+        problem = schema.core_problem(manifest, __version__)
+        if problem:
+            log.error("module %s: %s", d.name, problem)
+            self.manifests[d.name] = {"id": d.name, "name": manifest["name"], "dir": d, "source": source,
+                                      "error": problem}
             return
         manifest["dir"] = d
         manifest["source"] = source

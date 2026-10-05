@@ -55,6 +55,8 @@ class Modules(unittest.TestCase):
         self.add("_template", "raise RuntimeError('must never load')\n")
         self.add("oldapi", "", raw={"name": "Old"})
         self.add("typo", "", raw={**manifest("Typo"), "setings": []})
+        self.add("toonew", "METHODS = {}\n", raw={**manifest("Too new"), "min_core": "99.0.0"})
+        self.add("fits", "METHODS = {}\n", raw={**manifest("Fits"), "min_core": "0.0.1"})
         (self.mods / "core").mkdir()
         (self.mods / "core" / "module.json").write_text("{}")
         (self.mods / "good" / "dist").mkdir()
@@ -105,6 +107,14 @@ class Modules(unittest.TestCase):
         self.assertIsNone(listing["good"]["error"])
         self.manager.set_enabled("oldapi", True)
         self.assertNotIn("oldapi", self.manager.registry)
+
+    def test_min_core_newer_than_the_core_is_reported_not_loaded(self):
+        listing = self.listing()
+        self.assertIn("needs Invasor 99.0.0 or newer", listing["toonew"]["error"])
+        self.assertIsNone(listing["fits"]["error"])
+        self.manager.set_enabled("toonew", True)
+        self.assertNotIn("toonew", self.manager.registry)
+        self.assertIn("fits", self.manager.registry)
 
     def test_templates_and_reserved_ids_are_skipped(self):
         self.assertNotIn("_template", self.manager.manifests)

@@ -5,6 +5,7 @@ installing or distributing them:
     python3 tools/check_module.py modules/demo modules/_example
 
 - module.json: valid, with the same rules the service applies (backend/invasor/schema.py);
+  warns if its min_core is newer than this core;
 - ui.ts: built (dist/ui.js exists and isn't older than ui.ts);
 - backend.py: imports, METHODS is a {name: function} dict, setup/teardown callable.
   setup() isn't called: nothing of the module runs besides its top-level code;
@@ -22,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.dont_write_bytecode = True  # leave no __pycache__ in the modules checked
 sys.path.insert(0, str(ROOT / "backend"))
 
-from invasor import schema  # noqa: E402
+from invasor import __version__, schema  # noqa: E402
 
 
 def check(d: Path):
@@ -37,6 +38,10 @@ def check(d: Path):
     except ValueError as e:
         errors.append(f"module.json: {e}")
         manifest = None
+
+    problem = schema.core_problem(manifest, __version__) if manifest else None
+    if problem:
+        warnings.append(f"module.json min_core: the module {problem}")
 
     ui_ts, ui_js = d / "ui.ts", d / "dist" / "ui.js"
     if ui_ts.exists():

@@ -101,6 +101,7 @@ class Zips(unittest.TestCase):
             "bad manifest": (lambda: self.zip("m.zip", {"hello/module.json": {"api": 2, "name": "H", "version": "1"}}), "api"),
             "bad json": (lambda: self.zip("j.zip", {"hello/module.json": "{nope"}), "valid JSON"),
             "bad id": (lambda: self.zip("i.zip", {"Hello World/module.json": MANIFEST}), "invalid module id"),
+            "newer core": (lambda: self.zip("c.zip", {"hello/module.json": {**MANIFEST, "min_core": "99.0.0"}}), "needs Invasor 99.0.0 or newer"),
             "reserved": (lambda: self.zip("demo.zip", {"demo/module.json": MANIFEST}), "reserved"),
             "unbuilt ui": (lambda: self.good("u.zip", **{"hello/ui.ts": "x"}), "dist/ui.js"),
             "broken backend": (lambda: self.good("b.zip", backend="raise RuntimeError('boom')\n"), "boom"),
@@ -111,6 +112,10 @@ class Zips(unittest.TestCase):
             with self.subTest(case=label), self.assertRaisesRegex(InvalidArgument, msg):
                 install.install(make(), {"core", "demo"})
         self.assertEqual([p for p in self.user.iterdir()] if self.user.exists() else [], [])
+
+    def test_min_core_met_installs(self):
+        p = self.zip("ok.zip", {"hello/module.json": {**MANIFEST, "min_core": "0.0.1"}, "hello/backend.py": "METHODS = {}\n"})
+        self.assertEqual(install.install(p, {"core"}), "hello")
 
     def test_size_limits(self):
         patch(self, "invasor.install.MAX_UNPACKED_BYTES", 100)

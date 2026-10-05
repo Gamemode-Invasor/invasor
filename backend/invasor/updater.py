@@ -26,6 +26,7 @@ import urllib.request
 from pathlib import Path
 
 from . import __version__, config
+from .version import VERSION_RE, parse_version  # noqa: F401 (re-exported)
 from .schema import InvalidArgument, Unavailable
 from .storage import JsonStore
 
@@ -47,7 +48,6 @@ RETRY_NO_NET = 3600
 RETRY_NO_STEAM = 900
 WHEN_OFF = 3600  # how often to see whether the user switched checking back on
 
-VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:-rc(\d+))?$")
 SHA_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 INIT_VERSION_RE = re.compile(r'^__version__ = "(.*)"$', re.M)
 
@@ -58,17 +58,6 @@ UPDATE_SCRIPT = r"""
 bash "$1/invasor-installation.sh" --install || echo "invasor update: the installer failed" >&2
 rm -rf "$2"
 """
-
-
-def parse_version(text):
-    """A sortable key for X.Y.Z or X.Y.Z-rcN (optional leading v), else None: anything else
-    is never offered. (X, Y, Z, 1, 0) is a stable release and (X, Y, Z, 0, N) its Nth
-    release candidate, so 0.1.2-rc1 < 0.1.2-rc10 < 0.1.2 < 0.1.3-rc1."""
-    m = VERSION_RE.match(text) if isinstance(text, str) else None
-    if not m:
-        return None
-    x, y, z, rc = m.groups()
-    return (int(x), int(y), int(z), 1, 0) if rc is None else (int(x), int(y), int(z), 0, int(rc))
 
 
 def _opener():

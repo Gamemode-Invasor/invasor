@@ -73,6 +73,27 @@ class Settings(unittest.TestCase):
         self.assertEqual(m["fields"]["g"]["max_length"], 4)
         self.assertEqual(m["fields"]["a"].get("hint"), None)
 
+    def test_min_core(self):
+        base = {"api": 1, "name": "M", "version": "1"}
+        self.assertIsNone(schema.parse_manifest(base, "m")["min_core"])
+        m = schema.parse_manifest({**base, "min_core": "0.1.3"}, "m")
+        self.assertEqual(m["min_core"], "0.1.3")
+        for bad in ("v0.1.3", "1.2", "x", "", 1, ["0.1.3"], "0.1.3-beta"):
+            with self.subTest(bad=bad), self.assertRaisesRegex(schema.SchemaError, "min_core"):
+                schema.parse_manifest({**base, "min_core": bad}, "m")
+
+    def test_core_problem(self):
+        need = lambda v: {"min_core": v}  # noqa: E731
+        self.assertIsNone(schema.core_problem({"min_core": None}, "0.1.0"))
+        self.assertIsNone(schema.core_problem({}, "0.1.0"))
+        self.assertIsNone(schema.core_problem(need("0.1.3"), "0.1.3"))
+        self.assertIsNone(schema.core_problem(need("0.1.3"), "0.2.0"))
+        self.assertIsNone(schema.core_problem(need("0.1.3-rc1"), "0.1.3-rc2"))
+        self.assertIsNone(schema.core_problem(need("0.1.3"), "dev"))
+        self.assertEqual(schema.core_problem(need("0.1.3"), "0.1.2"), "needs Invasor 0.1.3 or newer (this is 0.1.2)")
+        self.assertIn("0.1.3-rc2", schema.core_problem(need("0.1.3"), "0.1.3-rc2"))  # an rc is older than its release
+        self.assertIn("needs", schema.core_problem(need("0.10.0"), "0.9.9"))
+
     def test_password_errors_never_carry_the_value(self):
         f = parse([field(key="p", type="password", default="", max_length=4)])["fields"]["p"]
         for bad in (12345, ["hunter2"], None):

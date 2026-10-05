@@ -5,7 +5,7 @@ Everything is checked by the core before a module can run:
   no symlinks;
 - exactly one module: its files in a single top-level folder named after its id
   (like modules/<id>/; tools/pack_module.py makes such zips);
-- module.json valid for this Invasor (schema.parse_manifest, module API);
+- module.json valid for this Invasor (schema.parse_manifest, module API, min_core);
 - an id that isn't reserved ("core" or a module shipped with Invasor);
 - a built UI (dist/ui.js) if it has ui.ts — nothing is compiled on the console;
 - backend.py imports cleanly, in a separate process (invasor.checkmod), setup() not run.
@@ -22,7 +22,7 @@ import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
 
-from . import config, schema
+from . import __version__, config, schema
 from .schema import InvalidArgument, Unavailable
 
 MAX_ZIP_BYTES = 64 << 20
@@ -179,6 +179,9 @@ def _unpack(zip_path, reserved):
             manifest = schema.parse_manifest(raw, mid)
         except schema.SchemaError as e:
             raise InvalidArgument(f"module.json: {e}") from None
+        problem = schema.core_problem(manifest, __version__)
+        if problem:
+            raise InvalidArgument(f"{manifest['name']} {problem}")
         if mid in reserved:
             raise InvalidArgument(f"{mid!r} is reserved (it's part of Invasor)")
         if (root / "ui.ts").exists() and not (root / "dist" / "ui.js").is_file():
