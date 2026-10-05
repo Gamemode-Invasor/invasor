@@ -64,13 +64,43 @@ class Settings(unittest.TestCase):
                 field(key="e", type="radio", options=[{"value": "x", "label": "X"}, {"value": 2, "label": "2"}], default=2),
                 field(key="f", type="select", options=[{"value": True, "label": "Yes"}], default=True),
                 field(key="g", type="text", default="", max_length=4, placeholder="…"),
+                field(key="h", type="password", default="", max_length=8),
             ]},
         ])
-        self.assertEqual(list(m["fields"]), list("abcdefg"))
+        self.assertEqual(list(m["fields"]), list("abcdefgh"))
         self.assertEqual(m["settings"][3]["section"], "S")
         self.assertFalse(m["settings"][3]["open"])
         self.assertEqual(m["fields"]["g"]["max_length"], 4)
         self.assertEqual(m["fields"]["a"].get("hint"), None)
+
+    def test_min_core(self):
+        base = {"api": 1, "name": "M", "version": "1"}
+        self.assertIsNone(schema.parse_manifest(base, "m")["min_core"])
+        m = schema.parse_manifest({**base, "min_core": "0.1.3"}, "m")
+        self.assertEqual(m["min_core"], "0.1.3")
+        for bad in ("v0.1.3", "1.2", "x", "", 1, ["0.1.3"], "0.1.3-beta"):
+            with self.subTest(bad=bad), self.assertRaisesRegex(schema.SchemaError, "min_core"):
+                schema.parse_manifest({**base, "min_core": bad}, "m")
+
+    def test_core_problem(self):
+        need = lambda v: {"min_core": v}  # noqa: E731
+        self.assertIsNone(schema.core_problem({"min_core": None}, "0.1.0"))
+        self.assertIsNone(schema.core_problem({}, "0.1.0"))
+        self.assertIsNone(schema.core_problem(need("0.1.3"), "0.1.3"))
+        self.assertIsNone(schema.core_problem(need("0.1.3"), "0.2.0"))
+        self.assertIsNone(schema.core_problem(need("0.1.3-rc1"), "0.1.3-rc2"))
+        self.assertIsNone(schema.core_problem(need("0.1.3"), "dev"))
+        self.assertEqual(schema.core_problem(need("0.1.3"), "0.1.2"), "needs Invasor 0.1.3 or newer (this is 0.1.2)")
+        self.assertIn("0.1.3-rc2", schema.core_problem(need("0.1.3"), "0.1.3-rc2"))  # an rc is older than its release
+        self.assertIn("needs", schema.core_problem(need("0.10.0"), "0.9.9"))
+
+    def test_password_errors_never_carry_the_value(self):
+        f = parse([field(key="p", type="password", default="", max_length=4)])["fields"]["p"]
+        for bad in (12345, ["hunter2"], None):
+            with self.assertRaises(schema.InvalidArgument) as cm:
+                schema.coerce(f, bad)
+            self.assertNotIn(str(bad), str(cm.exception))
+        self.assertEqual(schema.coerce(f, "abcd"), "abcd")
 
     def test_field_errors(self):
         cases = [
@@ -86,6 +116,9 @@ class Settings(unittest.TestCase):
             ([field(type="select", options=[{"value": 1, "label": "a"}, {"value": 1, "label": "b"}], default=1)], "duplicate value"),
             ([field(type="select", options=[{"value": 1, "label": "a"}], default=True)], "not one of the options"),
             ([field(type="text", default="toolong", max_length=3)], "longer than"),
+            ([field(type="password", default="hunter2")], "must be empty"),
+            ([field(type="password", default="", max_length=0)], r"\.max_length"),
+            ([field(key="p", type="password", default=""), field(key="t", type="toggle", default=True, when={"p": "x"})], "can't be a condition"),
             ([field(type="toggle", default=True, mni=1)], "unknown key"),
             ([field(type="toggle", default=True), field(type="toggle", default=True)], "duplicate key"),
             ([field(key="1x", type="toggle", default=True)], r"\.key"),

@@ -3,7 +3,7 @@
 
     python3 tools/pack_module.py <module folder> [--out <dir>]
 
-The folder's name is the module id (e.g. invasor-ducky/ducky). Steps:
+The folder's name is the module id (e.g. invasor-patito/patito). Steps:
 1. typecheck and build its ui.ts (if any) with this core's kit -> <module>/dist/ui.js;
 2. tools/check_module.py (module.json, backend import, the module's own tests);
 3. zip it as <id>/… with only what the console needs: module.json, the Python files

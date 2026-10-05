@@ -6,6 +6,7 @@ import type { SettingsSchema } from "../module-api";
 import { steamAvailable } from "../steam";
 import { ui } from "./controls";
 import { ACCENT_COLORS } from "./palette";
+import { reorderList } from "./reorder";
 
 /** One entry of core.modules (backend/invasor/modules.py listing()). */
 export interface ModuleInfo {
@@ -36,6 +37,8 @@ interface Prefs {
   open_combo: string[];
   panel_side: "auto" | "left" | "right";
   accent_color: string;
+  handle_icon: "icon" | "letter" | "none";
+  module_order: string[];
   update_check: boolean;
   update_channel: "stable" | "beta";
 }
@@ -46,6 +49,8 @@ interface UpdateInfo {
   current: string;
   latest: string | null;
   available: boolean;
+  /** `available` is the stable version, older than this pre-release: the way back. */
+  downgrade: boolean;
   checked: boolean;
   notes: string;
 }
@@ -66,6 +71,8 @@ export interface SettingsDeps {
   onPanelSide(side: Prefs["panel_side"]): void;
   /** Accent colour preference changed: apply it now. */
   onAccentColor(name: string): void;
+  /** Handle icon preference changed: apply it now. */
+  onHandleIcon(mode: string): void;
 }
 
 // Combos offered in the UI. L4/R4/L5/R5 only exist on Steam Deck-protocol pads (Deck, Legion Go…).
@@ -90,7 +97,6 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
   ]);
 
   // --- Modules
-  modules.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   const moduleControls = modules.length
     ? modules.flatMap((m, i) => {
         // A change the backend rejects is undone on screen too (same below).
@@ -256,6 +262,28 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
     },
   });
 
+  let savedHandle: string = prefs.handle_icon ?? "icon";
+  const handleIcon = ui.radio({
+    label: "Handle icon",
+    value: savedHandle,
+    options: [
+      { value: "icon", label: "Icon" },
+      { value: "letter", label: "Letter I" },
+      { value: "none", label: "None" },
+    ],
+    onChange: async (value) => {
+      deps.onHandleIcon(value);
+      try {
+        await api.call("core", "set_pref", { key: "handle_icon", value });
+        savedHandle = value;
+      } catch (e) {
+        handleIcon.set(savedHandle);
+        deps.onHandleIcon(savedHandle);
+        toast(`Couldn't save: ${(e as Error).message}`, "error");
+      }
+    },
+  });
+
   let savedColor = prefs.accent_color;
   const color = ui.radio({
     label: "Accent color",
@@ -274,6 +302,36 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
     },
   });
 
+  // --- Module order: the backend lists the modules already in the user's order
+  const orderControls = [
+    ...reorderList(
+      modules.map((m) => ({ id: m.id, label: m.name, dim: !m.enabled || !!m.error })),
+      async (ids) => {
+        try {
+          await api.call("core", "set_pref", { key: "module_order", value: ids });
+        } catch (e) {
+          toast(`Couldn't save the order: ${(e as Error).message}`, "error");
+          throw e;
+        }
+        await deps.onModulesChanged();
+      },
+    ),
+    ui.separator(),
+    ui.button({
+      label: "Reset order",
+      onClick: async () => {
+        try {
+          await api.call("core", "set_pref", { key: "module_order", value: [] });
+          toast("Module order reset");
+        } catch (e) {
+          toast(`Couldn't reset the order: ${(e as Error).message}`, "error");
+        }
+        await deps.onModulesChanged();
+        rerender();
+      },
+    }),
+  ];
+
   // --- Updates
   const updates = document.createElement("div");
   const showUpdate = (u: UpdateInfo | null) => {
@@ -282,8 +340,15 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
     else if (!u.checked) rows.push(ui.info(`Installed: ${u.current}. Couldn't check for updates right now.`));
     else if (!u.available) rows.push(ui.info(`Installed: ${u.current}. You're up to date.`));
     else {
-      rows.push(ui.info(`Installed: ${u.current}. New version available: ${u.latest}.`));
-      if (u.notes) rows.push(ui.info(u.notes));
+      rows.push(
+        ui.info(
+          u.downgrade
+            ? `Installed: ${u.current} (pre-release). The stable version is ${u.latest}.`
+            : `Installed: ${u.current}. New version available: ${u.latest}.`,
+        ),
+      );
+      // One row per line: a single paragraph would run the lines of the notes together.
+      for (const line of u.notes.split("\n")) if (line.trim()) rows.push(ui.info(line.trim()));
     }
     rows.push(
       ui.button({
@@ -297,12 +362,12 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
         },
       }),
       ui.button({
-        label: u?.available ? `Install version ${u.latest}` : "Install update",
+        label: u?.available ? (u.downgrade ? `Go back to ${u.latest}` : `Install version ${u.latest}`) : "Install update",
         disabled: !u?.available,
         onClick: async () => {
           const ok = await ui.confirm(
-            `Install Invasor ${u?.latest}? The panel will reload in a few seconds; Steam and any running game are not restarted.`,
-            { ok: "Install and reload panel" },
+            `${u?.downgrade ? "Go back to" : "Install"} Invasor ${u?.latest}? The panel will reload in a few seconds; Steam and any running game are not restarted.`,
+            { ok: u?.downgrade ? "Go back and reload panel" : "Install and reload panel" },
           );
           if (!ok) return;
           try {
@@ -385,9 +450,10 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
   el.append(
     ui.section("Updates", [updates], { open: false }),
     ui.section("Modules", moduleControls, { open: false }),
+    ...(modules.length > 1 ? [ui.section("Module order", orderControls, { open: false })] : []),
     ui.section("Install module", [ui.info("Module zips are checked before anything is installed."), picker], { open: false }),
     ui.section("Controller", [combo], { open: false }),
-    ui.section("Panel", [side, color], { open: false }),
+    ui.section("Panel", [side, handleIcon, color], { open: false }),
     ui.section("About", [about, ui.button({ label: "Refresh", onClick: () => void refreshAbout() })], { open: false }),
   );
 }

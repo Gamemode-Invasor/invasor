@@ -37,8 +37,9 @@ installed; otherwise it shows its help.
   settings in `~/.config/invasor` are kept unless `--purge` is given (the dialog asks).
 
 After the first install, restart Steam once: the installer creates
-`~/.steam/steam/.cef-enable-remote-debugging`, like Decky does. Uninstalling removes it only if the
-installer created it and Decky isn't installed.
+`~/.steam/steam/.cef-enable-remote-debugging`, like Decky does. If something deletes it later, the
+service puts it back the next time it starts (Steam needs a restart for it to apply). Uninstalling removes it
+only if Invasor created it, the installer or the service, and Decky isn't installed.
 
 ### Release for other machines
 ```sh
@@ -63,16 +64,17 @@ compromised GitHub account. Modules installed from a zip are not touched.
 
 **Update channel:** *Stable* (the default) only offers final releases (`X.Y.Z`). *Beta (pre-releases)*
 (`update_channel`: `"beta"`) also offers release candidates (`X.Y.Z-rcN`, for example `0.1.3-rc1`), which
-may be unstable. Changing the channel looks for an update right away. Versions never go down: a release
-candidate is older than its final release (`0.1.3-rc1` < `0.1.3`), so to leave the beta channel choose
-*Stable* and wait for the next final version.
+may be unstable. Changing the channel looks for an update right away. A final release is newer than
+its candidates (`0.1.3-rc1` < `0.1.3`) and versions never go down, with one exception: on a release
+candidate, choosing *Stable* offers the stable version even if it is older (*Go back to 0.1.2*); you
+confirm it first. If it is the same version, nothing is offered.
 
 Log: `journalctl --user -u invasor -f`. Optional configuration:
 `~/.config/invasor/config.json` (`open_combo`, `panel_side`, `targets`, `disabled_modules`, `dev_desktop`,
-`update_check`, `update_channel`; the first two and the last two can also be changed from the **⚙ Settings** tab).
+`handle_icon`, `module_order`, `update_check`, `update_channel`; most of them can also be changed from the **⚙ Settings** tab).
 
 ## Using it with a controller
-The "I" handle is always there in the library. In Quick Access (···) it only shows while a
+The Invasor handle (a coloured tab with the icon, or the letter "I") is always there in the library. In Quick Access (···) it only shows while a
 game is running, and the panel there leaves out modules that have nothing to do in-game
 (`"no_qam": true`, e.g. Artwork).
 
@@ -91,7 +93,7 @@ The panel takes 40% of the screen width in the Library (in Quick Access, the vis
 top and bottom show there's more to see.
 
 While the panel is open, Steam gets none of the panel's buttons (its own Steam and ···
-buttons always go through). It can also be opened with the blue "I" tab, by touch, or
+buttons always go through). It can also be opened with the blue tab, by touch, or
 with F10.
 
 Both regular controllers (evdev: DualSense, Xbox…) and Steam Deck-protocol ones are
@@ -99,7 +101,7 @@ read: a real Steam Deck, or handhelds such as the Legion Go virtualised by
 InputPlumber. To see which buttons the service detects: `python3 tools/pad.py`.
 
 **⚙ Settings tab** (always there, even with no modules): enable or disable modules,
-the shortcut that opens the panel, the panel side, the accent colour (also of the "I" handle), and "About" (version, status and
+the shortcut that opens the panel, the panel side, the order of the modules' tabs (grab a module with A, move it with the D-pad), what the handle shows (the icon, the letter "I" or nothing), the accent colour (also of the handle), and "About" (version, status and
 detected controllers). Invasor's own UI is in English; each module chooses its own
 language.
 
@@ -108,7 +110,7 @@ Invasor ships with only `demo` (a showcase, also used by `tools/smoke.py`) and t
 Real modules live in their own repositories and install as a zip from **⚙ Settings › Install module**:
 
 - [invasor-artwork](../invasor-artwork): community artwork from steamgriddb.com for your games and shortcuts.
-- [invasor-ducky](../invasor-ducky): lsfg-vk frame generation, set up per game.
+- [invasor-patito](../invasor-patito): lsfg-vk frame generation, set up per game.
 
 Installed modules live in `~/.local/share/invasor/user-modules/`. Updating Invasor never touches them.
 

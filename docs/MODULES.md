@@ -54,9 +54,10 @@ modules/<id>/
 | `version` | yes | Your module's version (free text, e.g. `"1.0.0"`). |
 | `author` | no | Who made it: free text, one line, up to 128 characters, e.g. `"Jane Doe"` or `"Jane Doe <jane@example.com>"`. Invasor shows only the name (never the email): "Name (version) by Jane Doe" in ⚙ Settings › Modules, and when installing the zip. Default: empty. |
 | `description` | no | One line, shown in the hint bar when the module is selected in ⚙ Settings › Modules, and when installing the zip. |
-| `order` | no | Integer, tab position (lower first). Default 100. |
+| `order` | no | Integer, default tab position (lower first, then by name). Default 100. The user can reorder the modules in ⚙ Settings › Module order, and what they choose wins over this; a module they never placed goes after the ones they did, by this value. |
 | `tab` | no | Short tab label. Default: `name`. |
-| `no_qam` | no | `true`: not shown in the Quick Access (···) panel, only in the library's (for modules with nothing to do during a game). Default `false`. |
+| `min_core` | no | Oldest Invasor the module works with, as `"0.1.3"` (or `"0.1.3-rc1"`). A module that needs a newer one is refused when installing and, if it's already installed, isn't loaded and ⚙ Settings says why. A release candidate counts as older than its release: `0.1.3-rc2` doesn't meet `"0.1.3"`. Invasor versions that predate this key reject it as an unknown key. Default: any. |
+| `no_qam` | no | `true`: not shown in the Quick Access (···) panel, only in the library's (for modules with nothing to do during a game). For a condition the module decides at run time, see `showInQam` in section 5. Default `false`. |
 | `settings` | no | The settings form (below). |
 | `forms` | no | Named forms whose values the module stores itself (section 3, at the end). |
 
@@ -104,6 +105,10 @@ Declared once in `module.json`. With that declaration:
 | `radio` | one of the options | `options: [{value, label}]` (at least 1; value is a string, number or bool) | ←→ choose |
 | `select` | one of the options | same as `radio` | ←→ cycle, A opens the list |
 | `text` | string | `max_length` (default 256), `placeholder` | A opens the built-in keyboard |
+| `password` | string | same as `text`; `default` must be `""` | like `text`; shown as dots, the keyboard has a show/hide key |
+
+`password` only masks what is on screen: the value is stored as plain text in the module's `settings.json`
+and `ctx.settings.get` returns it as is. Don't use it as a condition (`when`/`disabled_when`).
 
 **Sections** have the form `{ "section": "Title", "open": true, "items": [fields…] }`. They:
 
@@ -140,7 +145,7 @@ it as usual. If one option changes others (e.g. a preset), do that in the module
   default, and the log says so.
 
 **Forms the module stores itself.** Sometimes the values belong to someone else, for example another program's
-config file (Ducky edits lsfg-vk's `conf.toml`). Declare them under `forms`, with the same field rules:
+config file (Patito edits lsfg-vk's `conf.toml`). Declare them under `forms`, with the same field rules:
 
 ```json
 "forms": {
@@ -255,10 +260,18 @@ export default defineModule({
   // tabsAlign: "start" | "center" | "end" | "justify",
   onShow(ctx) {}, onHide() {},          // the tab became visible / hidden
   onGameChange(game, ctx) {},           // selected/running game changed
+  showInQam(ctx) { return true; },      // Quick Access only: false hides this tab there (may be async)
   destroy() {},                         // module disabled or overlay torn down
 });
 ```
 
+- **Showing in Quick Access.** `"no_qam": true` in module.json always hides the module there. For a condition the
+  module resolves itself (say, "only while the running game has some feature on"), define `showInQam(ctx)`: it
+  returns `false` to hide the tab in the Quick Access (···) panel, and may be async (ask your backend with
+  `ctx.call`, or read `ctx.game()`). Invasor asks when the panel opens and when the game changes, not in between.
+  Only an explicit `false` hides: an error, or an answer slower than 1.5 s, shows the tab. The library panel
+  ignores it. A hidden module keeps running (`onGameChange` still arrives once it has been shown); only its tab
+  is gone, and its page is built again when the tab comes back.
 - **Building.** Every page and sub-tab is built the first time it's shown, then kept with its state. An
   exception there shows "Error in …" in that page only.
 - **What `ctx` gives:**
@@ -279,7 +292,7 @@ export default defineModule({
   - **Settings form:** `await ui.settingsForm(ctx, { keys? })`. It returns the form, its `controls` by key,
     `reload()` and `reset()` (which stores every default). `await ui.form(ctx, name, store)` is the same for a
     `forms` entry stored by the module (section 3).
-  - **Value controls:** `toggle`, `checkbox`, `slider`, `number`, `radio` (an option with `swatch: "#hex"` shows as a colour dot), `select` and `text`, for values
+  - **Value controls:** `toggle`, `checkbox`, `slider`, `number`, `radio` (an option with `swatch: "#hex"` shows as a colour dot), `select`, `text` and `password`, for values
     that aren't settings. Each returns a `Control` with:
     - `get()`;
     - `set(v)`: shows a new value without calling `onChange`;
@@ -351,7 +364,7 @@ A module doesn't have to live inside Invasor. Keep it in its own repository, nex
 
 - **Build** its UI with the core's kit: `node ~/Projects/invasor/frontend/build.mjs --module <id>`.
 - **Test:** the module's tests find the core through `$INVASOR_CORE`, which `check_module.py` sets for them. On
-  their own they look for `../invasor` next to the repository. See `ducky/tests/test_backend.py` in the invasor-ducky repository.
+  their own they look for `../invasor` next to the repository. See `patito/tests/test_backend.py` in the invasor-patito repository.
 - **Check and pack:** `python3 ~/Projects/invasor/tools/pack_module.py <id>`. It typechecks and builds `ui.ts`,
   runs `check_module.py` (tests included) and writes `<id>-<version>.zip` with only what the console needs:
   `module.json`, the Python files, `dist/ui.js`, README and LICENSE (the one at the root of your repository, if the

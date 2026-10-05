@@ -20,7 +20,7 @@ import shutil
 import sys
 import threading
 
-from . import config, schema, tomlio
+from . import __version__, config, schema, tomlio
 from .schema import Unavailable
 from .storage import JsonStore
 
@@ -301,6 +301,12 @@ class ModuleManager:
             self.manifests[d.name] = {"id": d.name, "name": d.name, "dir": d, "source": source,
                                       "error": f"invalid module.json: {e}"}
             return
+        problem = schema.core_problem(manifest, __version__)
+        if problem:
+            log.error("module %s: %s", d.name, problem)
+            self.manifests[d.name] = {"id": d.name, "name": manifest["name"], "dir": d, "source": source,
+                                      "error": problem}
+            return
         manifest["dir"] = d
         manifest["source"] = source
         self.manifests[d.name] = manifest
@@ -525,4 +531,8 @@ class ModuleManager:
                     "no_qam": m.get("no_qam", False),
                     "forms": m.get("forms", {}),
                 })
+            # The user's order first; the modules it doesn't mention follow by their module.json order.
+            rank = {mid: i for i, mid in enumerate(self.cfg.get("module_order", []))}
+            out.sort(key=lambda m: (0, rank[m["id"]], 0, "") if m["id"] in rank
+                     else (1, m["order"], m["name"].lower(), m["id"]))
             return out

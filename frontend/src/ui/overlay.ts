@@ -5,6 +5,8 @@ import { hasApi, safeCall, steamAvailable } from "../steam";
 import { setTopLayer, ui } from "./controls";
 import { attachGamepadNav } from "./gamepad-nav";
 import css from "./overlay.css";
+import iconSvg from "../assets/invasor.svg";
+import { hiddenInQam } from "./qam";
 import { accentColor } from "./palette";
 import { renderSettings, type ModuleInfo } from "./settings";
 import { tabRowHTML } from "./tabbar";
@@ -72,7 +74,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   const root = host.attachShadow({ mode: "open" });
   root.innerHTML = `
     <style>${css}</style>
-    <button class="handle" aria-label="Open Invasor">I</button>
+    <button class="handle" aria-label="Open Invasor"></button>
     <div class="stage">
     <div class="panel" hidden>
       <header>
@@ -170,10 +172,28 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     host.style.setProperty("--accent-rgb", c.rgb);
     host.style.setProperty("--accent-fg", c.fg);
   }
-  // The handle shows before the panel is ever opened: give it its colour right away.
+  /** What the handle shows over its coloured tab: the icon, the letter "I" or nothing. */
+  function applyHandleIcon(mode: string) {
+    handle.dataset.mode = mode;
+    if (mode === "letter") handle.textContent = "I";
+    else if (mode === "none") handle.textContent = "";
+    else {
+      handle.innerHTML = iconSvg;
+      // The button already has its aria-label: the picture is decoration.
+      const svg = handle.querySelector("svg");
+      svg?.removeAttribute("role");
+      svg?.removeAttribute("aria-label");
+      svg?.setAttribute("aria-hidden", "true");
+    }
+  }
+  applyHandleIcon("icon");
+  // The handle shows before the panel is ever opened: give it its colour and look right away.
   api
-    .call<{ accent_color?: string }>("core", "prefs")
-    .then((p) => applyAccent(p.accent_color ?? "blue"))
+    .call<{ accent_color?: string; handle_icon?: string }>("core", "prefs")
+    .then((p) => {
+      applyAccent(p.accent_color ?? "blue");
+      applyHandleIcon(p.handle_icon ?? "icon");
+    })
     .catch(() => {});
 
   // ---------- toast ----------
@@ -299,7 +319,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     id: SETTINGS_ID,
     label: "⚙ Settings",
     name: "Settings",
-    render: (el) => renderSettings(el, { api, version, toast, onModulesChanged: rebuildTabs, onPanelSide: applySide, onAccentColor: applyAccent }),
+    render: (el) => renderSettings(el, { api, version, toast, onModulesChanged: rebuildTabs, onPanelSide: applySide, onAccentColor: applyAccent, onHandleIcon: applyHandleIcon }),
   };
 
   function destroyModule(m: LiveModule) {
@@ -321,7 +341,6 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       return false;
     }
     const keep = tabs.activeId();
-    list.sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
     const before = modules;
     modules = new Map();
     for (const m of list) {
@@ -331,7 +350,32 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     }
     tabs.hidden(); // onHide before any module is destroyed
     for (const [id, m] of before) if (modules.get(id) !== m) destroyModule(m);
-    await tabs.set([...[...modules.values()].map((m) => m.spec), settingsSpec], keep);
+    tabsDirty = true;
+    await applyTabs();
+    return true;
+  }
+
+  /**
+   * Show the tabs of the modules we have, minus (in Quick Access) the ones whose showInQam()
+   * says no. Only touches the tab bar when what it shows changed. True if it did.
+   */
+  let tabsDirty = false; // the module specs changed (rebuildTabs): the bar must be redone
+  let shownKey = "";
+  let tabSeq = 0;
+  async function applyTabs(): Promise<boolean> {
+    const seq = ++tabSeq;
+    const keep = tabs.activeId();
+    const all = [...modules.values()];
+    const hidden = qam
+      ? await hiddenInQam(all.filter((m) => m.def?.showInQam).map((m) => ({ id: m.id, fn: () => m.def!.showInQam!(m.ctx!) })))
+      : new Set<string>();
+    if (seq !== tabSeq) return false; // a newer call took over while we waited
+    const visible = all.filter((m) => !hidden.has(m.id));
+    const key = visible.map((m) => m.id).join();
+    if (!tabsDirty && key === shownKey) return false;
+    tabsDirty = false;
+    shownKey = key;
+    await tabs.set([...visible.map((m) => m.spec), settingsSpec], keep);
     return true;
   }
 
@@ -360,6 +404,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       for (const m of modules.values()) {
         if (m.built && m.def) safe("onGameChange", () => m.def!.onGameChange?.(game, m.ctx!));
       }
+      if (qam && tabsLoaded && !panel.hidden) void applyTabs(); // a module may now want to show or hide
     } catch {
       // Backend hiccup: keep the last known state, status line shows the problem.
     }
@@ -369,10 +414,11 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     try {
       const [info, prefs] = await Promise.all([
         api.call<{ version: string }>("core", "info"),
-        api.call<{ panel_side: Side; accent_color: string; qam_visible_w: number | null }>("core", "prefs"),
+        api.call<{ panel_side: Side; accent_color: string; handle_icon: string; qam_visible_w: number | null }>("core", "prefs"),
       ]);
       applySide(prefs.panel_side);
       applyAccent(prefs.accent_color);
+      applyHandleIcon(prefs.handle_icon);
       if (prefs.qam_visible_w && qamWidth === null) {
         qamWidth = prefs.qam_visible_w;
         fitToScreen();
@@ -492,7 +538,8 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
         // Backend not reachable yet: try again on the next open.
         if (!(await rebuildTabs())) tabsLoaded = false;
       } else {
-        tabs.shown();
+        // Quick Access: ask the modules again; a changed bar already shows its active tab.
+        if (!(await applyTabs())) tabs.shown();
         nav.reset();
       }
     });

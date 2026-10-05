@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" role="img" aria-label="Pixelated alien with an NES gamepad">
+  <circle cx="500" cy="500" r="445" fill="#000" stroke="#62E62A" stroke-width="28"/>
+
+  <!-- Pixel alien (11x8 grid, 36-unit cell) -->
+  <g transform="translate(302 195)" fill="#62E62A">
+    <rect x="72"  y="0"   width="36"  height="36"/>
+    <rect x="288" y="0"   width="36"  height="36"/>
+    <rect x="108" y="36"  width="36"  height="36"/>
+    <rect x="252" y="36"  width="36"  height="36"/>
+    <rect x="72"  y="72"  width="252" height="36"/>
+    <rect x="36"  y="108" width="72"  height="36"/>
+    <rect x="144" y="108" width="108" height="36"/>
+    <rect x="288" y="108" width="72"  height="36"/>
+    <rect x="0"   y="144" width="396" height="36"/>
+    <rect x="0"   y="180" width="36"  height="36"/>
+    <rect x="72"  y="180" width="252" height="36"/>
+    <rect x="360" y="180" width="36"  height="36"/>
+    <rect x="0"   y="216" width="36"  height="36"/>
+    <rect x="72"  y="216" width="36"  height="36"/>
+    <rect x="288" y="216" width="36"  height="36"/>
+    <rect x="360" y="216" width="36"  height="36"/>
+    <rect x="108" y="252" width="72"  height="36"/>
+    <rect x="216" y="252" width="72"  height="36"/>
+    <!-- Eyes -->
+    <rect x="108" y="108" width="36" height="36" fill="#000"/>
+    <rect x="252" y="108" width="36" height="36" fill="#000"/>
+    <rect x="119" y="119" width="14" height="14" fill="#fff"/>
+    <rect x="263" y="119" width="14" height="14" fill="#fff"/>
+  </g>
+
+  <!-- NES gamepad -->
+  <rect x="270" y="590" width="460" height="190" rx="16" fill="#fff"/>
+  <rect x="292" y="612" width="416" height="146" rx="8" fill="#000"/>
+
+  <!-- D-pad -->
+  <g fill="#fff">
+    <rect x="316" y="671" width="84" height="28" rx="4"/>
+    <rect x="344" y="643" width="28" height="84" rx="4"/>
+  </g>
+
+  <!-- Select / Start -->
+  <rect x="446" y="702" width="44" height="13" rx="6.5" fill="#fff"/>
+  <rect x="510" y="702" width="44" height="13" rx="6.5" fill="#fff"/>
+
+  <!-- B and A buttons -->
+  <circle cx="611" cy="700" r="24" fill="#E60012"/>
+  <circle cx="671" cy="700" r="24" fill="#E60012"/>
+</svg>

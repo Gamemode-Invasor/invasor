@@ -1,7 +1,7 @@
 // Run with `npm test` (bundled by esbuild, run by node's built-in test runner).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { decimals, isVideo, optionIndex, snap, whenMet } from "../src/ui/values";
+import { decimals, isVideo, moveItem, optionIndex, snap, whenMet } from "../src/ui/values";
 
 test("decimals", () => {
   assert.equal(decimals(5), 0);
@@ -51,4 +51,17 @@ test("whenMet", () => {
   assert.equal(whenMet({ n: "3" }, get), false); // no loose equality
   assert.equal(whenMet({ mode: ["a", "b"] }, get), true); // a list: any of its values
   assert.equal(whenMet({ mode: ["a", "c"] }, get), false);
+});
+
+test("moveItem", () => {
+  assert.deepEqual(moveItem(["a", "b", "c"], 0, 1), ["b", "a", "c"]);
+  assert.deepEqual(moveItem(["a", "b", "c"], 2, 0), ["c", "a", "b"]);
+  assert.deepEqual(moveItem(["a", "b", "c"], 1, 1), ["a", "b", "c"]);
+  assert.deepEqual(moveItem(["a", "b", "c"], 1, 9), ["a", "c", "b"]); // clamped
+  assert.deepEqual(moveItem(["a", "b", "c"], 1, -4), ["b", "a", "c"]);
+  assert.deepEqual(moveItem(["a", "b", "c"], 7, 0), ["a", "b", "c"]); // nothing there to move
+  assert.deepEqual(moveItem([], 0, 0), []);
+  const list = ["a", "b"];
+  moveItem(list, 0, 1);
+  assert.deepEqual(list, ["a", "b"]); // the input is untouched
 });

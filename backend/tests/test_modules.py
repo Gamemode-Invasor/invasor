@@ -55,6 +55,8 @@ class Modules(unittest.TestCase):
         self.add("_template", "raise RuntimeError('must never load')\n")
         self.add("oldapi", "", raw={"name": "Old"})
         self.add("typo", "", raw={**manifest("Typo"), "setings": []})
+        self.add("toonew", "METHODS = {}\n", raw={**manifest("Too new"), "min_core": "99.0.0"})
+        self.add("fits", "METHODS = {}\n", raw={**manifest("Fits"), "min_core": "0.0.1"})
         (self.mods / "core").mkdir()
         (self.mods / "core" / "module.json").write_text("{}")
         (self.mods / "good" / "dist").mkdir()
@@ -105,6 +107,28 @@ class Modules(unittest.TestCase):
         self.assertIsNone(listing["good"]["error"])
         self.manager.set_enabled("oldapi", True)
         self.assertNotIn("oldapi", self.manager.registry)
+
+    def ids(self):
+        return [m["id"] for m in self.manager.listing()]
+
+    def test_listing_order_is_the_users_then_the_manifests(self):
+        default = self.ids()
+        self.assertEqual(default, sorted(default, key=lambda i: (self.listing()[i]["order"], self.listing()[i]["name"].lower(), i)))
+        self.manager.cfg["module_order"] = ["typo", "good", "gone", "multi-file"]  # "gone" is not installed
+        got = self.ids()
+        self.assertEqual(got[:3], ["typo", "good", "multi-file"])
+        self.assertEqual(got[3:], [i for i in default if i not in ("typo", "good", "multi-file")])  # the rest, as before
+        self.assertEqual(sorted(got), sorted(default))
+        self.manager.cfg["module_order"] = []
+        self.assertEqual(self.ids(), default)
+
+    def test_min_core_newer_than_the_core_is_reported_not_loaded(self):
+        listing = self.listing()
+        self.assertIn("needs Invasor 99.0.0 or newer", listing["toonew"]["error"])
+        self.assertIsNone(listing["fits"]["error"])
+        self.manager.set_enabled("toonew", True)
+        self.assertNotIn("toonew", self.manager.registry)
+        self.assertIn("fits", self.manager.registry)
 
     def test_templates_and_reserved_ids_are_skipped(self):
         self.assertNotIn("_template", self.manager.manifests)

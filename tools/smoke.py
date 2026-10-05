@@ -43,7 +43,9 @@ STATE = f"""(() => {{
     sub: r.querySelector('.tabbar.sub:not([hidden]) .tab.on')?.textContent ?? null,
     label: f ? (f.querySelector('.ctl-label')?.textContent ?? f.textContent).trim() : null,
     value: f?.querySelector('.ctl-value')?.textContent ?? f?.querySelector('.seg.on')?.textContent
-           ?? f?.querySelector('input[type=text]')?.value ?? null,
+           ?? f?.querySelector('input[type=text]')?.value
+           ?? f?.querySelector('input[type=password]')?.value ?? null,
+    masked: f?.querySelector('input')?.type === 'password',
     on: f?.classList.contains('on') ?? false,
     listOpen: !!list && !list.hidden,
     keyboard: !!f?.querySelector('.kbd'),
@@ -239,6 +241,30 @@ class Smoke:
             await self.unfold("Modules")
             await self.goto("Rescan modules", limit=60)
             await self.press("A", wait=3.0)
+            # Reordering (two modules are listed now): grab Smoke Demo, move it up, drop it.
+            def saved_order():
+                return json.loads(CONFIG_FILE.read_text()).get("module_order") if CONFIG_FILE.exists() else None
+
+            await self.unfold("Module order")
+            st = await self.goto("Smoke Demo")
+            st = await self.press("A", wait=0.3)
+            self.check("reorder: A grabs the row and the hint says how to drop it", "drop" in await self.js(f"{SR}.querySelector('.panel .hints').textContent"), st)
+            await self.press("UP", wait=0.3)
+            st = await self.state()
+            self.check("reorder: the ring follows the moved row", st["label"] == "Smoke Demo", st)
+            await self.press("B", wait=0.3)
+            self.check("reorder: B puts it back and saves nothing", not saved_order(), saved_order())
+            await self.press("A", wait=0.3)
+            await self.press("UP", wait=0.3)
+            await self.press("A", wait=1.0)
+            st, body = await self.api("modules")
+            ids = [m["id"] for m in body["result"]] if st == 200 else body
+            self.check("reorder: dropping saves it and the module list follows", saved_order() and saved_order()[0] == "smoke-demo" and ids[0] == "smoke-demo", (saved_order(), ids))
+            await self.goto("Reset order", limit=20)
+            await self.press("A", wait=1.5)
+            self.check("reorder: Reset order forgets it", not saved_order(), saved_order())
+            await self.unfold("Modules")
+            await self.goto("Rescan modules", limit=60)
             st = await self.goto("Uninstall Smoke Demo", limit=60, button="UP")  # it's above Rescan
             st = await self.press("A", wait=0.3)
             self.check("uninstall: a dialog that starts on Cancel", st["modal"] and st["label"] == "Cancel", st)
@@ -388,6 +414,31 @@ class Smoke:
         kbd_left = await self.js(f"!!{SR}.querySelector('.kbd')")
         self.check("closing the panel mid-typing saves the text and closes the keyboard",
                    stored == text0 + "q" and not kbd_left, (stored, kbd_left))
+
+        # Password field: same as text, but masked, and the keyboard has a show/hide key.
+        st = await self.goto("Secret")
+        secret0 = st["value"]
+        self.check("password: the input is masked", st["masked"], st)
+        st = await self.press("A")
+        self.check("password: A opens the keyboard", st["keyboard"], st)
+        st = await self.press("A")
+        self.check("password: A types", st["value"] == secret0 + "q" and st["masked"], st)
+        st = await self.press("B")
+        self.check("password: B closes the keyboard, still masked", not st["keyboard"] and st["masked"], st)
+        stored = json.loads(DEMO_SETTINGS.read_text()).get("secret") if DEMO_SETTINGS.exists() else None
+        self.check("password: the typed value is saved as is", stored == secret0 + "q", stored)
+        await self.press("A")
+        await self.press("A")
+        await self.press("X")
+        await self.press("X")
+        await self.press("B")
+
+        # showInQam: Demo reads hide_in_qam, but only the Quick Access panel obeys it: the library keeps the tab.
+        st = await self.goto("Hide in Quick Access")
+        await self.press("A", wait=0.8)
+        tabs = await self.js(f"[...{SR}.querySelectorAll('.tabbar.main .tab')].map(t => t.textContent)")
+        self.check("showInQam: the library ignores it (the Demo tab stays)", "Demo" in tabs, tabs)
+        await self.press("A", wait=0.5)  # off again
 
         # Control API: "Lock volume" disables Volume in Controls (selectable, but inert).
         await self.goto("Lock volume")
@@ -544,6 +595,21 @@ class Smoke:
         changed = (CONFIG_FILE.read_text() if CONFIG_FILE.exists() else "") != before_cfg
         self.check("shortcut: changing it is saved", st["value"] != before["value"] and changed, st)
         await self.press(undo, wait=0.4)
+        # The handle: icon by default, then the letter or nothing from Settings > Panel.
+        handle = f"{SR}.querySelector('.handle')"
+        st = await self.unfold("Panel")
+        st = await self.goto("Handle icon")
+        self.check("handle: shows the icon by default", await self.js(f"!!{handle}.querySelector('svg')"), st)
+        before_cfg = CONFIG_FILE.read_text() if CONFIG_FILE.exists() else ""
+        before, st, undo = await self.nudge()
+        await asyncio.sleep(0.4)
+        mode = await self.js(f"{handle}.dataset.mode")
+        text = await self.js(f"{handle}.textContent.trim()")
+        saved = (CONFIG_FILE.read_text() if CONFIG_FILE.exists() else "") != before_cfg
+        self.check("handle: changing it is applied at once and saved",
+                   mode != "icon" and saved and (text == "I" if mode == "letter" else text == ""), (mode, text, saved))
+        await self.press(undo, wait=0.4)
+        self.check("handle: undoing brings the icon back", await self.js(f"!!{handle}.querySelector('svg')"), st)
         st = await self.goto("About")
         await self.press("A", wait=1.0)
         st = await self.state()

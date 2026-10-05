@@ -18,6 +18,8 @@ export function createKeyboard(
   input: HTMLInputElement,
   onType: () => void,
   onDone: () => void,
+  /** Optional extra key on the bottom row (the password field's show/hide). */
+  extra?: { label: () => string; run: () => void },
 ): MiniKeyboard {
   const el = document.createElement("div");
   el.className = "kbd";
@@ -56,7 +58,7 @@ export function createKeyboard(
   }
 
   function special(): string[] {
-    return ["⇧", symbols ? "abc" : "#+=", "space", "⌫", "OK"];
+    return ["⇧", symbols ? "abc" : "#+=", "space", "⌫", ...(extra ? [extra.label()] : []), "OK"];
   }
 
   function highlight() {
@@ -91,6 +93,10 @@ export function createKeyboard(
     if (k === "space") return type(" ");
     if (k === "⌫") return backspace();
     if (k === "OK") return onDone();
+    if (extra && k === extra.label()) {
+      extra.run();
+      return render();
+    }
     type(caps ? k.toUpperCase() : k);
   }
 

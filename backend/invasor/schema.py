@@ -8,9 +8,11 @@ import math
 import re
 from decimal import Decimal
 
+from .version import parse_version
+
 API_VERSION = 1
 
-MANIFEST_KEYS = {"api", "name", "version", "description", "author", "order", "tab", "settings", "forms", "no_qam"}
+MANIFEST_KEYS = {"api", "name", "version", "description", "author", "order", "tab", "settings", "forms", "no_qam", "min_core"}
 AUTHOR_MAX = 128
 KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
@@ -25,6 +27,7 @@ FIELD_EXTRA = {
     "radio": {"options"},
     "select": {"options"},
     "text": {"max_length", "placeholder"},
+    "password": {"max_length", "placeholder"},
 }
 FIELD_COMMON = {"key", "type", "label", "default", "hint", "when", "disabled_when"}
 SECTION_KEYS = {"section", "open", "items", "when"}
@@ -114,6 +117,12 @@ def coerce(field, value):
             if _same(opt["value"], value):
                 return opt["value"]
         raise InvalidArgument(f"{key}: {value!r} is not one of the options")
+    if t == "password":  # same as text, but its messages never carry the value
+        if not isinstance(value, str):
+            raise InvalidArgument(f"{key}: expected text")
+        if len(value) > field["max_length"]:
+            raise InvalidArgument(f"{key}: longer than {field['max_length']} characters")
+        return value
     if t == "text":
         if not isinstance(value, str):
             raise InvalidArgument(f"{key}: expected text, got {value!r}")
@@ -176,7 +185,7 @@ def _parse_field(raw, path, keys):
             if any(_same(o["value"], x["value"]) for x in field["options"]):
                 _fail(f"{opath}.value", f"duplicate value {o['value']!r}")
             field["options"].append({"value": o["value"], "label": _str(o, "label", f"{opath}.", required=True)})
-    elif t == "text":
+    elif t in ("text", "password"):
         n = raw.get("max_length", TEXT_MAX_LENGTH)
         if not _is_int(n) or n <= 0:
             _fail(f"{path}.max_length", "must be a positive integer")
@@ -192,6 +201,8 @@ def _parse_field(raw, path, keys):
         _fail(f"{path}.default", str(e).split(": ", 1)[-1])
     if default != raw["default"]:
         _fail(f"{path}.default", f"must be within min..max and on a step (closest valid: {default})")
+    if t == "password" and default:
+        _fail(f"{path}.default", "must be empty: the default is sent to every frontend")
     field["default"] = default
     return field
 
@@ -265,6 +276,8 @@ def _condition(item, when, path, fields):
             _fail(f"{path}.{key}", "isn't a field of this form")
         if key == item.get("key"):
             _fail(f"{path}.{key}", "a field can't depend on itself")
+        if fields[key]["type"] == "password":
+            _fail(f"{path}.{key}", "a password can't be a condition")
         values = value if isinstance(value, list) else [value]
         if not values:
             _fail(f"{path}.{key}", "an empty list matches nothing")
@@ -279,6 +292,18 @@ def _condition(item, when, path, fields):
             checked.append(c)
         out[key] = checked if isinstance(value, list) else checked[0]
     return out
+
+
+def core_problem(manifest, core_version):
+    """Why this Invasor can't run the module (its min_core is newer), or None. A release
+    candidate is older than its release: 0.1.3-rc2 doesn't meet min_core 0.1.3."""
+    need = manifest.get("min_core")
+    if need is None:
+        return None
+    have = parse_version(core_version)
+    if have is None or have >= parse_version(need):
+        return None  # an unparseable core version (a dev build) is never blamed
+    return f"needs Invasor {need} or newer (this is {core_version})"
 
 
 def author_name(text):
@@ -306,6 +331,9 @@ def parse_manifest(data, module_id):
     no_qam = data.get("no_qam", False)
     if not isinstance(no_qam, bool):
         _fail("no_qam", "must be true or false")
+    min_core = data.get("min_core")
+    if min_core is not None and (not isinstance(min_core, str) or min_core.startswith("v") or parse_version(min_core) is None):
+        _fail("min_core", "must be a version like 0.1.3 (or 0.1.3-rc1)")
     tree, fields = parse_settings(data.get("settings"))
     forms, form_fields = parse_forms(data.get("forms"))
     name = _str(data, "name", "", required=True)
@@ -315,6 +343,8 @@ def parse_manifest(data, module_id):
     return {
         "id": module_id,
         "api": api,
+        # Oldest Invasor this module works with (see core_problem), or None.
+        "min_core": min_core,
         "name": name,
         "version": _str(data, "version", "", required=True),
         "description": _str(data, "description", "", default=""),

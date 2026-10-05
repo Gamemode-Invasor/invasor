@@ -146,12 +146,35 @@ class BetaChannel(unittest.TestCase):
         rels = [release("v0.1.3-rc2", prerelease=True), release("v0.1.3-rc10", prerelease=True), release("v0.1.3-rc1", prerelease=True)]
         self.assertEqual(self.up(rels).check()["latest"], "0.1.3-rc10")
 
-    def test_a_pre_release_machine_is_never_offered_something_older(self):
+    def test_a_pre_release_machine_on_stable_is_offered_the_way_back(self):
         rels = [release("v0.1.3-rc1", prerelease=True), release("v0.1.2")]
+        up = self.up(rels, current="0.1.3-rc1", channel="stable")
+        res = up.check()
+        self.assertEqual((res["checked"], res["available"], res["downgrade"], res["latest"]), (True, True, True, "0.1.2"))
+        self.assertEqual(up._package[0], updater.DOWNLOAD_PREFIX + "v0.1.2/invasor-0.1.2.tar.gz")
+
+    def test_the_beta_channel_never_goes_down(self):
+        rels = [release("v0.1.3-rc1", prerelease=True), release("v0.1.2")]
+        res = self.up(rels, current="0.1.3-rc2", channel="beta").check()
+        self.assertEqual((res["checked"], res["available"], res["downgrade"]), (True, False, False))
+
+    def test_a_stable_machine_never_goes_down(self):
         for channel in ("beta", "stable"):
             with self.subTest(channel=channel):
-                res = self.up(rels, current="0.1.3-rc1", channel=channel).check()
-                self.assertEqual((res["checked"], res["available"]), (True, False))
+                res = self.up([release("v0.1.2")], current="0.1.3", channel=channel).check()
+                self.assertEqual((res["checked"], res["available"], res["downgrade"]), (True, False, False))
+
+    def test_the_same_version_offers_nothing(self):
+        res = self.up([release("v0.1.2")], current="0.1.2", channel="stable").check()
+        self.assertEqual((res["available"], res["downgrade"]), (False, False))
+
+    def test_a_pre_release_machine_is_offered_a_higher_stable_as_an_upgrade(self):
+        res = self.up([release("v0.1.3")], current="0.1.3-rc1", channel="stable").check()
+        self.assertEqual((res["available"], res["downgrade"], res["latest"]), (True, False, "0.1.3"))
+
+    def test_the_way_back_needs_its_package(self):
+        res = self.up([release("v0.1.2", assets=False)], current="0.1.3-rc1", channel="stable").check()
+        self.assertEqual((res["checked"], res["available"]), (False, False))
 
     def test_a_stable_release_is_offered_to_a_pre_release_machine_on_either_channel(self):
         rels = [release("v0.1.3"), release("v0.1.3-rc1", prerelease=True)]
@@ -285,6 +308,14 @@ class Background(unittest.TestCase):
         self.run_once(self.up(), cfg, self.steam)
         self.steam.notify.assert_awaited_once()
 
+    def test_the_way_back_to_stable_is_not_announced(self):
+        up = updater.Updater("0.2.0-rc1", fetch=lambda url: release("v0.1.9"))
+        cfg = {}
+        self.assertEqual(self.run_once(up, cfg, self.steam), updater.CHECK_EVERY)
+        self.assertTrue(up.last["downgrade"])
+        self.steam.notify.assert_not_awaited()
+        self.assertNotIn("update_last_notified", cfg)
+
     def test_steam_not_ready_retries_soon_and_doesnt_mark_it_announced(self):
         self.steam.notify.side_effect = Unavailable("no steam")
         cfg = {}
@@ -298,13 +329,15 @@ class Background(unittest.TestCase):
 
     def test_unexpected_errors_never_end_the_task(self):
         # A task that ends stops the whole service: only the log hears about it.
-        for failure in (OSError("disk full"), TimeoutError("steam"), RuntimeError("bug")):
-            with self.subTest(failure=repr(failure)):
-                self.steam.notify.side_effect = failure
-                self.assertEqual(self.run_once(self.up(), {}, self.steam), updater.RETRY_NO_NET)
-        self.steam.notify.side_effect = None
-        patch(self, "invasor.updater.JsonStore", mock.Mock(side_effect=OSError("read-only")))
-        self.assertEqual(self.run_once(self.up(), {}, self.steam), updater.RETRY_NO_NET)
+        with self.assertLogs("invasor.updater", "ERROR") as logs:  # also keeps the tracebacks off the test output
+            for failure in (OSError("disk full"), TimeoutError("steam"), RuntimeError("bug")):
+                with self.subTest(failure=repr(failure)):
+                    self.steam.notify.side_effect = failure
+                    self.assertEqual(self.run_once(self.up(), {}, self.steam), updater.RETRY_NO_NET)
+            self.steam.notify.side_effect = None
+            patch(self, "invasor.updater.JsonStore", mock.Mock(side_effect=OSError("read-only")))
+            self.assertEqual(self.run_once(self.up(), {}, self.steam), updater.RETRY_NO_NET)
+        self.assertEqual(len(logs.records), 4)
 
     def test_offline_retries_in_an_hour(self):
         up = updater.Updater("0.1.0", fetch=mock.Mock(side_effect=OSError("offline")))

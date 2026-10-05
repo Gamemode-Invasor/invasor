@@ -135,6 +135,8 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
             "open_combo": sorted(watcher.combo),
             "panel_side": cfg.get("panel_side", "auto"),
             "accent_color": cfg.get("accent_color", "blue"),
+            "handle_icon": cfg.get("handle_icon", "icon"),
+            "module_order": cfg.get("module_order", []),
             "update_check": cfg.get("update_check", True),
             "update_channel": cfg.get("update_channel", "stable"),
             # Learned, not user-set: visible width of the Quick Access column (see overlay.ts).
@@ -163,6 +165,15 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
         elif key == "accent_color":
             if value not in config.ACCENT_COLORS:
                 raise InvalidArgument(f"invalid accent_color {value!r}")
+        elif key == "module_order":
+            if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
+                raise InvalidArgument(f"invalid module_order {value!r}: a list of module ids")
+            value = list(dict.fromkeys(value))  # each id once, in the order given
+            if len(value) > config.MODULE_ORDER_MAX:
+                raise InvalidArgument(f"module_order: more than {config.MODULE_ORDER_MAX} modules")
+        elif key == "handle_icon":
+            if value not in config.HANDLE_ICONS:
+                raise InvalidArgument(f"invalid handle_icon {value!r}")
         elif key == "panel_side":
             if value not in config.PANEL_SIDES:
                 raise InvalidArgument(f"invalid panel_side {value!r}")

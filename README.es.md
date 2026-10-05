@@ -37,8 +37,9 @@ instalado; si no, muestra su ayuda.
   de los módulos en `~/.config/invasor` se conservan salvo con `--purge` (el diálogo lo pregunta).
 
 Después de instalar por primera vez, reinicia Steam una vez: el instalador crea
-`~/.steam/steam/.cef-enable-remote-debugging`, igual que Decky. Al desinstalar solo se borra si lo creó
-el instalador y Decky no está instalado.
+`~/.steam/steam/.cef-enable-remote-debugging`, igual que Decky. Si algo lo borra más tarde, el servicio lo
+vuelve a crear la próxima vez que arranca (Steam necesita reiniciarse para que surta efecto). Al desinstalar solo
+se borra si lo creó Invasor, el instalador o el servicio, y Decky no está instalado.
 
 ### Paquete para otras máquinas
 ```sh
@@ -63,16 +64,17 @@ de GitHub comprometida. Los módulos instalados desde un zip no se tocan.
 
 **Canal de actualizaciones:** *Stable* (por defecto) solo ofrece versiones finales (`X.Y.Z`). *Beta (pre-releases)*
 (`update_channel`: `"beta"`) ofrece también candidatas (`X.Y.Z-rcN`, por ejemplo `0.1.3-rc1`), que pueden
-ser inestables. Al cambiar de canal se busca una actualización al momento. Las versiones nunca bajan: una
-candidata es anterior a su versión final (`0.1.3-rc1` < `0.1.3`), así que para salir del canal beta se elige
-*Stable* y se espera a la siguiente versión final.
+ser inestables. Al cambiar de canal se busca una actualización al momento. Una versión final es
+más nueva que sus candidatas (`0.1.3-rc1` < `0.1.3`) y las versiones nunca bajan, con una excepción: desde
+una candidata, elegir *Stable* ofrece la versión estable aunque sea más antigua (*Go back to 0.1.2*); antes
+se pide confirmación. Si es la misma versión, no se ofrece nada.
 
 Log: `journalctl --user -u invasor -f`. Configuración opcional:
 `~/.config/invasor/config.json` (`open_combo`, `panel_side`, `targets`, `disabled_modules`, `dev_desktop`,
-`update_check`, `update_channel`; los dos primeros y los dos últimos también se cambian desde la pestaña **⚙ Settings**).
+`handle_icon`, `module_order`, `update_check`, `update_channel`; la mayoría también se cambian desde la pestaña **⚙ Settings**).
 
 ## Uso con el mando
-La pestaña "I" está siempre en la biblioteca. En el menú rápido (···) solo aparece con un
+La pestaña de Invasor (de color, con el icono o con la letra "I") está siempre en la biblioteca. En el menú rápido (···) solo aparece con un
 juego en marcha, y el panel de ahí omite los módulos que no pintan nada durante la partida
 (`"no_qam": true`, p. ej. Artwork).
 
@@ -91,14 +93,14 @@ El panel ocupa el 40 % del ancho de la pantalla en la biblioteca (en Quick Acces
 sombras arriba y abajo indican que hay más por ver.
 
 Mientras el panel está abierto, Steam no recibe ninguna pulsación del mando. También
-se puede abrir con la pestaña azul "I", con el dedo o con F10.
+se puede abrir con la pestaña azul, con el dedo o con F10.
 
 Se leen tanto los mandos normales (evdev: DualSense, Xbox…) como los de protocolo
 Steam Deck: una Steam Deck real, o handhelds como la Legion Go virtualizados por
 InputPlumber. Para ver qué botones detecta el servicio: `python3 tools/pad.py`.
 
 **Pestaña ⚙ Settings** (siempre presente, aunque no haya módulos): activar o
-desactivar módulos, atajo para abrir el panel, lado del panel, color de acento (también de la pestaña "I") y "About" (versión,
+desactivar módulos, atajo para abrir el panel, lado del panel, el orden de las pestañas de los módulos (se agarra un módulo con A y se mueve con la cruceta), qué muestra la pestaña (el icono, la letra "I" o nada), color de acento (también de la pestaña) y "About" (versión,
 estado y mandos detectados). La interfaz de invasor está en inglés; cada módulo
 elige su propio idioma.
 
@@ -108,7 +110,7 @@ Los módulos de verdad viven en sus propios repositorios y se instalan como zip 
 module**:
 
 - [invasor-artwork](../invasor-artwork): arte de la comunidad de steamgriddb.com para tus juegos y accesos directos.
-- [invasor-ducky](../invasor-ducky): generación de fotogramas con lsfg-vk, configurada por juego.
+- [invasor-patito](../invasor-patito): generación de fotogramas con lsfg-vk, configurada por juego.
 
 Los módulos instalados viven en `~/.local/share/invasor/user-modules/`. Actualizar Invasor nunca los toca.
 

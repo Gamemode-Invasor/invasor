@@ -12,7 +12,8 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 # Modules installed by the user (zip from Settings, tools/install_module.py): outside the
 # core's install folder, so updating Invasor never touches them.
 CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "invasor"
-USER_MODULES_DIR = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "invasor" / "user-modules"
+DATA_DIR = Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local/share")) / "invasor"
+USER_MODULES_DIR = DATA_DIR / "user-modules"
 
 DEFAULTS = {
     # STEAM TOUCHPOINT: which CEF windows get the overlay, and in which role. Window titles are
@@ -38,6 +39,10 @@ DEFAULTS = {
     "panel_side": "auto",
     # Accent colour of the overlay and its "I" handle (one of ACCENT_COLORS).
     "accent_color": "blue",
+    # What the handle shows: the Invasor icon, the letter "I", or nothing but the coloured tab (HANDLE_ICONS).
+    "handle_icon": "icon",
+    # Module ids in the order the user wants their tabs; the ones not listed follow, by their module.json order.
+    "module_order": [],
     # Module ids switched off from the panel.
     "disabled_modules": [],
     # DEVELOPMENT ONLY: also inject into the desktop client window, so the UI can be
@@ -55,6 +60,7 @@ DEFAULTS = {
 
 PANEL_SIDES = ("auto", "left", "right")
 UPDATE_CHANNELS = ("stable", "beta")
+HANDLE_ICONS = ("icon", "letter", "none")
 ACCENT_COLORS = ("blue", "yellow", "green", "red", "purple", "white")
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
 
@@ -65,6 +71,14 @@ def _is_int(v):
 
 def _str_list(v):
     return isinstance(v, list) and all(isinstance(x, str) for x in v)
+
+
+MODULE_ORDER_MAX = 200
+
+
+def _id_list(v):
+    """A module order: module ids, each once."""
+    return _str_list(v) and len(v) <= MODULE_ORDER_MAX and len(set(v)) == len(v)
 
 
 # What a valid value looks like for each key. A bad one falls back to its default with
@@ -89,7 +103,9 @@ VALID = {
     "open_combo": lambda v: _str_list(v) and bool(v),  # button names are checked by gamepad.parse_combo
     "panel_side": lambda v: v in PANEL_SIDES,
     "accent_color": lambda v: v in ACCENT_COLORS,
+    "handle_icon": lambda v: v in HANDLE_ICONS,
     "disabled_modules": _str_list,
+    "module_order": _id_list,
     "dev_desktop": lambda v: isinstance(v, bool),
     "qam_visible_w": lambda v: v is None or (_is_int(v) and 200 <= v <= 4000),
     "update_check": lambda v: isinstance(v, bool),

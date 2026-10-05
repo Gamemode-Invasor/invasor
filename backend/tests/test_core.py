@@ -29,7 +29,7 @@ class Prefs(unittest.TestCase):
         self.api = core.make_methods(manager, GameContext(), self.watcher, self.cfg)
 
     def test_defaults(self):
-        self.assertEqual(self.api["prefs"](), {"open_combo": ["L3", "R3"], "panel_side": "auto", "accent_color": "blue", "update_check": True, "update_channel": "stable", "qam_visible_w": None})
+        self.assertEqual(self.api["prefs"](), {"open_combo": ["L3", "R3"], "panel_side": "auto", "accent_color": "blue", "handle_icon": "icon", "module_order": [], "update_check": True, "update_channel": "stable", "qam_visible_w": None})
 
     def test_combo_changes_live_and_persists(self):
         self.api["set_pref"]("open_combo", ["back", "START"])
@@ -42,6 +42,22 @@ class Prefs(unittest.TestCase):
         for bad in ("pink", "black"):
             with self.assertRaises(ValueError):
                 self.api["set_pref"]("accent_color", bad)
+
+    def test_handle_icon(self):
+        self.assertEqual(self.api["set_pref"]("handle_icon", "letter")["handle_icon"], "letter")
+        self.assertEqual(json.loads(self.config_file.read_text())["handle_icon"], "letter")
+        self.assertEqual(self.api["set_pref"]("handle_icon", "none")["handle_icon"], "none")
+        for bad in ("image", "", None, True):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.api["set_pref"]("handle_icon", bad)
+
+    def test_module_order(self):
+        self.assertEqual(self.api["set_pref"]("module_order", ["b", "a", "b"])["module_order"], ["b", "a"])  # each id once
+        self.assertEqual(json.loads(self.config_file.read_text())["module_order"], ["b", "a"])
+        self.assertEqual(self.api["set_pref"]("module_order", [])["module_order"], [])
+        for bad in ("a", None, [1], ["a", None], {"a": 1}, [str(i) for i in range(201)]):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.api["set_pref"]("module_order", bad)
 
     def test_update_check_pref(self):
         self.assertIs(self.api["set_pref"]("update_check", False)["update_check"], False)
