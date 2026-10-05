@@ -433,6 +433,13 @@ class Smoke:
         await self.press("X")
         await self.press("B")
 
+        # showInQam: Demo reads hide_in_qam, but only the Quick Access panel obeys it: the library keeps the tab.
+        st = await self.goto("Hide in Quick Access")
+        await self.press("A", wait=0.8)
+        tabs = await self.js(f"[...{SR}.querySelectorAll('.tabbar.main .tab')].map(t => t.textContent)")
+        self.check("showInQam: the library ignores it (the Demo tab stays)", "Demo" in tabs, tabs)
+        await self.press("A", wait=0.5)  # off again
+
         # Control API: "Lock volume" disables Volume in Controls (selectable, but inert).
         await self.goto("Lock volume")
         await self.press("A")

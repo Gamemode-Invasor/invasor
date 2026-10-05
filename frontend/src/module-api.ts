@@ -187,6 +187,14 @@ export interface ModuleDef {
   /** The module's tab stopped being visible: pause timers, polling… */
   onHide?(): void;
   onGameChange?(game: GameState, ctx: ModuleCtx): void;
+  /**
+   * Quick Access only: return false to hide this module's tab there (the library always shows it).
+   * It runs when the panel opens and when the game changes; it may be async (e.g. ask the
+   * module's backend with ctx.call). Anything but an explicit false shows the tab, also an
+   * error or an answer slower than 1.5 s. `"no_qam": true` in module.json hides it always,
+   * without asking. A hidden module keeps running; its tab is just not there.
+   */
+  showInQam?(ctx: ModuleCtx): boolean | Promise<boolean>;
   /** Overlay torn down or module disabled: release everything. */
   destroy?(): void;
 }

@@ -47,6 +47,7 @@
     },
     { "key": "name", "type": "text", "label": "Name", "default": "", "max_length": 32, "placeholder": "type…" },
     { "key": "secret", "type": "password", "label": "Secret", "default": "", "max_length": 32, "placeholder": "type…", "hint": "Masked like an API key; stored as is" },
+    { "key": "hide_in_qam", "type": "toggle", "label": "Hide in Quick Access", "default": false, "hint": "Read by the showInQam hook: the Demo tab leaves the Quick Access panel (the library keeps it)" },
     {
       "section": "Preset",
       "items": [

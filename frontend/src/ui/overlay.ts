@@ -6,6 +6,7 @@ import { setTopLayer, ui } from "./controls";
 import { attachGamepadNav } from "./gamepad-nav";
 import css from "./overlay.css";
 import iconSvg from "../assets/invasor.svg";
+import { hiddenInQam } from "./qam";
 import { accentColor } from "./palette";
 import { renderSettings, type ModuleInfo } from "./settings";
 import { tabRowHTML } from "./tabbar";
@@ -349,7 +350,32 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     }
     tabs.hidden(); // onHide before any module is destroyed
     for (const [id, m] of before) if (modules.get(id) !== m) destroyModule(m);
-    await tabs.set([...[...modules.values()].map((m) => m.spec), settingsSpec], keep);
+    tabsDirty = true;
+    await applyTabs();
+    return true;
+  }
+
+  /**
+   * Show the tabs of the modules we have, minus (in Quick Access) the ones whose showInQam()
+   * says no. Only touches the tab bar when what it shows changed. True if it did.
+   */
+  let tabsDirty = false; // the module specs changed (rebuildTabs): the bar must be redone
+  let shownKey = "";
+  let tabSeq = 0;
+  async function applyTabs(): Promise<boolean> {
+    const seq = ++tabSeq;
+    const keep = tabs.activeId();
+    const all = [...modules.values()];
+    const hidden = qam
+      ? await hiddenInQam(all.filter((m) => m.def?.showInQam).map((m) => ({ id: m.id, fn: () => m.def!.showInQam!(m.ctx!) })))
+      : new Set<string>();
+    if (seq !== tabSeq) return false; // a newer call took over while we waited
+    const visible = all.filter((m) => !hidden.has(m.id));
+    const key = visible.map((m) => m.id).join();
+    if (!tabsDirty && key === shownKey) return false;
+    tabsDirty = false;
+    shownKey = key;
+    await tabs.set([...visible.map((m) => m.spec), settingsSpec], keep);
     return true;
   }
 
@@ -378,6 +404,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       for (const m of modules.values()) {
         if (m.built && m.def) safe("onGameChange", () => m.def!.onGameChange?.(game, m.ctx!));
       }
+      if (qam && tabsLoaded && !panel.hidden) void applyTabs(); // a module may now want to show or hide
     } catch {
       // Backend hiccup: keep the last known state, status line shows the problem.
     }
@@ -511,7 +538,8 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
         // Backend not reachable yet: try again on the next open.
         if (!(await rebuildTabs())) tabsLoaded = false;
       } else {
-        tabs.shown();
+        // Quick Access: ask the modules again; a changed bar already shows its active tab.
+        if (!(await applyTabs())) tabs.shown();
         nav.reset();
       }
     });

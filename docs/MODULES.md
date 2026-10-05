@@ -57,7 +57,7 @@ modules/<id>/
 | `order` | no | Integer, default tab position (lower first, then by name). Default 100. The user can reorder the modules in ⚙ Settings › Module order, and what they choose wins over this; a module they never placed goes after the ones they did, by this value. |
 | `tab` | no | Short tab label. Default: `name`. |
 | `min_core` | no | Oldest Invasor the module works with, as `"0.1.3"` (or `"0.1.3-rc1"`). A module that needs a newer one is refused when installing and, if it's already installed, isn't loaded and ⚙ Settings says why. A release candidate counts as older than its release: `0.1.3-rc2` doesn't meet `"0.1.3"`. Invasor versions that predate this key reject it as an unknown key. Default: any. |
-| `no_qam` | no | `true`: not shown in the Quick Access (···) panel, only in the library's (for modules with nothing to do during a game). Default `false`. |
+| `no_qam` | no | `true`: not shown in the Quick Access (···) panel, only in the library's (for modules with nothing to do during a game). For a condition the module decides at run time, see `showInQam` in section 5. Default `false`. |
 | `settings` | no | The settings form (below). |
 | `forms` | no | Named forms whose values the module stores itself (section 3, at the end). |
 
@@ -260,10 +260,18 @@ export default defineModule({
   // tabsAlign: "start" | "center" | "end" | "justify",
   onShow(ctx) {}, onHide() {},          // the tab became visible / hidden
   onGameChange(game, ctx) {},           // selected/running game changed
+  showInQam(ctx) { return true; },      // Quick Access only: false hides this tab there (may be async)
   destroy() {},                         // module disabled or overlay torn down
 });
 ```
 
+- **Showing in Quick Access.** `"no_qam": true` in module.json always hides the module there. For a condition the
+  module resolves itself (say, "only while the running game has some feature on"), define `showInQam(ctx)`: it
+  returns `false` to hide the tab in the Quick Access (···) panel, and may be async (ask your backend with
+  `ctx.call`, or read `ctx.game()`). Invasor asks when the panel opens and when the game changes, not in between.
+  Only an explicit `false` hides: an error, or an answer slower than 1.5 s, shows the tab. The library panel
+  ignores it. A hidden module keeps running (`onGameChange` still arrives once it has been shown); only its tab
+  is gone, and its page is built again when the tab comes back.
 - **Building.** Every page and sub-tab is built the first time it's shown, then kept with its state. An
   exception there shows "Error in …" in that page only.
 - **What `ctx` gives:**

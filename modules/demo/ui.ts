@@ -16,7 +16,8 @@ import { CLIP } from "./clip";
 // sub-tabs (L2/R2) with onShow/onHide, the control API (set, setDisabled, setLabel),
 // the confirm and choose dialogs, toasts, calls to the backend (notifications, Steam, clean
 // errors), Steam's JS API from here, a custom control, images, videos and big windows.
-// Demo keeps no_qam off: it must show in Quick Access too (the "no room" case).
+// Demo keeps no_qam off: it must show in Quick Access too (the "no room" case). Its showInQam
+// hook lets you hide it there from a setting, to try the hook.
 
 let gameEl: HTMLElement | null = null;
 let summaryEl: HTMLElement | null = null;
@@ -197,6 +198,8 @@ function handleWindowSpec(ctx: ModuleCtx, handle: () => ReturnType<ModuleCtx["op
 export default defineModule({
   // Sub-tab row layout: "start" (default), "center", "end" or "justify".
   tabsAlign: "center",
+  // Quick Access only: false hides this tab there. Runs when the panel opens and when the game changes.
+  showInQam: async (ctx) => !(await ctx.settings.get()).hide_in_qam,
   tabs: [
     {
       // The whole form comes from "settings" in module.json: no wiring needed.
@@ -214,7 +217,7 @@ export default defineModule({
       label: "Text",
       async render(el, ctx) {
         summaryEl = ui.info("");
-        const form = await ui.settingsForm(ctx, { keys: ["name", "secret"] });
+        const form = await ui.settingsForm(ctx, { keys: ["name", "secret", "hide_in_qam"] });
         forms.push(form);
         // Controls can be driven from code: set() a value, setDisabled() with a reason.
         const volume = () => controlsForm?.controls.volume;

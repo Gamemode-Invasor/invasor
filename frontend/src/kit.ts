@@ -37,6 +37,7 @@ function check(def: unknown): Registered {
     const bad = d.tabs!.findIndex((t) => !t || typeof t.label !== "string" || typeof t.render !== "function");
     if (bad >= 0) return { error: `tabs[${bad}] needs a label and a render()` };
   }
+  if (d.showInQam !== undefined && typeof d.showInQam !== "function") return { error: "showInQam must be a function" };
   return { def: d };
 }
 
