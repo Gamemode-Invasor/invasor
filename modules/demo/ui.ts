@@ -38,7 +38,7 @@ function showGame(game: GameState) {
 }
 
 async function showSummary(ctx: ModuleCtx) {
-  if (summaryEl) summaryEl.textContent = `Values: ${JSON.stringify(await ctx.settings.get())}`;
+  if (summaryEl) summaryEl.textContent = `Values: ${JSON.stringify({ ...(await ctx.settings.get()), secret: undefined })}`;
 }
 
 function showSpace(canOpen: boolean) {
@@ -165,6 +165,7 @@ function demoWindowSpec(ctx: ModuleCtx): WindowSpec {
               void el.append(
                 ui.select({ label: "Choice", value: "a", options: [{ value: "a", label: "A" }, { value: "b", label: "B" }] }),
                 ui.text({ label: "Text", value: "" }),
+                ui.password({ label: "Password", value: "" }),
               ),
           },
         ],
@@ -213,7 +214,7 @@ export default defineModule({
       label: "Text",
       async render(el, ctx) {
         summaryEl = ui.info("");
-        const form = await ui.settingsForm(ctx, { keys: ["name"] });
+        const form = await ui.settingsForm(ctx, { keys: ["name", "secret"] });
         forms.push(form);
         // Controls can be driven from code: set() a value, setDisabled() with a reason.
         const volume = () => controlsForm?.controls.volume;

@@ -334,7 +334,8 @@ async function buildForm(schema: SettingsSchema, store: FormStore, toast: Module
         c = ui[f.type]<SettingValue>({ label: f.label, value, options: f.options, hint: f.hint, navHints: o.navHints, onChange });
         break;
       case "text":
-        c = ui.text({ label: f.label, value: value as string, placeholder: f.placeholder, maxLength: f.max_length, hint: f.hint, navHints: o.navHints, onChange });
+      case "password":
+        c = ui[f.type]({ label: f.label, value: value as string, placeholder: f.placeholder, maxLength: f.max_length, hint: f.hint, navHints: o.navHints, onChange });
         break;
       default:
         throw new Error(`unknown setting type ${(f as { type: string }).type}`);
@@ -371,6 +372,101 @@ async function buildForm(schema: SettingsSchema, store: FormStore, toast: Module
     applyWhen();
   };
   return Object.assign(form, { controls, reload, reset });
+}
+
+/** Shared by ui.text and ui.password. */
+function textField(o: Base<string> & { placeholder?: string; maxLength?: number }, secret: boolean): Control<string> {
+  const idleHint = () => hintFor(o, "A type");
+  const { el, body } = row(o.label, idleHint());
+  plain(el, o);
+  el.classList.add("text");
+  const input = document.createElement("input");
+  input.type = secret ? "password" : "text";
+  if (secret) {
+    el.classList.add("password");
+    input.autocomplete = "new-password";
+  }
+  if (o.maxLength && o.maxLength > 0) input.maxLength = o.maxLength;
+  input.value = (o.value ?? "").slice(0, o.maxLength || undefined);
+  input.placeholder = o.placeholder ?? "";
+  body.appendChild(input);
+  const showHide = {
+    label: () => (input.type === "password" ? "show" : "hide"),
+    run: () => void (input.type = input.type === "password" ? "text" : "password"),
+  };
+  let kbd: MiniKeyboard | null = null;
+  let steamFocus: HTMLElement | null = null;
+  let committed = input.value;
+  const setDisabled = disableable(el, idleHint, (d) => {
+    input.disabled = d;
+    if (d) finish();
+  });
+
+  const setHint = (h: string) => {
+    el.dataset.hint = withHint(h, o.hint);
+    hintsChanged(el);
+  };
+  const commit = () => {
+    if (input.value === committed) return;
+    committed = input.value;
+    o.onChange?.(input.value);
+  };
+
+  // Closing the panel or the window with the keyboard open keeps what was typed.
+  let dismissHost: Element | null = null;
+  function finish() {
+    if (!kbd) return;
+    dismissHost?.removeEventListener("invasor:dismiss", finish);
+    dismissHost = null;
+    kbd.el.remove();
+    kbd = null;
+    if (secret) input.type = "password";
+    el.classList.remove("editing");
+    el.dataset.hint = idleHint();
+    hintsChanged(el);
+    commit();
+  }
+
+  const open = () => {
+    if (kbd) return;
+    el.classList.add("editing");
+    kbd = createKeyboard(input, () => {}, finish, secret ? showHide : undefined);
+    el.appendChild(kbd.el);
+    dismissHost = el.closest(".iwin-box, .panel");
+    dismissHost?.addEventListener("invasor:dismiss", finish);
+    setHint("A type · X delete · Y shift · B done");
+  };
+
+  // Physical keyboard path: typing needs browser focus, which Steam's own selection
+  // loses meanwhile; hand it back on blur or the next D-pad press leaks (gamepad-nav.ts).
+  // STEAM TOUCHPOINT: ".gpfocus" is Steam's class for its selected element. If it
+  // changes, nothing breaks: focus just isn't handed back after physical typing.
+  input.addEventListener("pointerdown", () => {
+    steamFocus = el.ownerDocument.querySelector<HTMLElement>(".gpfocus");
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") input.blur();
+  });
+  input.addEventListener("change", commit);
+  input.addEventListener("blur", () => {
+    steamFocus?.focus({ preventScroll: true });
+    steamFocus = null;
+  });
+  el.addEventListener("click", (e) => {
+    if (e.target !== input) open();
+  });
+  onButton(el, (b) => {
+    if (kbd) return kbd.handle(b);
+    return false; // A -> core click -> open()
+  });
+  const set = (v: string) => {
+    input.value = (v ?? "").slice(0, o.maxLength || undefined);
+    committed = input.value;
+  };
+  const c = asControl(el, () => input.value, set, setDisabled);
+  if (o.disabled) c.setDisabled(true);
+  return c;
+  return c;
 }
 
 export const ui = {
@@ -532,87 +628,16 @@ export const ui = {
    * field itself allows typing with a physical keyboard.
    */
   text(o: Base<string> & { placeholder?: string; maxLength?: number }): Control<string> {
-    const idleHint = () => hintFor(o, "A type");
-    const { el, body } = row(o.label, idleHint());
-    plain(el, o);
-    el.classList.add("text");
-    const input = document.createElement("input");
-    input.type = "text";
-    if (o.maxLength && o.maxLength > 0) input.maxLength = o.maxLength;
-    input.value = (o.value ?? "").slice(0, o.maxLength || undefined);
-    input.placeholder = o.placeholder ?? "";
-    body.appendChild(input);
-    let kbd: MiniKeyboard | null = null;
-    let steamFocus: HTMLElement | null = null;
-    let committed = input.value;
-    const setDisabled = disableable(el, idleHint, (d) => {
-      input.disabled = d;
-      if (d) finish();
-    });
+    return textField(o, false);
+  },
 
-    const setHint = (h: string) => {
-      el.dataset.hint = withHint(h, o.hint);
-      hintsChanged(el);
-    };
-    const commit = () => {
-      if (input.value === committed) return;
-      committed = input.value;
-      o.onChange?.(input.value);
-    };
-
-    // Closing the panel or the window with the keyboard open keeps what was typed.
-    let dismissHost: Element | null = null;
-    function finish() {
-      if (!kbd) return;
-      dismissHost?.removeEventListener("invasor:dismiss", finish);
-      dismissHost = null;
-      kbd.el.remove();
-      kbd = null;
-      el.classList.remove("editing");
-      el.dataset.hint = idleHint();
-      hintsChanged(el);
-      commit();
-    }
-
-    const open = () => {
-      if (kbd) return;
-      el.classList.add("editing");
-      kbd = createKeyboard(input, () => {}, finish);
-      el.appendChild(kbd.el);
-      dismissHost = el.closest(".iwin-box, .panel");
-      dismissHost?.addEventListener("invasor:dismiss", finish);
-      setHint("A type · X delete · Y shift · B done");
-    };
-
-    // Physical keyboard path: typing needs browser focus, which Steam's own selection
-    // loses meanwhile; hand it back on blur or the next D-pad press leaks (gamepad-nav.ts).
-    // STEAM TOUCHPOINT: ".gpfocus" is Steam's class for its selected element. If it
-    // changes, nothing breaks: focus just isn't handed back after physical typing.
-    input.addEventListener("pointerdown", () => {
-      steamFocus = el.ownerDocument.querySelector<HTMLElement>(".gpfocus");
-    });
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") input.blur();
-    });
-    input.addEventListener("change", commit);
-    input.addEventListener("blur", () => {
-      steamFocus?.focus({ preventScroll: true });
-      steamFocus = null;
-    });
-    el.addEventListener("click", (e) => {
-      if (e.target !== input) open();
-    });
-    onButton(el, (b) => {
-      if (kbd) return kbd.handle(b);
-      return false; // A -> core click -> open()
-    });
-    const set = (v: string) => {
-      input.value = (v ?? "").slice(0, o.maxLength || undefined);
-      committed = input.value;
-    };
-    const c = asControl(el, () => input.value, set, setDisabled);
-    if (o.disabled) c.setDisabled(true);
-    return c;
+  /**
+   * Password field: a text field whose characters show as dots. The keyboard has an
+   * extra "show"/"hide" key to check what was typed. Masking is visual only: the value
+   * is stored and handed to the module's backend as is.
+   */
+  password(o: Base<string> & { placeholder?: string; maxLength?: number }): Control<string> {
+    return textField(o, true);
   },
 
   /** Action button. A (or tap) runs it. */

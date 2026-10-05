@@ -104,6 +104,10 @@ Declared once in `module.json`. With that declaration:
 | `radio` | one of the options | `options: [{value, label}]` (at least 1; value is a string, number or bool) | ←→ choose |
 | `select` | one of the options | same as `radio` | ←→ cycle, A opens the list |
 | `text` | string | `max_length` (default 256), `placeholder` | A opens the built-in keyboard |
+| `password` | string | same as `text`; `default` must be `""` | like `text`; shown as dots, the keyboard has a show/hide key |
+
+`password` only masks what is on screen: the value is stored as plain text in the module's `settings.json`
+and `ctx.settings.get` returns it as is. Don't use it as a condition (`when`/`disabled_when`).
 
 **Sections** have the form `{ "section": "Title", "open": true, "items": [fields…] }`. They:
 
@@ -279,7 +283,7 @@ export default defineModule({
   - **Settings form:** `await ui.settingsForm(ctx, { keys? })`. It returns the form, its `controls` by key,
     `reload()` and `reset()` (which stores every default). `await ui.form(ctx, name, store)` is the same for a
     `forms` entry stored by the module (section 3).
-  - **Value controls:** `toggle`, `checkbox`, `slider`, `number`, `radio` (an option with `swatch: "#hex"` shows as a colour dot), `select` and `text`, for values
+  - **Value controls:** `toggle`, `checkbox`, `slider`, `number`, `radio` (an option with `swatch: "#hex"` shows as a colour dot), `select`, `text` and `password`, for values
     that aren't settings. Each returns a `Control` with:
     - `get()`;
     - `set(v)`: shows a new value without calling `onChange`;

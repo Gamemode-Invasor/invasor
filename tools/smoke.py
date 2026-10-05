@@ -43,7 +43,9 @@ STATE = f"""(() => {{
     sub: r.querySelector('.tabbar.sub:not([hidden]) .tab.on')?.textContent ?? null,
     label: f ? (f.querySelector('.ctl-label')?.textContent ?? f.textContent).trim() : null,
     value: f?.querySelector('.ctl-value')?.textContent ?? f?.querySelector('.seg.on')?.textContent
-           ?? f?.querySelector('input[type=text]')?.value ?? null,
+           ?? f?.querySelector('input[type=text]')?.value
+           ?? f?.querySelector('input[type=password]')?.value ?? null,
+    masked: f?.querySelector('input')?.type === 'password',
     on: f?.classList.contains('on') ?? false,
     listOpen: !!list && !list.hidden,
     keyboard: !!f?.querySelector('.kbd'),
@@ -388,6 +390,24 @@ class Smoke:
         kbd_left = await self.js(f"!!{SR}.querySelector('.kbd')")
         self.check("closing the panel mid-typing saves the text and closes the keyboard",
                    stored == text0 + "q" and not kbd_left, (stored, kbd_left))
+
+        # Password field: same as text, but masked, and the keyboard has a show/hide key.
+        st = await self.goto("Secret")
+        secret0 = st["value"]
+        self.check("password: the input is masked", st["masked"], st)
+        st = await self.press("A")
+        self.check("password: A opens the keyboard", st["keyboard"], st)
+        st = await self.press("A")
+        self.check("password: A types", st["value"] == secret0 + "q" and st["masked"], st)
+        st = await self.press("B")
+        self.check("password: B closes the keyboard, still masked", not st["keyboard"] and st["masked"], st)
+        stored = json.loads(DEMO_SETTINGS.read_text()).get("secret") if DEMO_SETTINGS.exists() else None
+        self.check("password: the typed value is saved as is", stored == secret0 + "q", stored)
+        await self.press("A")
+        await self.press("A")
+        await self.press("X")
+        await self.press("X")
+        await self.press("B")
 
         # Control API: "Lock volume" disables Volume in Controls (selectable, but inert).
         await self.goto("Lock volume")

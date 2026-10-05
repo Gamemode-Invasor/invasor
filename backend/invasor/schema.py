@@ -25,6 +25,7 @@ FIELD_EXTRA = {
     "radio": {"options"},
     "select": {"options"},
     "text": {"max_length", "placeholder"},
+    "password": {"max_length", "placeholder"},
 }
 FIELD_COMMON = {"key", "type", "label", "default", "hint", "when", "disabled_when"}
 SECTION_KEYS = {"section", "open", "items", "when"}
@@ -114,6 +115,12 @@ def coerce(field, value):
             if _same(opt["value"], value):
                 return opt["value"]
         raise InvalidArgument(f"{key}: {value!r} is not one of the options")
+    if t == "password":  # same as text, but its messages never carry the value
+        if not isinstance(value, str):
+            raise InvalidArgument(f"{key}: expected text")
+        if len(value) > field["max_length"]:
+            raise InvalidArgument(f"{key}: longer than {field['max_length']} characters")
+        return value
     if t == "text":
         if not isinstance(value, str):
             raise InvalidArgument(f"{key}: expected text, got {value!r}")
@@ -176,7 +183,7 @@ def _parse_field(raw, path, keys):
             if any(_same(o["value"], x["value"]) for x in field["options"]):
                 _fail(f"{opath}.value", f"duplicate value {o['value']!r}")
             field["options"].append({"value": o["value"], "label": _str(o, "label", f"{opath}.", required=True)})
-    elif t == "text":
+    elif t in ("text", "password"):
         n = raw.get("max_length", TEXT_MAX_LENGTH)
         if not _is_int(n) or n <= 0:
             _fail(f"{path}.max_length", "must be a positive integer")
@@ -192,6 +199,8 @@ def _parse_field(raw, path, keys):
         _fail(f"{path}.default", str(e).split(": ", 1)[-1])
     if default != raw["default"]:
         _fail(f"{path}.default", f"must be within min..max and on a step (closest valid: {default})")
+    if t == "password" and default:
+        _fail(f"{path}.default", "must be empty: the default is sent to every frontend")
     field["default"] = default
     return field
 
@@ -265,6 +274,8 @@ def _condition(item, when, path, fields):
             _fail(f"{path}.{key}", "isn't a field of this form")
         if key == item.get("key"):
             _fail(f"{path}.{key}", "a field can't depend on itself")
+        if fields[key]["type"] == "password":
+            _fail(f"{path}.{key}", "a password can't be a condition")
         values = value if isinstance(value, list) else [value]
         if not values:
             _fail(f"{path}.{key}", "an empty list matches nothing")

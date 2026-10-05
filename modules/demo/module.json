@@ -45,6 +45,7 @@
       ]
     },
     { "key": "name", "type": "text", "label": "Name", "default": "", "max_length": 32, "placeholder": "type…" },
+    { "key": "secret", "type": "password", "label": "Secret", "default": "", "max_length": 32, "placeholder": "type…", "hint": "Masked like an API key; stored as is" },
     {
       "section": "Preset",
       "items": [

@@ -68,7 +68,7 @@ export type SettingField =
   | (FieldBase<boolean> & { type: "toggle" | "checkbox" })
   | (FieldBase<number> & { type: "slider" | "number"; min: number; max: number; step: number; unit?: string })
   | (FieldBase<SettingValue> & { type: "radio" | "select"; options: { value: SettingValue; label: string }[] })
-  | (FieldBase<string> & { type: "text"; max_length: number; placeholder?: string });
+  | (FieldBase<string> & { type: "text" | "password"; max_length: number; placeholder?: string });
 
 export interface SettingSection {
   section: string;
