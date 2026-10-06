@@ -2,7 +2,7 @@
 // Built with the same control kit modules use.
 
 import type { Api } from "../api";
-import type { SettingsSchema } from "../module-api";
+import type { SettingsSchema, WindowHandle, WindowSpec } from "../module-api";
 import { steamAvailable } from "../steam";
 import { ui } from "./controls";
 import { ACCENT_COLORS } from "./palette";
@@ -73,6 +73,8 @@ export interface SettingsDeps {
   onAccentColor(name: string): void;
   /** Handle icon preference changed: apply it now. */
   onHandleIcon(mode: string): void;
+  /** Open a big window over the panel (null, with a toast, where there's no room). */
+  openWindow(spec: WindowSpec): WindowHandle | null;
 }
 
 // Combos offered in the UI. L4/R4/L5/R5 only exist on Steam Deck-protocol pads (Deck, Legion Go…).
@@ -116,28 +118,27 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
           },
         });
         const extra: HTMLElement[] = m.error ? [ui.info(`⚠ ${m.error}`)] : [];
-        if (m.source === "user") {
-          extra.push(
-            ui.button({
-              label: `Uninstall ${m.name}`,
-              onClick: async () => {
-                const purge = await ui.choose(`Uninstall ${m.name}? Its settings and data can be kept in case you install it again.`, [
-                  { label: "Uninstall, keep its settings", value: false },
-                  { label: "Uninstall and delete its data", value: true },
-                ]);
-                if (purge === null) return;
-                try {
-                  await api.call("core", "module_uninstall", { id: m.id, purge });
-                  toast(purge ? `${m.name} and its data uninstalled` : `${m.name} uninstalled`);
-                } catch (e) {
-                  toast(`Couldn't uninstall ${m.name}: ${(e as Error).message}`, "error");
-                }
-                await deps.onModulesChanged();
-                rerender();
-              },
-            }),
-          );
-        }
+        extra.push(
+          ui.button({
+            label: `Uninstall ${m.name}`,
+            onClick: async () => {
+              const shipped = m.source === "core" ? " It comes with Invasor: it stays uninstalled after updates, and you can restore it from this section." : "";
+              const purge = await ui.choose(`Uninstall ${m.name}? Its settings and data can be kept in case you install it again.${shipped}`, [
+                { label: "Uninstall, keep its settings", value: false },
+                { label: "Uninstall and delete its data", value: true },
+              ]);
+              if (purge === null) return;
+              try {
+                await api.call("core", "module_uninstall", { id: m.id, purge });
+                toast(purge ? `${m.name} and its data uninstalled` : `${m.name} uninstalled`);
+              } catch (e) {
+                toast(`Couldn't uninstall ${m.name}: ${(e as Error).message}`, "error");
+              }
+              await deps.onModulesChanged();
+              rerender();
+            },
+          }),
+        );
         return [...(i ? [ui.separator()] : []), box, ...extra]; // a line between modules
       })
     : [ui.info("No modules installed.")];
@@ -165,6 +166,26 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
       },
     }),
   );
+
+  // --- Shipped modules the user uninstalled (Demo): they can come back
+  const gone = await api.call<{ id: string; name: string }[]>("core", "module_removed").catch(() => []);
+  for (const g of gone) {
+    moduleControls.push(
+      ui.button({
+        label: `Restore ${g.name}`,
+        onClick: async () => {
+          try {
+            await api.call("core", "module_restore", { id: g.id });
+            toast(`${g.name} restored`);
+          } catch (e) {
+            toast(`Couldn't restore ${g.name}: ${(e as Error).message}`, "error");
+          }
+          await deps.onModulesChanged();
+          rerender();
+        },
+      }),
+    );
+  }
 
   // --- Install a module from a zip (the core checks everything before installing)
   const picker = document.createElement("div");
@@ -447,13 +468,96 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
   };
   await refreshAbout();
 
+  // --- Manage Invasor: updates, restart, log, reset, uninstall
+  const LOG_LINES = 300;
+  // The log in a big window (a long text doesn't fit the panel): monospace, scrolling, refreshable.
+  const showLog = () => {
+    deps.openWindow({
+      title: "Invasor log",
+      render: async (win) => {
+        const box = document.createElement("pre");
+        box.className = "ctl-log";
+        const load = async () => {
+          try {
+            const text = await api.call<string>("core", "log_tail", { lines: LOG_LINES });
+            box.textContent = text.trim() || "(the log is empty)";
+            box.scrollTop = box.scrollHeight;
+          } catch (e) {
+            box.textContent = `Couldn't read the log: ${(e as Error).message}`;
+          }
+        };
+        win.append(ui.button({ label: "Refresh", onClick: () => void load() }), box);
+        await load();
+      },
+    });
+  };
+  /** Ask first, then call the backend; the same error toast for all of them. */
+  const manage = (label: string, question: string, ok: string, method: string, done: string, args: Record<string, unknown> = {}) =>
+    ui.button({
+      label,
+      onClick: async () => {
+        if (!(await ui.confirm(question, { ok }))) return;
+        try {
+          await api.call("core", method, args);
+          toast(done);
+        } catch (e) {
+          toast(`${label} failed: ${(e as Error).message}`, "error");
+        }
+      },
+    });
+  const manageControls = [
+    updates,
+    ui.separator(),
+    manage(
+      "Restart Invasor",
+      "Restart the Invasor service? The panel reloads in a few seconds; Steam and any running game are not restarted.",
+      "Restart",
+      "restart_service",
+      "Restarting… the panel will reload",
+    ),
+    manage(
+      "Restart Steam",
+      "Restart Steam? This closes the game that is running.",
+      "Restart Steam",
+      "restart_steam",
+      "Steam is restarting…",
+    ),
+    ui.button({ label: "View log", onClick: showLog }),
+    manage(
+      "Reset configuration",
+      "Go back to the default settings: panel side, colour, shortcut, module order and which modules are on. Installed modules and their own settings are kept. Invasor restarts.",
+      "Reset and restart",
+      "reset_config",
+      "Configuration reset… the panel will reload",
+    ),
+    ui.button({
+      label: "Uninstall Invasor",
+      onClick: async () => {
+        const purge = await ui.choose(
+          "Uninstall Invasor? The service, the core and every module installed from a zip are removed. Your settings can be kept in case you install it again.",
+          [
+            { label: "Uninstall, keep my settings", value: false },
+            { label: "Uninstall and delete my settings", value: true },
+          ],
+        );
+        if (purge === null) return;
+        try {
+          await api.call("core", "uninstall_invasor", { purge });
+          toast("Uninstalling Invasor…");
+        } catch (e) {
+          toast(`Couldn't uninstall: ${(e as Error).message}`, "error");
+        }
+      },
+    }),
+  ];
+
   el.append(
-    ui.section("Updates", [updates], { open: false }),
-    ui.section("Modules", moduleControls, { open: false }),
-    ...(modules.length > 1 ? [ui.section("Module order", orderControls, { open: false })] : []),
+    ui.section("Manage modules", moduleControls, { open: false }),
     ui.section("Install module", [ui.info("Module zips are checked before anything is installed."), picker], { open: false }),
+    ...(modules.length > 1 ? [ui.section("Module order", orderControls, { open: false })] : []),
     ui.section("Controller", [combo], { open: false }),
     ui.section("Panel", [side, handleIcon, color], { open: false }),
+    ui.section("Manage Invasor", manageControls, { open: false }),
     ui.section("About", [about, ui.button({ label: "Refresh", onClick: () => void refreshAbout() })], { open: false }),
   );
 }

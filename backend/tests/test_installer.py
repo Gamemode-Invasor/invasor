@@ -104,6 +104,11 @@ class Installer(unittest.TestCase):
         self.assertEqual(self.installed_version(), "2.0.0")
         self.assertEqual(self.leftovers(), [])
 
+    def test_the_installer_is_kept_next_to_the_install(self):
+        # ⚙ Settings › Manage Invasor uninstalls with it.
+        self.assertEqual(self.install(self.release("1.0.0")).returncode, 0)
+        self.assertEqual((self.dest / "invasor-installation.sh").read_text(), SCRIPT.read_text())
+
     def test_a_broken_update_goes_back(self):
         self.assertEqual(self.install(self.release("1.0.0")).returncode, 0)
         unit_before = self.unit.read_text()

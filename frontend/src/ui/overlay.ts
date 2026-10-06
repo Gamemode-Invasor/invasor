@@ -329,12 +329,27 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     return live;
   }
 
+  /** A ctx for the built-in Settings tab (big windows need one); no module settings or forms. */
+  let coreCtx: ModuleCtx | null = null;
+  const settingsCtx = () =>
+    (coreCtx ??= makeCtx({ id: "core", name: "Invasor", tab: "Invasor", description: "", author: "", order: 0, enabled: true, loaded: true, error: null, source: "core", ui: false, ui_built: false, settings: [], forms: {} }));
+
   // Created once: passing the same spec again keeps the tab's content (see tabhost.ts).
   const settingsSpec: TabSpec = {
     id: SETTINGS_ID,
     label: "⚙ Settings",
     name: "Settings",
-    render: (el) => renderSettings(el, { api, version, toast, onModulesChanged: rebuildTabs, onPanelSide: applySide, onAccentColor: applyAccent, onHandleIcon: applyHandleIcon }),
+    render: (el) =>
+      renderSettings(el, {
+        api,
+        version,
+        toast,
+        onModulesChanged: rebuildTabs,
+        onPanelSide: applySide,
+        onAccentColor: applyAccent,
+        onHandleIcon: applyHandleIcon,
+        openWindow: (spec) => settingsCtx().openWindow(spec),
+      }),
   };
 
   function destroyModule(m: LiveModule) {

@@ -276,8 +276,9 @@ class ModuleManager:
         for source, base in (("core", MODULES_DIR), ("user", USER_MODULES_DIR)):
             if not base.is_dir():
                 continue
+            removed = self.cfg.get("removed_modules", []) if source == "core" else []
             for d in sorted(base.iterdir()):
-                if not d.is_dir() or d.name[0] in "_.":
+                if not d.is_dir() or d.name[0] in "_." or d.name in removed:
                     continue
                 if d.name in found:
                     log.warning("module %s: the installed one (%s) replaces the core's", d.name, d)
@@ -321,6 +322,42 @@ class ModuleManager:
             self.settings.pop(mid, None)
             self._read(USER_MODULES_DIR / mid, "user")
             if self.enabled(mid):
+                self.load(mid)
+            return next(m for m in self.listing() if m["id"] == mid)
+
+    def remove_core(self, mid, purge=False):
+        """Uninstall a module shipped with Invasor: like remove(), and it's remembered
+        (cfg "removed_modules") so it stays gone when an update puts its files back."""
+        with self._lock:
+            self.remove(mid, purge)
+            removed = sorted({*self.cfg.get("removed_modules", []), mid})
+            self.cfg["removed_modules"] = removed
+            JsonStore(config.CONFIG_FILE).update(removed_modules=removed)
+
+    def removed_listing(self):
+        """The shipped modules the user uninstalled and that can still be restored: [{id, name}]."""
+        out = []
+        for mid in self.cfg.get("removed_modules", []):
+            d = MODULES_DIR / mid
+            if not d.is_dir():
+                continue
+            try:
+                name = str(json.loads((d / "module.json").read_text()).get("name") or mid)
+            except (OSError, ValueError):
+                name = mid
+            out.append({"id": mid, "name": name})
+        return out
+
+    def restore_core(self, mid):
+        """Bring back a shipped module the user uninstalled. Returns its listing entry."""
+        with self._lock:
+            removed = [m for m in self.cfg.get("removed_modules", []) if m != mid]
+            if len(removed) == len(self.cfg.get("removed_modules", [])) or not (MODULES_DIR / mid).is_dir():
+                raise schema.InvalidArgument(f"{mid!r} isn't an uninstalled module")
+            self.cfg["removed_modules"] = removed
+            JsonStore(config.CONFIG_FILE).update(removed_modules=removed)
+            self._read(MODULES_DIR / mid, "core")
+            if self.enabled(mid) and mid in self.manifests:
                 self.load(mid)
             return next(m for m in self.listing() if m["id"] == mid)
 

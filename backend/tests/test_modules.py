@@ -225,6 +225,27 @@ class Modules(unittest.TestCase):
         self.assertEqual(listing["extra"]["source"], "user")
         self.assertEqual(listing["broken"]["source"], "core")
 
+    def test_a_shipped_module_can_be_uninstalled_and_restored(self):
+        import invasor.config as config
+        cfg = {"disabled_modules": []}
+        manager = ModuleManager(cfg, GameContext())
+        manager.discover()
+        self.assertIn("good", manager.manifests)
+        manager.remove_core("good")
+        self.assertNotIn("good", manager.manifests)
+        self.assertEqual(json.loads(config.CONFIG_FILE.read_text())["removed_modules"], ["good"])
+        self.assertEqual(manager.removed_listing(), [{"id": "good", "name": "Good"}])
+        # An update puts the files back and the service restarts: it stays uninstalled.
+        again = ModuleManager({"disabled_modules": [], "removed_modules": ["good"]}, GameContext())
+        again.discover()
+        self.assertNotIn("good", again.manifests)
+        entry = manager.restore_core("good")
+        self.assertEqual((entry["id"], entry["loaded"], entry["source"]), ("good", True, "core"))
+        self.assertEqual(json.loads(config.CONFIG_FILE.read_text())["removed_modules"], [])
+        self.assertEqual(manager.removed_listing(), [])
+        with self.assertRaises(ValueError):
+            manager.restore_core("good")  # nothing to restore any more
+
     def test_hot_add_and_remove(self):
         import invasor.modules as m
         d = m.USER_MODULES_DIR / "hot"

@@ -113,6 +113,8 @@ stage() {  # stage <dir>: only what the service runs
   done
   find "$stg" \( -name __pycache__ -o -name node_modules \) -type d -prune -exec rm -rf {} +
   cp "$SRC/frontend/dist/invasor.js" "$stg/frontend/dist/invasor.js"
+  # Kept next to the install: ⚙ Settings › Manage Invasor uninstalls with it.
+  cp "$SRC/invasor-installation.sh" "$stg/invasor-installation.sh"
 }
 
 wait_healthy() {
@@ -164,6 +166,7 @@ do_install() {
     [[ -e "$DEST/$part" ]] && mv "$DEST/$part" "$DEST/.old-$part"
     mv "$stg/$part" "$DEST/$part"
   done
+  mv -f "$stg/invasor-installation.sh" "$DEST/invasor-installation.sh"
   rm -rf "$stg"
 
   # Same entry point as Decky: Steam exposes CEF DevTools on :8080 when this file exists.

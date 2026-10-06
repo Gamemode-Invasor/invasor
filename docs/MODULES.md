@@ -52,8 +52,8 @@ modules/<id>/
 | `api` | yes | Module API version. Must be `1`; Invasor refuses modules written for an API it doesn't implement. |
 | `name` | yes | Display name. |
 | `version` | yes | Your module's version (free text, e.g. `"1.0.0"`). |
-| `author` | no | Who made it: free text, one line, up to 128 characters, e.g. `"Jane Doe"` or `"Jane Doe <jane@example.com>"`. Invasor shows only the name (never the email): "Name (version) by Jane Doe" in ⚙ Settings › Modules, and when installing the zip. Default: empty. |
-| `description` | no | One line, shown in the hint bar when the module is selected in ⚙ Settings › Modules, and when installing the zip. |
+| `author` | no | Who made it: free text, one line, up to 128 characters, e.g. `"Jane Doe"` or `"Jane Doe <jane@example.com>"`. Invasor shows only the name (never the email): "Name (version) by Jane Doe" in ⚙ Settings › Manage modules, and when installing the zip. Default: empty. |
+| `description` | no | One line, shown in the hint bar when the module is selected in ⚙ Settings › Manage modules, and when installing the zip. |
 | `order` | no | Integer, default tab position (lower first, then by name). Default 100. The user can reorder the modules in ⚙ Settings › Module order, and what they choose wins over this; a module they never placed goes after the ones they did, by this value. |
 | `tab` | no | Short tab label. Default: `name`. |
 | `min_core` | no | Oldest Invasor the module works with, as `"0.1.3"` (or `"0.1.3-rc1"`). A module that needs a newer one is refused when installing and, if it's already installed, isn't loaded and ⚙ Settings says why. A release candidate counts as older than its release: `0.1.3-rc2` doesn't meet `"0.1.3"`. Invasor versions that predate this key reject it as an unknown key. Default: any. |
@@ -236,7 +236,7 @@ METHODS = {"apply": apply}   # what the UI can call: ctx.call("apply")
 - **Uninstall.** `teardown` also runs when the module is disabled, so it must never delete anything the user
   would want back. Undo what the module left outside its folder (another program's config, files in Steam's
   folders…) in `uninstall(context, purge)` instead. It runs only when the module is uninstalled: from ⚙ Settings
-  (installed modules only: the ones shipped with Invasor can only be disabled there), or for every module when
+  (also the ones shipped with Invasor, like Demo: they stay uninstalled across updates and ⚙ Settings can restore them), or for every module when
   Invasor itself is uninstalled (`invasor-installation.sh --uninstall`, whose `--purge` becomes `purge`). It runs
   after `teardown` and before its files are deleted, even if it's disabled (its code is imported without `setup`). `purge` is `True` when the user also
   asked to delete its settings and data; the core then deletes `~/.config/invasor/modules/<id>/` itself. It has
@@ -395,7 +395,7 @@ An installed module is loaded and its UI injected right away, with no restart. R
 it after asking; if that fails half way, the previous version stays installed and loaded.
 
 Module folders are read when the service starts. A folder added, removed, renamed or edited by hand (in
-`modules/` or `user-modules/`) is picked up with **⚙ Settings › Modules › Rescan modules**: every module is
+`modules/` or `user-modules/`) is picked up with **⚙ Settings › Manage modules › Rescan modules**: every module is
 torn down and loaded again, and its UI injected, with no restart.
 
 ## 9. Before distributing

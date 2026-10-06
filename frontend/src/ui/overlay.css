@@ -331,6 +331,18 @@ details[open] > summary::before {
   color: #8b94a7;
   font-size: 13px;
 }
+.ctl-log {
+  margin: 6px 0;
+  padding: 8px;
+  max-height: 70vh;
+  overflow: auto;
+  border-radius: 6px;
+  background: #11151c;
+  color: #c9d1e0;
+  font: 11px/1.4 ui-monospace, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
 .ctl-sep {
   border: 0;
   border-top: 1px solid #2f3746;

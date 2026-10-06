@@ -2,9 +2,10 @@
 import asyncio
 import logging
 import platform
+import subprocess
 
 from . import __version__, config, gamepad, install
-from .updater import Updater
+from .updater import Updater, run_detached
 from .schema import InvalidArgument, Unavailable
 from .storage import JsonStore
 
@@ -12,6 +13,13 @@ log = logging.getLogger("invasor.frontend")
 
 
 HIGHLIGHT_JS = "window.__invasor?.highlighted?.() ?? null"
+
+# Runs the installed installer's --uninstall from a copy: it deletes the folder it lives in.
+UNINSTALL_SCRIPT = r'''
+tmp="$(mktemp)" && cp "$1" "$tmp" && shift && bash "$tmp" "$@"
+rm -f "$tmp"
+'''
+LOG_MAX_LINES = 1000
 
 
 def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater=None):
@@ -74,11 +82,62 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
             raise Unavailable("SteamClient bridge not configured")
         return await steam.notify(title, body, icon)
 
+    # ---------- ⚙ Settings › Manage Invasor ----------
+
+    def restart_service():
+        """Restart this service (the panel reloads by itself a few seconds later). Steam and
+        any running game are not restarted."""
+        run_detached("invasor-restart", ["systemctl", "--user", "restart", "invasor.service"], "restart")
+        return True
+
+    async def restart_steam():
+        """Ask Steam to restart itself (it closes the running game). Unavailable if this
+        Steam has no such function: nothing is killed from here."""
+        # STEAM TOUCHPOINT (see docs/API-Steam.md): SteamClient.User.StartRestart(false), the call of Steam's own "Restart now" (it needs the argument).
+        if steam is None:
+            raise Unavailable("SteamClient bridge not configured")
+        await steam.call("User.StartRestart", [False])
+        return True
+
+    def log_tail(lines=200):
+        """The last lines of the service's log, as text."""
+        if not isinstance(lines, int) or isinstance(lines, bool) or not 1 <= lines <= LOG_MAX_LINES:
+            raise InvalidArgument(f"lines must be a whole number from 1 to {LOG_MAX_LINES}")
+        cmd = ["journalctl", "--user", "-u", "invasor.service", "-n", str(lines), "--no-pager", "-o", "cat"]
+        try:
+            done = subprocess.run(cmd, capture_output=True, text=True, timeout=10, errors="replace")
+        except FileNotFoundError:
+            raise Unavailable("journalctl not found") from None
+        except subprocess.TimeoutExpired:
+            raise Unavailable("journalctl took too long") from None
+        if done.returncode != 0:
+            raise Unavailable(f"couldn't read the log ({done.stderr.strip() or done.returncode})")
+        return done.stdout
+
+    def reset_config():
+        """Back to the default preferences: forget config.json (modules and their settings
+        stay) and restart the service so everything reads the defaults."""
+        config.CONFIG_FILE.unlink(missing_ok=True)
+        return restart_service()
+
+    def uninstall_invasor(purge=False):
+        """Uninstall Invasor with its own installer, in a detached unit: the service stops
+        and the overlay leaves Steam a moment after this returns. purge also deletes the
+        configuration."""
+        if not isinstance(purge, bool):
+            raise InvalidArgument("purge must be true or false")
+        script = config.DATA_DIR / "invasor-installation.sh"
+        if not script.is_file():
+            raise Unavailable("this install has no uninstaller: install Invasor once more to enable it")
+        args = ["--uninstall", *(["--purge"] if purge else [])]
+        run_detached("invasor-uninstall", ["bash", "-c", UNINSTALL_SCRIPT, "invasor-uninstall", str(script), *args], "uninstall")
+        return True
+
     # ---------- user modules (⚙ Settings › Install module) ----------
 
     def _reserved():
-        # Ids shipped with Invasor can't be taken by an installed module.
-        return {"core"} | {mid for mid, m in manager.manifests.items() if m.get("source") == "core"}
+        # Ids shipped with Invasor can't be taken by an installed module (not even an uninstalled one: it can come back).
+        return {"core"} | {mid for mid, m in manager.manifests.items() if m.get("source") == "core"} | set(cfg.get("removed_modules", []))
 
     def module_browse(path=None):
         return install.browse(path)
@@ -111,15 +170,32 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
         return entry
 
     def module_uninstall(id, purge=False):
-        """Uninstall a user module (its uninstall() runs first). With purge its settings
-        and data go too; otherwise they stay in case it's installed again."""
+        """Uninstall a module (its uninstall() runs first). With purge its settings and data
+        go too; otherwise they stay in case it's installed again. One shipped with Invasor
+        (demo) stays uninstalled across updates and can be restored (module_restore)."""
         m = manager.manifests.get(id)
-        if m is None or m.get("source") != "user":
-            raise InvalidArgument(f"{id!r} isn't an installed module (modules shipped with Invasor can only be disabled)")
-        manager.remove(id, bool(purge))
-        install.uninstall(id)
+        if m is None:
+            raise InvalidArgument(f"{id!r} isn't an installed module")
+        if m.get("source") == "core":
+            manager.remove_core(id, bool(purge))
+        else:
+            manager.remove(id, bool(purge))
+            install.uninstall(id)
         log.info("uninstalled module %s%s", id, " and its data" if purge else "")
         return True
+
+    def module_removed():
+        """The shipped modules that were uninstalled and can be restored."""
+        return manager.removed_listing()
+
+    async def module_restore(id):
+        """Bring back a shipped module that was uninstalled, and inject its UI."""
+        entry = await asyncio.to_thread(manager.restore_core, id)
+        ui_js = manager.manifests[id]["dir"] / "dist" / "ui.js"
+        if injector is not None and ui_js.is_file() and "error" not in manager.manifests[id]:
+            await injector.inject_module(id, ui_js)
+        log.info("restored module %s", id)
+        return entry
 
     async def module_rescan():
         """Read the module folders again and inject every module UI, so the panels see
@@ -209,7 +285,7 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
 
     def update_apply():
         """Download, verify and install the new version. The service restarts a moment
-        after this returns, and Steam after it."""
+        after this returns; Steam is not restarted."""
         return updater.apply()
 
     def pads():
@@ -225,6 +301,11 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
         "update_status": update_status,
         "update_check": update_check,
         "update_apply": update_apply,
+        "restart_service": restart_service,
+        "restart_steam": restart_steam,
+        "log_tail": log_tail,
+        "reset_config": reset_config,
+        "uninstall_invasor": uninstall_invasor,
         "info": info,
         "report": report,
         "game": game_state,
@@ -234,6 +315,8 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
         "module_inspect": module_inspect,
         "module_install": module_install,
         "module_uninstall": module_uninstall,
+        "module_removed": module_removed,
+        "module_restore": module_restore,
         "module_rescan": module_rescan,
         "modules": modules,
         "set_enabled": set_enabled,

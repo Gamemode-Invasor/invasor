@@ -45,6 +45,9 @@ DEFAULTS = {
     "module_order": [],
     # Module ids switched off from the panel.
     "disabled_modules": [],
+    # Modules shipped with Invasor (e.g. demo) that the user uninstalled. They stay uninstalled when
+    # Invasor updates (the installer puts their files back); ⚙ Settings can restore them.
+    "removed_modules": [],
     # DEVELOPMENT ONLY: also inject into the desktop client window, so the UI can be
     # tested (tools/smoke.py) without Game Mode/Big Picture. Keep false in normal use.
     "dev_desktop": False,
@@ -105,6 +108,7 @@ VALID = {
     "accent_color": lambda v: v in ACCENT_COLORS,
     "handle_icon": lambda v: v in HANDLE_ICONS,
     "disabled_modules": _str_list,
+    "removed_modules": _str_list,
     "module_order": _id_list,
     "dev_desktop": lambda v: isinstance(v, bool),
     "qam_visible_w": lambda v: v is None or (_is_int(v) and 200 <= v <= 4000),

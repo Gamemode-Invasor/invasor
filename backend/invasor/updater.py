@@ -89,16 +89,21 @@ def download(url, dest, limit):
             f.write(chunk)
 
 
-def launch(root, workdir):
-    """Run the installer from the unpacked release, detached from this service."""
-    cmd = ["systemd-run", "--user", "--collect", "--quiet", "--unit=invasor-update",
-           "bash", "-c", UPDATE_SCRIPT, "invasor-update", str(root), str(workdir)]
+def run_detached(unit, argv, what="update"):
+    """Run argv in a transient systemd user unit, detached from this service: it outlives
+    a restart or an uninstall of the very service that asks for it."""
+    cmd = ["systemd-run", "--user", "--collect", "--quiet", f"--unit={unit}", *argv]
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=30)
     except FileNotFoundError:
-        raise Unavailable("systemd-run not found: can't update from here") from None
+        raise Unavailable(f"systemd-run not found: can't {what} from here") from None
     except subprocess.CalledProcessError as e:
-        raise Unavailable(f"couldn't start the update ({(e.stderr or '').strip() or e.returncode})") from None
+        raise Unavailable(f"couldn't start the {what} ({(e.stderr or '').strip() or e.returncode})") from None
+
+
+def launch(root, workdir):
+    """Run the installer from the unpacked release, detached from this service."""
+    run_detached("invasor-update", ["bash", "-c", UPDATE_SCRIPT, "invasor-update", str(root), str(workdir)])
 
 
 def safe_extract(archive, dest, root_name):

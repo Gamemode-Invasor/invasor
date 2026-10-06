@@ -1,3 +1,5 @@
 - rc1: Fix: With the panel on the left, the library's handle hides while Quick Access shows its own: no more two "I" at once
+- rc1: Settings: "Modules" is now "Manage modules", and "Install module" comes before "Module order"
+- rc1: New Settings > Manage Invasor: updates, restart Invasor or Steam, view the log, reset the configuration and uninstall
+- rc1: Demo can be uninstalled from Settings > Manage modules, and restored from there; updates don't bring it back
 ---
-

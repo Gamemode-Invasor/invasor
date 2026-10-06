@@ -79,6 +79,7 @@ Steam's hidden page, which holds `SteamClient` and Steam's router. Invasor never
 |---|---|---|
 | Its URL in the `/json` list: `…/routes/library/app/<appid>` | `backend/invasor/context.py` | The **selected** game (the game page that's open), with no code inside Steam. |
 | `SteamClient.<path>(…)` evaluated there | `backend/invasor/steam.py` `SteamBridge`, `injector.evaluate_shared` | `ctx.steam_call` / `steam_call_async` for module backends, and `core.steam_call` for UIs whose window has no `SteamClient`. |
+| `SteamClient.User.StartRestart(false)` (Steam's own *Restart now* call; without the argument it fails with `requires 1 arguments`) | `backend/invasor/core.py` `restart_steam` | ⚙ Settings › Manage Invasor › Restart Steam. If this Steam has no such function the button says so (503); nothing is killed from outside. |
 | `window.NotificationStore.OnNotification(id, 5, bytes)` | `steam.py` `SteamBridge.notify` (a fixed script) | `ctx.notify` / `core.notify`: a notification shown as Steam shows an achievement, with our title, text and icon. Type 5 and the message (`CAchievementNotification`) are Steam's public protobuf definitions (`steammessages_clientnotificationtypes.proto`), encoded by Invasor. Steam's achievement toast setting applies. |
 
 The bridge only accepts dotted names (`Apps.SetCustomArtworkForApp`), never `constructor` or `prototype`.
@@ -110,7 +111,7 @@ its own shadow root.
 | CSS class `.gpfocus` | `ui/controls.ts` | Giving focus back to Steam's selected element after typing on a physical keyboard. | Focus isn't given back; nothing else changes. |
 | `document.activeElement` with `role="link"`, its `<img>` URL `/assets/<appid>/…` or `/customimages/<appid>…`, its `aria-labelledby` name | `library.ts` | The **highlighted** game (the library tile under the cursor). The name is matched against `shortcuts.vdf` for shortcuts without custom art. | `highlighted` is null; running and selected are unaffected. |
 | `window.screenX`, `innerWidth`, `screen.width` | `ui/overlay.ts` `fitToScreen` | Sizing the panel to the visible part of the Quick Access window (wider than what gamescope shows; it reports x=0 while sliding in). | The learned width (`qam_visible_w`, 348 px measured on a Legion Go) is used. |
-| `document.hidden`, `document.hasFocus()`, `blur` / `visibilitychange` | `ui/overlay.ts`, `main.ts` `__invasor.state()` | Closing a panel whose window left the screen, and deciding which window the open/close combo opens in (`backend/invasor/combo.py`). Quick Access shows the "I" only while a game runs (`core.game`). | If focus is never reported, the combo ignores the window instead of opening an invisible panel. Touch and F10 still work. |
+| `document.hidden`, `document.hasFocus()`, `blur` / `visibilitychange` | `ui/overlay.ts`, `main.ts` `__invasor.state()` | Closing a panel whose window left the screen, and deciding which window the open/close combo opens in (`backend/invasor/combo.py`). Quick Access shows the "I" only while a game runs (`core.game`), and reports to the backend (`core.set_qam_shown`) whether it shows it (`available` and not `document.hidden`): the library window hides its own "I" meanwhile, so two don't show with the panel on the left. | If focus is never reported, the combo ignores the window instead of opening an invisible panel. Touch and F10 still work. If `document.hidden` never turns true in Quick Access, the library's "I" stays hidden while a game runs; the combo and F10 still open the panel. |
 
 ### 2.5 Steam outside its UI
 
@@ -168,7 +169,7 @@ drive Steam's pages through port 8080. That's a property of Steam's debugging po
 | `SharedJSContext` renamed | No "Selected" game; module calls 503 | Plan B in each caller | Window titles in the debug log; `injector.evaluate_shared` |
 | `SharedJSContext` hangs | Module calls and notifications fail after a few seconds | 503 after the 5 s connect / 15 s call timeout; the panel and the rest keep working | `cef.CONNECT_TIMEOUT`; Steam itself (restart it) |
 | Route URL format changed | No "Selected" game | Running and highlighted still work | `context.py` route parsing |
-| `SteamClient` API renamed or re-signed | A module's live action fails, with its fallback | `Unavailable` (503), one log line per call | The module's plan B; the new name in Steam's JS |
+| `SteamClient` API renamed or re-signed | A module's live action fails, with its fallback; ⚙ Settings › Manage Invasor › Restart Steam says it's unavailable (`User.StartRestart`) | `Unavailable` (503), one log line per call | The module's plan B; the new name in Steam's JS |
 | `NotificationStore` changed | No notifications (e.g. from Noty) | `notify` answers 503 | `window.NotificationStore` in `SharedJSContext`; `SteamBridge.notify` |
 | `vgp_` events or button numbers changed | The pad doesn't move in the panel | Touch, F10 and the backend combo still work | `detail.button` of Steam's `vgp_onbuttondown` events (button numbers in `gamepad-nav.ts`) |
 | Library tile DOM changed | No "Highlighted" game | `highlighted` is null | `library.ts` (`appidFromArt` has unit tests) |
