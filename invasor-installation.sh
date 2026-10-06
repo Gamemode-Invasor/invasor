@@ -130,16 +130,25 @@ wait_healthy() {
   return 1
 }
 
+restore_old_files() {  # put the .old-* parts back; false if there is no previous install
+  local part
+  [[ -d "$DEST/.old-backend" ]] || return 1
+  for part in backend modules frontend; do
+    # Only a part that was already swapped out has an .old-*: an untouched one stays as it is.
+    [[ -e "$DEST/.old-$part" ]] || continue
+    rm -rf "${DEST:?}/$part"
+    mv "$DEST/.old-$part" "$DEST/$part"
+  done
+  [[ -f "$DEST/.old-unit" ]] && mv "$DEST/.old-unit" "$UNIT_DIR/$UNIT"
+  return 0
+}
+
 rollback() {  # rollback <old> <new>: put the previous install back; false if there is none
-  local old="$1" new="$2" part
+  local old="$1" new="$2"
   [[ -d "$DEST/.old-backend" ]] || return 1
   echo "Going back to Invasor $old..." >&2
   systemctl --user stop "$UNIT" || true
-  for part in backend modules frontend; do
-    rm -rf "${DEST:?}/$part"
-    [[ -e "$DEST/.old-$part" ]] && mv "$DEST/.old-$part" "$DEST/$part"
-  done
-  [[ -f "$DEST/.old-unit" ]] && mv "$DEST/.old-unit" "$UNIT_DIR/$UNIT"
+  restore_old_files
   systemctl --user daemon-reload
   systemctl --user restart "$UNIT"
   if wait_healthy; then
@@ -149,46 +158,62 @@ rollback() {  # rollback <old> <new>: put the previous install back; false if th
   fi
 }
 
-do_install() {
-  preflight
-  local version old="" stg="$DEST/.staging" part flag
-  version="$(version_of "$SRC/backend/invasor")"
-  [[ -d "$DEST/backend/invasor" ]] && old="$(version_of "$DEST/backend/invasor")"
-
-  # Built aside first, then swapped in: a failed copy never leaves a half install.
-  mkdir -p "$DEST"
-  rm -rf "$stg" "$DEST"/.old-*
-  trap "rm -rf '$stg'" EXIT
-  stage "$stg"
+# The swap and the (re)start. Called from an `if`, where `set -e` doesn't apply: every
+# step that can fail says so with `|| return 1`, so that do_install can roll back.
+apply_new() {
+  local stg="$1" flag part
   # The previous install stays as .old-* until the new service is healthy (see rollback).
-  [[ -f "$UNIT_DIR/$UNIT" ]] && cp "$UNIT_DIR/$UNIT" "$DEST/.old-unit"
+  if [[ -f "$UNIT_DIR/$UNIT" ]]; then cp "$UNIT_DIR/$UNIT" "$DEST/.old-unit" || return 1; fi
   for part in backend modules frontend; do
-    [[ -e "$DEST/$part" ]] && mv "$DEST/$part" "$DEST/.old-$part"
-    mv "$stg/$part" "$DEST/$part"
+    if [[ -e "$DEST/$part" ]]; then mv "$DEST/$part" "$DEST/.old-$part" || return 1; fi
+    mv "$stg/$part" "$DEST/$part" || return 1
   done
-  mv -f "$stg/invasor-installation.sh" "$DEST/invasor-installation.sh"
+  mv -f "$stg/invasor-installation.sh" "$DEST/invasor-installation.sh" || return 1
   rm -rf "$stg"
 
   # Same entry point as Decky: Steam exposes CEF DevTools on :8080 when this file exists.
   # Before the service starts: the service puts the file back too (backend/invasor/cef_flag.py),
   # and it would get here first, leaving us thinking someone else had made it.
   flag="$(steam_dir)/.cef-enable-remote-debugging"
-  local restart_steam=""
   if [[ ! -e "$flag" ]]; then
-    touch "$flag"
-    touch "$CEF_MARKER"
+    touch "$flag" || return 1
+    touch "$CEF_MARKER" || return 1
     restart_steam=1
   fi
 
-  write_unit
-  systemctl --user daemon-reload
-  systemctl --user enable --quiet "$UNIT"
-  systemctl --user restart "$UNIT"
+  write_unit || return 1
+  systemctl --user daemon-reload || return 1
+  systemctl --user enable --quiet "$UNIT" || return 1
+  systemctl --user restart "$UNIT" || return 1
 
   if ! wait_healthy; then
     echo "The service didn't come up. Its last log lines:" >&2
     journalctl --user -u "$UNIT" -n 20 --no-pager >&2 || true
-    rollback "$old" "$version" || true
+    return 1
+  fi
+}
+
+do_install() {
+  preflight
+  local version old="" stg="$DEST/.staging"
+  restart_steam=""
+  version="$(version_of "$SRC/backend/invasor")"
+
+  mkdir -p "$DEST"
+  # Left by an install that was cut short (never by a finished one): that attempt's
+  # backup is the last good copy. Put it back before anything else.
+  if restore_old_files; then
+    echo "A previous install was interrupted: its backup was put back." >&2
+  fi
+  [[ -d "$DEST/backend/invasor" ]] && old="$(version_of "$DEST/backend/invasor")"
+
+  # Built aside first, then swapped in: a failed copy never leaves a half install.
+  rm -rf "$stg" "$DEST"/.old-*
+  trap "rm -rf '$stg'" EXIT
+  stage "$stg"
+  if ! apply_new "$stg"; then
+    echo "Installing Invasor $version failed." >&2
+    rollback "$old" "$version" || true  # no .old-backend: a first install, nothing to go back to
     exit 1
   fi
   rm -rf "$DEST"/.old-*
