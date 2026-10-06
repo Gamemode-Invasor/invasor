@@ -466,7 +466,6 @@ function textField(o: Base<string> & { placeholder?: string; maxLength?: number 
   const c = asControl(el, () => input.value, set, setDisabled);
   if (o.disabled) c.setDisabled(true);
   return c;
-  return c;
 }
 
 export const ui = {
@@ -943,7 +942,14 @@ export const ui = {
       if (locked) return ctx.toast(NO_ROOM, "error");
       ctx.openWindow(o.open());
     });
-    ctx.onSpaceChange(paint);
+    // A window's render makes a new button on every open: one that left the page stops
+    // listening (the module's own unsubscribe only runs when the whole module is destroyed).
+    let attached = false;
+    const stop = ctx.onSpaceChange((canOpen) => {
+      if (wrap.isConnected) attached = true;
+      else if (attached) return stop();
+      paint(canOpen);
+    });
     paint(ctx.canOpenWindow());
     return wrap;
   },

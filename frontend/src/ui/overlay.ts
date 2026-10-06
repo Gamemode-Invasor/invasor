@@ -138,9 +138,8 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   let game: GameState = { selected: null, running: null, highlighted: null };
   let gameKey = "";
   let pollTimer: number | undefined;
-  let toastTimer: number | undefined;
+  const toastTimers = new Map<HTMLElement, number>(); // one per toast element: the panel's and each window's
   let modules = new Map<string, LiveModule>();
-  let tabsLoaded = false;
 
   const windows = new Set<WindowHandle>(); // open big windows, closed with the panel
   const spaceListeners = new Map<string, Set<(canOpen: boolean) => void>>(); // per module id
@@ -161,15 +160,10 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     visible: () => !panel.hidden,
   });
 
-  // A module UI registering after the tabs were built (it was injected late): pick it
-  // up on the next open, or now if the panel is open.
+  // A module UI registering after the tabs were built (it was injected late): the next
+  // open reads the module list again anyway; if the panel is open, now.
   kit.onRegister(() => {
-    if (!tabsLoaded) return;
-    tabsLoaded = false;
-    if (!panel.hidden) {
-      tabsLoaded = true;
-      void rebuildTabs();
-    }
+    if (!panel.hidden) void rebuildTabs();
   });
 
   // ---------- side ----------
@@ -219,8 +213,8 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     el.textContent = message;
     el.className = `toast ${kind}`;
     el.hidden = false;
-    window.clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(() => (el.hidden = true), TOAST_MS);
+    window.clearTimeout(toastTimers.get(el));
+    toastTimers.set(el, window.setTimeout(() => (el.hidden = true), TOAST_MS));
   }
 
   // ---------- module plumbing ----------
@@ -305,8 +299,9 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     const r = resolve(m);
     if (!r) return null;
     const def = "def" in r ? r.def : null;
-    // A settings-only module gets a fresh def object each time: compare its schema instead.
-    const sig = JSON.stringify([m.tab, m.name, m.settings, "error" in r ? r.error : null, m.ui]);
+    // A settings-only module gets a fresh def object each time: compare its schema (settings
+    // and forms: ctx.forms is captured once) instead.
+    const sig = JSON.stringify([m.tab, m.name, m.settings, m.forms, "error" in r ? r.error : null, m.ui]);
     if (old && old.sig === sig && (old.def === def || !m.ui)) return old;
     const base = { id: m.id, label: m.tab || m.name, name: m.name };
     if (!def) return { id: m.id, sig, def: null, ctx: null, built: false, spec: { ...base, error: (r as { error: string }).error } };
@@ -360,8 +355,11 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   /**
    * (Re)create the tabs from the backend's module list. Unchanged tabs keep their state.
    * False if the list couldn't be fetched: what's there stays (⚙ Settings at least).
+   * Overlapping calls: the one asked last wins, whichever answer arrives last.
    */
+  let rebuildSeq = 0;
   async function rebuildTabs(): Promise<boolean> {
+    const seq = ++rebuildSeq;
     let list: ModuleInfo[] = [];
     try {
       list = await api.call<ModuleInfo[]>("core", "modules");
@@ -370,7 +368,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       if (!tabs.count()) await tabs.set([settingsSpec]);
       return false;
     }
-    const keep = tabs.activeId();
+    if (seq !== rebuildSeq) return true; // a newer rebuild took over while we waited
     const before = modules;
     modules = new Map();
     for (const m of list) {
@@ -394,12 +392,13 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   let tabSeq = 0;
   async function applyTabs(): Promise<boolean> {
     const seq = ++tabSeq;
-    const keep = tabs.activeId();
     const all = [...modules.values()];
     const hidden = qam
       ? await hiddenInQam(all.filter((m) => m.def?.showInQam).map((m) => ({ id: m.id, fn: () => m.def!.showInQam!(m.ctx!) })))
       : new Set<string>();
     if (seq !== tabSeq) return false; // a newer call took over while we waited
+    // Read now, not before the wait: the user may have stepped to another tab meanwhile.
+    const keep = tabs.activeId();
     const visible = all.filter((m) => !hidden.has(m.id));
     const key = visible.map((m) => m.id).join();
     if (!tabsDirty && key === shownKey) return false;
@@ -434,7 +433,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       for (const m of modules.values()) {
         if (m.built && m.def) safe("onGameChange", () => m.def!.onGameChange?.(game, m.ctx!));
       }
-      if (qam && tabsLoaded && !panel.hidden) void applyTabs(); // a module may now want to show or hide
+      if (qam && !panel.hidden) void applyTabs(); // a module may now want to show or hide
     } catch {
       // Backend hiccup: keep the last known state, status line shows the problem.
     }
@@ -563,16 +562,13 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     void refreshStatus();
     nav.reset();
     // Game first, so modules render with the current game already known.
+    // The module list is read on every open: the other window (Library / Quick Access) may
+    // have enabled, disabled or installed modules since. Unchanged tabs keep their state.
+    // A backend that isn't reachable yet just leaves what's there; the next open tries again.
     void refreshGame().then(async () => {
-      if (!tabsLoaded) {
-        tabsLoaded = true;
-        // Backend not reachable yet: try again on the next open.
-        if (!(await rebuildTabs())) tabsLoaded = false;
-      } else {
-        // Quick Access: ask the modules again; a changed bar already shows its active tab.
-        if (!(await applyTabs())) tabs.shown();
-        nav.reset();
-      }
+      await rebuildTabs();
+      tabs.shown(); // a no-op if the tab already got its onShow
+      nav.reset();
     });
     pollTimer = window.setInterval(refreshGame, GAME_POLL_MS);
   }
@@ -597,7 +593,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       document.removeEventListener("visibilitychange", closeIfGone);
       window.clearInterval(pollTimer);
       window.clearInterval(fitTimer);
-      window.clearTimeout(toastTimer);
+      for (const t of toastTimers.values()) window.clearTimeout(t);
       tabs.clear();
       nav.destroy();
       for (const m of modules.values()) destroyModule(m);

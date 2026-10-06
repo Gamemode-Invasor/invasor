@@ -248,6 +248,7 @@ export function createTabHost(o: TabHostOpts): TabHost {
         active = states.indexOf(current);
         renderBars();
         o.nav.ensureFocus(); // only if the focused control is gone
+        showActive(); // hidden() ran before this (a rebuild): the tab is back on screen, so is its onShow
         return;
       }
       const keep = states.findIndex((s) => s.spec.id === keepId);

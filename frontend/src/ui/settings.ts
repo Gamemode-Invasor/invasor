@@ -86,7 +86,13 @@ const COMBOS: { value: string; label: string }[] = [
 
 const comboKey = (buttons: string[]) => [...buttons].sort().join("+");
 
+// The latest draw of each Settings pane: an older one still waiting for the backend must not
+// add its sections after a newer one did (two quick actions would show everything twice).
+const drawings = new WeakMap<HTMLElement, number>();
+
 export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
+  const drawing = (drawings.get(el) ?? 0) + 1;
+  drawings.set(el, drawing);
   // After installing/uninstalling a module the whole tab is drawn again (fresh list).
   const rerender = () => {
     el.replaceChildren();
@@ -551,6 +557,7 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
     }),
   ];
 
+  if (drawings.get(el) !== drawing) return; // a newer draw took over while we waited
   el.append(
     ui.section("Manage modules", moduleControls, { open: false }),
     ui.section("Install module", [ui.info("Module zips are checked before anything is installed."), picker], { open: false }),
