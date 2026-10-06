@@ -37,6 +37,11 @@ DATA_DIR = config.CONFIG_DIR / "modules"
 UNINSTALL_TIMEOUT = 10
 # How long teardown() may take before the module is considered stopped anyway.
 TEARDOWN_TIMEOUT = 10
+# How long importing a module, its upgrade() and its setup() may take together before it
+# is considered failed (and torn down) instead of holding the service up.
+SETUP_TIMEOUT = 20
+# How long unloading a module waits for on_steam_start callbacks that are still running.
+STEAM_START_JOIN = 3
 
 
 class Settings:
@@ -135,6 +140,8 @@ class ModuleContext:
         self.data = JsonStore(DATA_DIR / module_id / "data.json")
         self._steam = steam
         self._steam_start_cbs = []
+        self._steam_start_threads = []
+        self._dead = False  # set when the module is unloaded: its callbacks no longer start
         # Set by the manager once the module is loaded: (cb) -> None, runs cb now if Steam is up.
         self._steam_start_now = None
 
@@ -214,6 +221,28 @@ def _teardown(mid, module):
         log.error("module %s: teardown() still running after %ss, considered stopped", mid, TEARDOWN_TIMEOUT)
 
 
+def _bounded(what, fn, timeout):
+    """fn() in a thread of its own: its result or its exception (SystemExit included),
+    or TimeoutError if it takes longer than `timeout`. The thread is a daemon: one that
+    never ends is abandoned (logged by the caller), it can't stop the service from exiting."""
+    box = {}
+
+    def run():
+        try:
+            box["value"] = fn()
+        except BaseException as e:  # noqa: BLE001 - re-raised below, in the caller's thread
+            box["error"] = e
+
+    worker = threading.Thread(target=run, name=what, daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        raise TimeoutError(f"{what} still running after {timeout}s")
+    if "error" in box:
+        raise box["error"]
+    return box["value"]
+
+
 class ModuleManager:
     def __init__(self, cfg, game, steam=None):
         self.cfg = cfg
@@ -225,8 +254,11 @@ class ModuleManager:
         self._loaded = {}  # id -> the imported backend module (for teardown)
         self._contexts = {}  # id -> ModuleContext of a loaded module (its on_steam_start callbacks)
         self.steam_instance = None  # CEF browser id of the running Steam, once seen
-        # API methods run in worker threads and the injector in the event loop: one change
-        # to the module set at a time, and nobody reads it half-changed.
+        # API methods run in worker threads and the injector in the event loop. _ops
+        # serializes the changes to the module set (load, unload, Rescan…) and is held
+        # while a module's code runs; nothing that must answer quickly (listing(), the
+        # injector) takes it. _lock only guards the short bookkeeping of Steam start state.
+        self._ops = threading.RLock()
         self._lock = threading.RLock()
 
     def steam_started(self, instance):
@@ -239,31 +271,47 @@ class ModuleManager:
                 self.steam_instance = instance
                 for mid, context in list(self._contexts.items()):
                     for cb in list(context._steam_start_cbs):
-                        self._run_steam_start(mid, cb)
+                        self._run_steam_start(mid, context, cb)
 
         threading.Thread(target=run, name="steam-started", daemon=True).start()
 
-    def _run_steam_start(self, mid, cb):
+    def _run_steam_start(self, mid, context, cb):
         def run():
+            if context._dead:  # unloaded while this was waiting to start
+                return
             try:
                 cb()
             except MODULE_ERRORS:
                 log.exception("module %s: on_steam_start callback failed", mid)
 
-        threading.Thread(target=run, name=f"steam-start-{mid}", daemon=True).start()
+        worker = threading.Thread(target=run, name=f"steam-start-{mid}", daemon=True)
+        context._steam_start_threads = [t for t in context._steam_start_threads if t.is_alive()] + [worker]
+        worker.start()
 
     def _clear_listeners(self, mid):
         if mid in self.settings:
             self.settings[mid].clear_listeners()
 
     def _forget_context(self, mid):
-        context = self._contexts.pop(mid, None)
-        if context is not None:
+        """The module's code stops being ours: no callback starts from now on, and the
+        ones already running get STEAM_START_JOIN seconds to finish, so that nothing of
+        the old instance writes after teardown, a purge or the next setup()."""
+        with self._lock:
+            context = self._contexts.pop(mid, None)
+            if context is None:
+                return
+            context._dead = True
             context._steam_start_now = None
             context._steam_start_cbs.clear()
+            running = list(context._steam_start_threads)
+        for worker in running:
+            if worker is not threading.current_thread():
+                worker.join(STEAM_START_JOIN)
+                if worker.is_alive():
+                    log.warning("module %s: an on_steam_start callback is still running after unload", mid)
 
     def discover(self):
-        with self._lock:
+        with self._ops:
             self.scan()
             for mid in self.manifests:
                 if self.enabled(mid):
@@ -316,7 +364,7 @@ class ModuleManager:
     def add(self, mid):
         """(Re)load one user module after it was installed or replaced: its old code is
         torn down first. Returns its listing entry."""
-        with self._lock:
+        with self._ops:
             self.unload(mid)
             self.manifests.pop(mid, None)
             self.settings.pop(mid, None)
@@ -328,7 +376,7 @@ class ModuleManager:
     def remove_core(self, mid, purge=False):
         """Uninstall a module shipped with Invasor: like remove(), and it's remembered
         (cfg "removed_modules") so it stays gone when an update puts its files back."""
-        with self._lock:
+        with self._ops:
             self.remove(mid, purge)
             removed = sorted({*self.cfg.get("removed_modules", []), mid})
             self.cfg["removed_modules"] = removed
@@ -350,7 +398,7 @@ class ModuleManager:
 
     def restore_core(self, mid):
         """Bring back a shipped module the user uninstalled. Returns its listing entry."""
-        with self._lock:
+        with self._ops:
             removed = [m for m in self.cfg.get("removed_modules", []) if m != mid]
             if len(removed) == len(self.cfg.get("removed_modules", [])) or not (MODULES_DIR / mid).is_dir():
                 raise schema.InvalidArgument(f"{mid!r} isn't an uninstalled module")
@@ -365,7 +413,7 @@ class ModuleManager:
         """Forget a user module that is being uninstalled: its code is torn down, then
         its uninstall(ctx, purge) undoes what it left outside its folder. With purge its
         settings and data go too. Nothing the module does can stop the uninstall."""
-        with self._lock:
+        with self._ops:
             module = self._loaded.get(mid)
             manifest = self.manifests.get(mid, {})
             if module is None and manifest and "error" not in manifest:
@@ -409,7 +457,7 @@ class ModuleManager:
         """Read the module folders again (⚙ Settings › Rescan modules): every module is
         torn down and loaded afresh, so added, removed, renamed or edited ones are seen
         without restarting the service."""
-        with self._lock:
+        with self._ops:
             for mid in list(self.manifests):
                 self.unload(mid)
             self.manifests.clear()
@@ -453,17 +501,25 @@ class ModuleManager:
         return module
 
     def load(self, mid):
-        """Load a module's backend. A broken module is logged and skipped, never fatal."""
-        with self._lock:
+        """Load a module's backend. A broken module is logged and skipped, never fatal.
+        Its code (import, upgrade(), setup()) runs in a thread with a time limit, never
+        in the caller's: a hanging module fails to load instead of freezing the service,
+        and ctx.steam_call()/notify() are valid in setup() whatever called us."""
+        with self._ops:
             manifest = self.manifests[mid]
             if "error" in manifest:
                 return False
             if mid in self.registry:
                 return True
+            started = {}
             try:
-                module = self._import(mid)
                 previous = self._version_store(mid).load().get("version")
-                if module is not None:
+
+                def start():
+                    module = self._import(mid)
+                    started["module"] = module
+                    if module is None:
+                        return module, None
                     context = self._context(mid)
                     if previous is not None and previous != manifest["version"] and hasattr(module, "upgrade"):
                         # Not recorded if it fails: the next load tries again.
@@ -475,6 +531,14 @@ class ModuleManager:
                         except MODULE_ERRORS:
                             _teardown(mid, module)  # release whatever setup() got to start
                             raise
+                    return module, context
+
+                try:
+                    module, context = _bounded(f"setup-{mid}", start, SETUP_TIMEOUT)
+                except TimeoutError:
+                    if started.get("module") is not None:
+                        _teardown(mid, started["module"])
+                    raise
                 if previous != manifest["version"]:
                     self._version_store(mid).save({"version": manifest["version"]})
                 self.registry[mid] = dict(getattr(module, "METHODS", {}))
@@ -493,17 +557,18 @@ class ModuleManager:
         later ones as soon as they're registered."""
         def now(cb):
             if self.steam_instance is not None:
-                self._run_steam_start(mid, cb)
+                self._run_steam_start(mid, context, cb)
 
-        self._contexts[mid] = context
-        context._steam_start_now = now
-        for cb in list(context._steam_start_cbs):
-            now(cb)
+        with self._lock:
+            self._contexts[mid] = context
+            context._steam_start_now = now
+            for cb in list(context._steam_start_cbs):
+                now(cb)
 
     def unload(self, mid):
         """Stop serving its methods and let it release what it holds (teardown()).
         Its code is dropped from sys.modules: enabling it again starts afresh."""
-        with self._lock:
+        with self._ops:
             self.registry.pop(mid, None)
             self._forget_context(mid)
             module = self._loaded.pop(mid, None)
@@ -513,12 +578,12 @@ class ModuleManager:
             _forget(_package(mid))
 
     def shutdown(self):
-        with self._lock:
+        with self._ops:
             for mid in list(self._loaded):
                 self.unload(mid)
 
     def set_enabled(self, mid, enabled):
-        with self._lock:
+        with self._ops:
             if mid not in self.manifests:
                 raise KeyError(f"unknown module {mid}")
             disabled = set(self.cfg.get("disabled_modules", []))
@@ -543,33 +608,34 @@ class ModuleManager:
         return out
 
     def listing(self):
-        with self._lock:
-            out = []
-            for mid, m in self.manifests.items():
-                d = m["dir"]
-                out.append({
-                    "id": mid,
-                    "name": m["name"],
-                    # Short label for the module's tab in the panel (falls back to name).
-                    "tab": m.get("tab") or m["name"],
-                    "version": m.get("version"),
-                    "description": m.get("description", ""),
-                    "author": m.get("author_name", ""),  # the name only: the email never reaches the UI
-                    "order": m.get("order", 100),
-                    "enabled": self.enabled(mid),
-                    "loaded": mid in self.registry,
-                    "error": m.get("error"),
-                    # "core": shipped with Invasor; "user": installed by the user (can be uninstalled).
-                    "source": m.get("source", "core"),
-                    # Has a UI script (built or not): the panel then expects it to register.
-                    "ui": (d / "dist" / "ui.js").is_file() or (d / "ui.ts").is_file(),
-                    "ui_built": (d / "dist" / "ui.js").is_file(),
-                    "settings": m.get("settings", []),
-                    "no_qam": m.get("no_qam", False),
-                    "forms": m.get("forms", {}),
-                })
-            # The user's order first; the modules it doesn't mention follow by their module.json order.
-            rank = {mid: i for i, mid in enumerate(self.cfg.get("module_order", []))}
-            out.sort(key=lambda m: (0, rank[m["id"]], 0, "") if m["id"] in rank
-                     else (1, m["order"], m["name"].lower(), m["id"]))
-            return out
+        """The panel's module list. Takes no lock: it must answer even while a module's code runs
+        (it works on copies), and a half-finished change is at worst one refresh stale."""
+        out = []
+        for mid, m in list(self.manifests.items()):
+            d = m["dir"]
+            out.append({
+                "id": mid,
+                "name": m["name"],
+                # Short label for the module's tab in the panel (falls back to name).
+                "tab": m.get("tab") or m["name"],
+                "version": m.get("version"),
+                "description": m.get("description", ""),
+                "author": m.get("author_name", ""),  # the name only: the email never reaches the UI
+                "order": m.get("order", 100),
+                "enabled": self.enabled(mid),
+                "loaded": mid in self.registry,
+                "error": m.get("error"),
+                # "core": shipped with Invasor; "user": installed by the user (can be uninstalled).
+                "source": m.get("source", "core"),
+                # Has a UI script (built or not): the panel then expects it to register.
+                "ui": (d / "dist" / "ui.js").is_file() or (d / "ui.ts").is_file(),
+                "ui_built": (d / "dist" / "ui.js").is_file(),
+                "settings": m.get("settings", []),
+                "no_qam": m.get("no_qam", False),
+                "forms": m.get("forms", {}),
+            })
+        # The user's order first; the modules it doesn't mention follow by their module.json order.
+        rank = {mid: i for i, mid in enumerate(self.cfg.get("module_order", []))}
+        out.sort(key=lambda m: (0, rank[m["id"]], 0, "") if m["id"] in rank
+                 else (1, m["order"], m["name"].lower(), m["id"]))
+        return out

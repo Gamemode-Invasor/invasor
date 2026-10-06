@@ -217,9 +217,14 @@ METHODS = {"apply": apply}   # what the UI can call: ctx.call("apply")
   - Plain functions in `METHODS` run in a worker thread, so they may block (downloads, subprocesses…).
     Several calls can run at the same time.
   - `async def` functions run in the service's event loop and **must not block**.
-  - `setup`, `teardown` and `on_change` callbacks may run in any thread and must return quickly.
+  - `setup`, `teardown` and `on_change` callbacks may run in any thread and must return quickly. `setup`
+    (and `upgrade`, and importing `backend.py`) always runs in a worker thread, never in the event loop, so
+    `ctx.steam_call()` and `ctx.notify()` work there; together they get 20 seconds, after that the module
+    fails to load (it's torn down and the log says so).
   - `on_steam_start` callbacks get a thread of their own each time, so they may block. If Steam restarts
-    while one is still running, another one starts: guard it with a lock if that matters.
+    while one is still running, another one starts: guard it with a lock if that matters. When the module
+    is unloaded no new callback starts, and one still running is waited for up to 3 seconds before the
+    module's files or data are removed.
   - For background work, start your own thread (daemon) in `setup` and stop it in `teardown`. `teardown`
     gets 10 seconds (when the module is disabled, rescanned, replaced or the service stops); after that the
     module is considered stopped anyway and the log says so.
