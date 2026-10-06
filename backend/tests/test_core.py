@@ -99,6 +99,26 @@ class Prefs(unittest.TestCase):
                 self.api["set_qam_width"](bad)
         self.assertEqual(self.api["prefs"]()["qam_visible_w"], 348)
 
+    def test_qam_shown_hides_the_library_handle(self):
+        import asyncio
+
+        class Inj:
+            def __init__(self):
+                self.calls = []
+
+            async def set_main_handle_hidden(self, hidden):
+                self.calls.append(hidden)
+
+        inj = Inj()
+        api = core.make_methods(ModuleManager(self.cfg, GameContext()), GameContext(), self.watcher, self.cfg, injector=inj)
+        self.assertTrue(asyncio.run(api["set_qam_shown"](True)))
+        asyncio.run(api["set_qam_shown"](False))
+        self.assertEqual(inj.calls, [True, False])
+        for bad in (1, "true", None):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                asyncio.run(api["set_qam_shown"](bad))
+        self.assertEqual(inj.calls, [True, False])
+
     def test_module_settings_are_per_key_and_validated(self):
         self.assertEqual(self.api["settings_get"]("mod"), {"fps": 60})
         self.assertEqual(self.api["settings_set"]("mod", "fps", 151), 140)

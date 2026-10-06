@@ -154,6 +154,15 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
             JsonStore(config.CONFIG_FILE).update(qam_visible_w=width)
         return True
 
+    async def set_qam_shown(shown):
+        """Quick Access says whether its "I" is on screen: the library's hides while it is
+        (with the panel on the left nothing covers it, and two would show)."""
+        if not isinstance(shown, bool):
+            raise InvalidArgument(f"shown must be true or false, not {shown!r}")
+        if injector is not None:
+            await injector.set_main_handle_hidden(shown)
+        return True
+
     def set_pref(key, value):
         """Only user-facing preferences can be changed from the panel, and only to valid values."""
         if key == "open_combo":
@@ -211,6 +220,7 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
         "prefs": prefs,
         "set_pref": set_pref,
         "set_qam_width": set_qam_width,
+        "set_qam_shown": set_qam_shown,
         "pads": pads,
         "update_status": update_status,
         "update_check": update_check,

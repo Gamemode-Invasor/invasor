@@ -25,6 +25,8 @@ export interface Overlay {
   isOpen(): boolean;
   /** False in Quick Access while no game runs: no "I" there, and nothing opens. */
   isAvailable(): boolean;
+  /** Hide this window's "I" because another window shows its own. */
+  setHandleHidden(hidden: boolean): void;
   destroy(): void;
 }
 
@@ -114,9 +116,22 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   // Quick Access offers the panel only while a game runs (the library always does).
   const qam = role === "quickaccess";
   let available = !qam;
+  // Another window's "I" is showing over this one (the library's, while Quick Access has its own).
+  let handleHidden = false;
+  let lastShown: boolean | null = null;
+  function showHandle() {
+    handle.style.display = available && !handleHidden ? "" : "none";
+    if (!qam) return;
+    // Tell the backend whether Quick Access shows its "I", so the library window hides its own
+    // (with the panel on the left, nothing covers it and two would show).
+    const shown = available && !document.hidden;
+    if (shown === lastShown) return;
+    lastShown = shown;
+    api.call("core", "set_qam_shown", { shown }).catch(() => {});
+  }
   function setAvailable(yes: boolean) {
     available = yes;
-    handle.style.display = yes ? "" : "none";
+    showHandle();
   }
   setAvailable(available);
 
@@ -495,6 +510,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   if (qam) {
     window.addEventListener("focus", checkGame);
     document.addEventListener("visibilitychange", checkGame);
+    document.addEventListener("visibilitychange", showHandle);
     checkGame();
   }
 
@@ -551,11 +567,17 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     setOpen: (open) => toggle(open),
     isOpen: () => !panel.hidden,
     isAvailable: () => available,
+    setHandleHidden(hidden) {
+      handleHidden = hidden;
+      showHandle();
+    },
     destroy() {
       for (const w of [...windows]) w.close();
+      if (qam && lastShown) api.call("core", "set_qam_shown", { shown: false }).catch(() => {});
       window.clearInterval(availTimer);
       window.removeEventListener("focus", checkGame);
       document.removeEventListener("visibilitychange", checkGame);
+      document.removeEventListener("visibilitychange", showHandle);
       window.removeEventListener("blur", closeIfGone);
       document.removeEventListener("visibilitychange", closeIfGone);
       window.clearInterval(pollTimer);

@@ -43,6 +43,7 @@ class Injector:
         self._steam_instance = None  # the last CEF browser id seen
         self._sessions = {}  # target id -> task
         self._live = {}  # target id -> (connected CDPSession, role)
+        self._main_handle_hidden = False  # Quick Access shows its "I": the library's stays hidden
         self._seen_titles = None
         self._cleaned = set()  # ids of untargeted main windows already cleaned
         self._background = set()  # strong refs to fire-and-forget tasks
@@ -179,6 +180,8 @@ class Injector:
             log.warning("session %s ended: %s", name, e)
         finally:
             self._live.pop(target["id"], None)
+            if role == "quickaccess" and self._main_handle_hidden:
+                await self.set_main_handle_hidden(False)  # its window is gone: its "I" is too
             await session.close()
             log.info("lost %s", name)
 
@@ -200,7 +203,22 @@ class Injector:
             except Exception as e:
                 failed.append(mid)
                 log.error("module %s: its UI failed to load in %s: %s", mid, name, e)
+        if role == "main" and self._main_handle_hidden:
+            try:
+                await session.evaluate(self._handle_js(True))
+            except Exception as e:
+                log.debug("hiding the handle in %s failed: %s", name, e)
         log.info("injected into %s%s", name, f" (UI failed: {', '.join(failed)})" if failed else "")
+
+    @staticmethod
+    def _handle_js(hidden):
+        return f"window.__invasor?.setHandleHidden({'true' if hidden else 'false'})"
+
+    async def set_main_handle_hidden(self, hidden):
+        """Hide (or show again) the "I" of the main window while Quick Access shows its own.
+        Remembered, so a main window injected later (Steam reloaded it) gets it too."""
+        self._main_handle_hidden = bool(hidden)
+        await self.evaluate_all(self._handle_js(self._main_handle_hidden), role="main")
 
     async def inject_module(self, mid, path):
         """Inject one module's UI into every window we're in, now (a module just

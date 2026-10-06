@@ -11,6 +11,8 @@ declare global {
       toggle(): void;
       setOpen(open: boolean): void;
       state(): { role: string; open: boolean; focused: boolean; available: boolean };
+      /** Hide this window's "I" while another window shows its own (set by the backend). */
+      setHandleHidden(hidden: boolean): void;
       /** The game tile highlighted in this window's library, if any (asked by the backend). */
       highlighted(): TileInfo | null;
       destroy(): void;
@@ -85,6 +87,7 @@ function start(cfg: InvasorCfg, kit: KitRegistry) {
     // Used by the backend's gamepad combo to keep every window's panel in sync.
     setOpen: (open: boolean) => overlay.setOpen(open),
     state: () => ({ role: cfg.role, open: overlay.isOpen(), focused: document.hasFocus(), available: overlay.isAvailable() }),
+    setHandleHidden: (hidden: boolean) => overlay.setHandleHidden(hidden),
     highlighted: () => highlight.get(),
     destroy() {
       window.removeEventListener("keydown", onKey, true);
