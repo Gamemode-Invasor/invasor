@@ -443,6 +443,12 @@ class Smoke:
         # Control API: "Lock volume" disables Volume in Controls (selectable, but inert).
         await self.goto("Lock volume")
         await self.press("A")
+        await self.goto("Preview Volume at 100%")
+        await self.press("A")
+        await self.goto_sub("Controls")
+        st = await self.goto("Volume")
+        self.check("Control.set() moves the drawn value", "100" in str(st["value"]), st)
+        await self.goto_sub("Text")
         await self.goto_sub("Controls")
         st = await self.goto("Volume")
         st2 = await self.press("RIGHT")

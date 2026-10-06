@@ -138,8 +138,8 @@ it as usual. If one option changes others (e.g. a preset), do that in the module
 
 **How values are normalized:**
 
-- A number is clamped to `min..max` and snapped to the nearest step counted from `min`, with no float noise
-  (`0.1 + 0.2` is stored as `0.3`).
+- A number is clamped to `min..max` and snapped to the nearest step counted from `min` (halfway rounds up), with no
+  float noise (`0.1 + 0.2` is stored as `0.3`).
 - An option must match exactly: `1` and `"1"` are different values.
 - A stored value that is no longer valid (the schema changed, or the file was edited by hand) reads as its
   default, and the log says so.
@@ -294,7 +294,8 @@ export default defineModule({
 
 - **The `ui` kit.** It works with the gamepad and touch out of the box.
 
-  - **Settings form:** `await ui.settingsForm(ctx, { keys? })`. It returns the form, its `controls` by key,
+  - **Settings form:** `await ui.settingsForm(ctx, { keys?, navHints? })` (`navHints: false` makes the hint bar show each field's own
+    `hint` alone, without the button help). It returns the form, its `controls` by key,
     `reload()` and `reset()` (which stores every default). `await ui.form(ctx, name, store)` is the same for a
     `forms` entry stored by the module (section 3).
   - **Value controls:** `toggle`, `checkbox`, `slider`, `number`, `radio` (an option with `swatch: "#hex"` shows as a colour dot), `select`, `text` and `password`, for values
@@ -351,8 +352,10 @@ export default defineModule({
 | `backend.py` fails to import, `upgrade` or `setup` throws (or calls `exit()`), or `METHODS` is bad | The tab shows "the module's backend didn't load (see log)". |
 | `uninstall` throws, hangs or the code no longer imports | It's logged and the module is uninstalled anyway. |
 | `ui.js` has a syntax error or throws at load | It is evaluated on its own: the log says so, and the tab shows "its UI didn't load". |
-| A render or hook throws | Only that page shows the error. |
-| A slow method | It runs in its own thread; the panel and the gamepad keep working. |
+| A `render` throws | Only that page shows the error. |
+| An `onShow`, `onHide`, `onGameChange`, `showInQam`, `destroy` or window `onClose` hook throws | It's caught and logged in the browser console only; nothing is shown on the page, and the rest keeps working. |
+| A slow method | It runs in its own thread; the panel and the gamepad keep working. Too many at once are answered with 503 instead of queueing. |
+| A `setup` that hangs | After 20 seconds the module fails to load and is torn down; the rest of Invasor is unaffected. |
 | Corrupt or invalid stored settings | Invalid values read as their defaults and are corrected in the file. A file that isn't JSON is moved to `settings.json.corrupt`. |
 
 ## 8. Developing a module in its own repository
@@ -394,7 +397,8 @@ A module doesn't have to live inside Invasor. Keep it in its own repository, nex
 
 These checks keep a broken module from breaking Invasor; they don't make a module safe. A module is trusted code:
 its backend runs as your user and its UI runs inside Steam's window. Its `author` is whatever its `module.json`
-says. Install only modules from people you trust.
+says. Install only modules from people you trust. A disabled module's UI is still injected (so enabling it
+needs no re-injection) and holds the same API token as the others: disabling stops its backend, not its UI code.
 
 An installed module is loaded and its UI injected right away, with no restart. Reinstalling the same id replaces
 it after asking; if that fails half way, the previous version stays installed and loaded.

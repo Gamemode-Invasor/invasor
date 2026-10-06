@@ -92,7 +92,8 @@ juego en marcha, y el panel de ahí omite los módulos que no pintan nada durant
 El panel ocupa el 40 % del ancho de la pantalla en la biblioteca (en Quick Access, la columna visible). Solo se desplaza el contenido; las
 sombras arriba y abajo indican que hay más por ver.
 
-Mientras el panel está abierto, Steam no recibe ninguna pulsación del mando. También
+Mientras el panel está abierto, Steam no recibe ninguna pulsación del mando (los botones
+Steam y ··· propios siempre pasan). También
 se puede abrir con la pestaña azul, con el dedo o con F10.
 
 Se leen tanto los mandos normales (evdev: DualSense, Xbox…) como los de protocolo

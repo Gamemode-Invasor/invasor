@@ -14,6 +14,11 @@ test("decimals", () => {
 test("snap: float steps have no noise", () => {
   assert.equal(snap(0.1 + 0.2, 0, 1, 0.1), 0.3);
   assert.equal(snap(0.75, 0, 1, 0.25), 0.75);
+  // Halfway goes up; the backend test (test_schema.py) has the same cases.
+  assert.equal(snap(2, 1, 5, 2), 3);
+  assert.equal(snap(0.5, 0, 1, 1), 1);
+  assert.equal(snap(1.5, 0, 4, 1), 2);
+  assert.equal(snap(2.5, 0, 4, 1), 3);
   assert.equal(snap(1.26, 1, 2, 0.05), 1.25);
 });
 

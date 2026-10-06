@@ -2,8 +2,10 @@
 
 - settings: on_change, and set() for an option another one decides (preset -> fan);
 - storage: ctx.data and ctx.game_data;
-- forms + toml: the "profile" form, stored by the module in a TOML file;
-- Steam: notify / notify_async, steam_call / steam_call_async, always with a plan B;
+- forms + toml: the "profile" form, stored by the module in a TOML file (saved with a validate=
+  check that sees the new file before it replaces the old one);
+- game: info() and shortcut_exe() in whoami;
+- Steam: notify (with an icon) / notify_async, steam_call / steam_call_async, always with a plan B;
 - clean errors: InvalidArgument (400) and Unavailable (503);
 - plain and `async def` methods, a background thread stopped in teardown();
 - on_steam_start: counts the Steam starts it has seen;
@@ -17,6 +19,9 @@ import time
 from pathlib import Path
 
 from . import helpers
+
+# A 1x1 PNG as a data: URL: notify()'s icon may be an https URL or an embedded image like this.
+ICON = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=")
 
 ctx = None
 _stop = None
@@ -89,24 +94,26 @@ def on_change(key, value):
 
 def _notify_quietly(title, body):
     try:
-        ctx.notify(title, body)
+        ctx.notify(title, body, ICON)
     except ctx.Unavailable as e:
         ctx.log.warning("notification not shown: %s", e)  # plan B: the log
 
 
 def whoami():
     game = ctx.game.running or ctx.game.selected
-    return {"module": ctx.id, "game": game, "info": ctx.game.info(game["appid"]) if game else None,
+    # shortcut_exe: what a non-Steam shortcut launches (None for a Steam game).
+    exe = ctx.game.shortcut_exe(game["appid"]) if game and game.get("shortcut") else None
+    return {"module": ctx.id, "game": game, "info": ctx.game.info(game["appid"]) if game else None, "exe": exe,
             "upgraded_from": ctx.data.load().get("upgraded_from")}
 
 
 def notify(title="Demo", body=""):
-    ctx.notify(title, body)  # InvalidArgument/Unavailable reach the UI as clean errors
+    ctx.notify(title, body, ICON)  # InvalidArgument/Unavailable reach the UI as clean errors
     return {"ok": True}
 
 
 async def notify_async(title="Demo", body=""):
-    await ctx.notify_async(title, body)
+    await ctx.notify_async(title, body, ICON)
     return {"ok": True}
 
 
@@ -160,6 +167,13 @@ def profile_get():
     return ctx.forms["profile"].clean(helpers.profile_section(data))
 
 
+def _check_profile(tmp):
+    section = helpers.profile_section(ctx.toml.load(tmp)[0])
+    for key in ctx.forms["profile"].fields:
+        if key in section:
+            ctx.forms["profile"].coerce(key, section[key])  # InvalidArgument if it wouldn't read back
+
+
 def profile_set(key, value):
     form = ctx.forms["profile"]
     value = form.coerce(key, value)  # InvalidArgument if it can't be stored
@@ -170,7 +184,9 @@ def profile_set(key, value):
         section = data["profile"] = form.defaults()
     section[key] = value
     path.parent.mkdir(parents=True, exist_ok=True)
-    ctx.toml.save(path, data, mtime)  # refused if another program saved it meanwhile
+    # Refused if another program saved it meanwhile; validate= sees the new file first and
+    # can reject it (the old one stays untouched).
+    ctx.toml.save(path, data, mtime, validate=_check_profile)
     return value
 
 

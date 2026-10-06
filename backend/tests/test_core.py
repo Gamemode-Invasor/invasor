@@ -280,10 +280,6 @@ class Highlighted(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(state), {"running", "selected", "highlighted"})
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class InstallRollback(unittest.IsolatedAsyncioTestCase):
     """A replace that fails after the old version was unloaded loads the old one again."""
 
@@ -311,3 +307,7 @@ class InstallRollback(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(OSError, "disk full"):
             await api["module_install"]("Downloads/hello.zip", replace=True)
         self.assertEqual(manager.registry["hello"]["hi"](), "old")
+
+
+if __name__ == "__main__":
+    unittest.main()
