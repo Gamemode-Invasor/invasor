@@ -2,4 +2,16 @@
 - rc1: Settings: "Modules" is now "Manage modules", and "Install module" comes before "Module order"
 - rc1: New Settings > Manage Invasor: updates, restart Invasor or Steam, view the log, reset the configuration and uninstall
 - rc1: Demo can be uninstalled from Settings > Manage modules, and restored from there; updates don't bring it back
+- rc2: Security fix: a module zip can no longer write files outside its install folder, not even when you only press Inspect
+- rc2: Fix: a module that hangs while starting no longer freezes Invasor; it fails to load after 20 seconds and the rest keeps working
+- rc2: Fix: modules can use Steam calls and notifications in setup() every time, including when Invasor starts
+- rc2: Fix: a slow module can no longer delay the panel or stop Invasor from shutting down cleanly; too many calls at once get a "try again" answer
+- rc2: Fix: a power cut can no longer leave your configuration or module settings empty
+- rc2: Fix: a Steam window that stops answering no longer blocks Invasor from using it again
+- rc2: Fix: if an update fails at any step, the previous version is put back; the backup of an interrupted update is kept
+- rc2: Fix: the panel reads the module list every time it opens, so changes made from Quick Access or the Library show up in the other one
+- rc2: Fix: a module tab no longer loses its onShow after the tabs are rebuilt, and no longer jumps back to the previous tab when you switch quickly
+- rc2: Fix: Rescan modules now shows edited forms, Settings no longer draws twice after two quick actions, and notifications no longer get stuck on screen
+- rc2: Fix: number settings round halfway values up everywhere (module.json checks and the panel agree)
+- rc2: Demo shows every module feature: shortcut_exe, validated TOML saves, notification icons, Control.set and navHints
 ---
