@@ -111,7 +111,7 @@ def _members(zf):
     for i in infos:
         name = i.filename
         parts = PurePosixPath(name).parts
-        if name.startswith("/") or "\\" in name or ".." in parts or (parts and ":" in parts[0]):
+        if name.startswith("/") or "//" in name or "\\" in name or ".." in parts or (parts and ":" in parts[0]):
             raise InvalidArgument(f"unsafe path in the zip: {name!r}")
         if stat.S_ISLNK(i.external_attr >> 16):
             raise InvalidArgument(f"the zip contains a symbolic link: {name!r}")
@@ -146,6 +146,9 @@ def _check_backend(d):
         raise InvalidArgument(f"backend.py couldn't be checked: {run.stderr.strip()[-300:] or 'no output'}") from None
     if not result.get("ok"):
         raise InvalidArgument(result.get("error") or "backend.py doesn't import")
+    if run.returncode != 0:
+        # The verdict line is the module's word too (atexit, a replaced sys.stdout): the exit status is ours.
+        raise InvalidArgument(f"backend.py couldn't be checked: {run.stderr.strip()[-300:] or 'exited with an error'}")
 
 
 def _unpack(zip_path, reserved):
@@ -162,11 +165,15 @@ def _unpack(zip_path, reserved):
         with zf:
             infos, prefix = _members(zf)
             root = staging / "module"
+            real_root = os.path.realpath(root)
             for i in infos:
                 rel = i.filename[len(prefix):] if prefix else i.filename
                 if not rel or rel.endswith("/"):
                     continue
                 target = root / rel
+                # The last word: whatever the names looked like, nothing is written outside root.
+                if os.path.commonpath([real_root, os.path.realpath(target)]) != real_root:
+                    raise InvalidArgument(f"unsafe path in the zip: {i.filename!r}")
                 target.parent.mkdir(parents=True, exist_ok=True)
                 with zf.open(i) as src, open(target, "wb") as dst:
                     shutil.copyfileobj(src, dst)
