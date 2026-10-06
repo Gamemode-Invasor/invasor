@@ -4,7 +4,7 @@ import logging
 import platform
 import subprocess
 
-from . import __version__, config, gamepad, install
+from . import __version__, config, gamepad, install, modpool
 from .updater import Updater, run_detached
 from .schema import InvalidArgument, Unavailable
 from .storage import JsonStore
@@ -155,14 +155,14 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
             manager.unload(mid)
 
         try:
-            mid = await asyncio.to_thread(install.install, path, _reserved(), bool(replace), before_replace)
+            mid = await modpool.run(install.install, path, _reserved(), bool(replace), before_replace)
         except BaseException:
             # Failed after the old version was unloaded: it's still in place, load it again.
             for old in replaced:
                 if (config.USER_MODULES_DIR / old).is_dir():
-                    await asyncio.to_thread(manager.add, old)
+                    await modpool.run(manager.add, old)
             raise
-        entry = await asyncio.to_thread(manager.add, mid)
+        entry = await modpool.run(manager.add, mid)
         ui_js = manager.manifests[mid]["dir"] / "dist" / "ui.js"
         if injector is not None and ui_js.is_file() and "error" not in manager.manifests[mid]:
             await injector.inject_module(mid, ui_js)
@@ -190,7 +190,7 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
 
     async def module_restore(id):
         """Bring back a shipped module that was uninstalled, and inject its UI."""
-        entry = await asyncio.to_thread(manager.restore_core, id)
+        entry = await modpool.run(manager.restore_core, id)
         ui_js = manager.manifests[id]["dir"] / "dist" / "ui.js"
         if injector is not None and ui_js.is_file() and "error" not in manager.manifests[id]:
             await injector.inject_module(id, ui_js)
@@ -200,7 +200,7 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
     async def module_rescan():
         """Read the module folders again and inject every module UI, so the panels see
         modules added, removed or edited on disk. Returns the new listing."""
-        await asyncio.to_thread(manager.rescan)  # module code: never in the event loop
+        await modpool.run(manager.rescan)  # module code: never in the event loop
         if injector is not None:
             for mid, ui_js in manager.ui_scripts():
                 await injector.inject_module(mid, ui_js)

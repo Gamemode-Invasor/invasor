@@ -137,10 +137,16 @@ class CDPSession:
         msg_id = next(self._ids)
         fut = asyncio.get_running_loop().create_future()
         self._pending[msg_id] = fut
-        self._send_frame(json.dumps({"id": msg_id, "method": method, "params": params or {}}).encode())
-        await self._writer.drain()
+
+        async def exchange():
+            # The write is inside the time limit too: the injected bundle is bigger than the
+            # socket's buffer, so against a window that stopped reading drain() waits for real.
+            self._send_frame(json.dumps({"id": msg_id, "method": method, "params": params or {}}).encode())
+            await self._writer.drain()
+            return await fut
+
         try:
-            resp = await asyncio.wait_for(fut, timeout)
+            resp = await asyncio.wait_for(exchange(), timeout)
         finally:
             self._pending.pop(msg_id, None)
         if "error" in resp:

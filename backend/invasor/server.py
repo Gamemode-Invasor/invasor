@@ -5,6 +5,7 @@ import inspect
 import json
 import logging
 
+from . import modpool
 from .schema import InvalidArgument, Unavailable
 
 log = logging.getLogger("invasor.server")
@@ -105,13 +106,18 @@ class ApiServer:
             pass  # no introspectable signature: let the call itself complain
 
         # No timeout here: module methods may legitimately take long (downloads, etc.).
-        # Plain functions run in a worker thread, so a slow one never freezes the event
-        # loop (injection, the gamepad combo and the game context keep running).
+        # Plain functions run in modpool's daemon threads, not asyncio's shared executor:
+        # a slow one never freezes the event loop (injection, the gamepad combo and the
+        # game context keep running), never queues the service's own work behind it, and
+        # never keeps the process from stopping.
         try:
             if inspect.iscoroutinefunction(fn):
                 result = await fn(**args)
             else:
-                result = await asyncio.to_thread(fn, **args)
+                # The panel's own calls (core) skip the module pool: they must answer even
+                # when module calls are filling it. What module code they run is time-limited.
+                run = asyncio.to_thread if parts[1] == "core" else modpool.run
+                result = await run(fn, **args)
                 if inspect.isawaitable(result):
                     result = await result
         except InvalidArgument as e:

@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path
 
 from .schema import InvalidArgument, Unavailable
+from .storage import fsync_dir
 
 try:
     import tomllib
@@ -146,11 +147,14 @@ def save(path, data, expected_mtime=None, backup=True, validate=None):
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
         if current is not None:
             shutil.copymode(path, tmp)
         if validate is not None:
             validate(Path(tmp))
         os.replace(tmp, path)
+        fsync_dir(path.parent)
     except BaseException:
         os.unlink(tmp)
         raise
