@@ -560,12 +560,12 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
 
   if (drawings.get(el) !== drawing) return; // a newer draw took over while we waited
   el.append(
+    ui.section("Manage Invasor", manageControls, { open: false }),
     ui.section("Manage modules", moduleControls, { open: false }),
     ui.section("Install module", [ui.info("Module zips are checked before anything is installed."), picker], { open: false }),
     ...(modules.length > 1 ? [ui.section("Module order", orderControls, { open: false })] : []),
     ui.section("Controller", [combo], { open: false }),
     ui.section("Panel", [side, handleIcon, color], { open: false }),
-    ui.section("Manage Invasor", manageControls, { open: false }),
     ui.section("About", [about, ui.button({ label: "Refresh", onClick: () => void refreshAbout() })], { open: false }),
   );
 }

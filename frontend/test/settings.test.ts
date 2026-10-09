@@ -50,4 +50,5 @@ test("a single draw shows every section once", async () => {
   await renderSettings(el, deps([Promise.resolve([])]));
   const titles = sections(el);
   assert.ok(titles.includes("Controller") || titles.some((t) => /Controller/.test(t ?? "")), titles.join());
+  assert.match(titles[0] ?? "", /Manage Invasor/, "Manage Invasor comes first");
 });
