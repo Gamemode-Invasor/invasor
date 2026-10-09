@@ -1,3 +1,4 @@
+import os
 import unittest
 
 from invasor.storage import JsonStore
@@ -14,6 +15,16 @@ class Store(unittest.TestCase):
         self.assertEqual(self.store.load(), {})
         self.store.save({"a": 1, "ñ": "sí"})
         self.assertEqual(self.store.load(), {"a": 1, "ñ": "sí"})
+
+    def test_data_is_flushed_to_disk_before_the_rename(self):
+        from unittest import mock
+        order = []
+        real_replace = os.replace
+        with mock.patch("invasor.storage.os.fsync", lambda fd: order.append("fsync")), \
+                mock.patch("invasor.storage.os.replace", lambda a, b: (order.append("replace"), real_replace(a, b))):
+            self.store.save({"a": 1})
+        self.assertEqual(order, ["fsync", "replace", "fsync"])  # file, rename, then the folder
+        self.assertEqual(self.store.load(), {"a": 1})
 
     def test_update_merges(self):
         self.store.save({"a": 1})

@@ -331,6 +331,18 @@ details[open] > summary::before {
   color: #8b94a7;
   font-size: 13px;
 }
+.ctl-log {
+  margin: 6px 0;
+  padding: 8px;
+  max-height: 70vh;
+  overflow: auto;
+  border-radius: 6px;
+  background: #11151c;
+  color: #c9d1e0;
+  font: 11px/1.4 ui-monospace, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
 .ctl-sep {
   border: 0;
   border-top: 1px solid #2f3746;
@@ -381,9 +393,9 @@ details[open] > summary::before {
   font-size: 10px;
   font-weight: 700;
   color: #8b94a7;
-  border: 1px solid #3a4458;
-  border-radius: 4px;
-  padding: 1px 4px;
+  /* No outline, but a real button: tapping it steps to the previous/next tab. */
+  cursor: pointer;
+  padding: 6px 8px;
 }
 .tabs {
   flex: 1;
@@ -434,7 +446,6 @@ details[open] > summary::before {
 .tabbar.main .tab-key {
   font-size: 11px;
   color: #e6e9ef;
-  border-color: #8b94a7;
 }
 /* Sub-tab row alignment, chosen by each module (tabsAlign). Auto margins and flex
    only: works on any Chromium and still scrolls if the tabs overflow. */
@@ -708,4 +719,38 @@ details[open] > summary::before {
 }
 .locked-note[hidden] {
   display: none;
+}
+/* Module market (big window): a card per module. */
+.market-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+  margin: 8px 0;
+}
+.market-card {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #11151c;
+  border: 1px solid #2a3140;
+}
+.market-card h3 {
+  margin: 0 0 2px;
+  font-size: 15px;
+  color: #f2f5fa;
+}
+.market-meta {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: #8b94a7;
+}
+.market-text {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: #c9d1e0;
+}
+.market-status {
+  margin: 0;
+  min-height: 1em;
+  font-size: 12px;
+  color: var(--accent);
 }

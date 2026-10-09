@@ -19,6 +19,20 @@ def _lock_for(path):
         return _locks.setdefault(str(path.resolve()), threading.RLock())
 
 
+def fsync_dir(path):
+    """Make a rename inside `path` durable. Best effort: not every filesystem allows it."""
+    try:
+        fd = os.open(str(path), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
 class JsonStore:
     def __init__(self, path):
         self.path = Path(path)
@@ -49,7 +63,10 @@ class JsonStore:
             try:
                 with os.fdopen(fd, "w") as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
+                    f.flush()
+                    os.fsync(f.fileno())  # the data must be on disk before the rename makes it the file
                 os.replace(tmp, self.path)
+                fsync_dir(self.path.parent)
             except BaseException:
                 os.unlink(tmp)
                 raise

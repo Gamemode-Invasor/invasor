@@ -225,6 +225,27 @@ class Modules(unittest.TestCase):
         self.assertEqual(listing["extra"]["source"], "user")
         self.assertEqual(listing["broken"]["source"], "core")
 
+    def test_a_shipped_module_can_be_uninstalled_and_restored(self):
+        import invasor.config as config
+        cfg = {"disabled_modules": []}
+        manager = ModuleManager(cfg, GameContext())
+        manager.discover()
+        self.assertIn("good", manager.manifests)
+        manager.remove_core("good")
+        self.assertNotIn("good", manager.manifests)
+        self.assertEqual(json.loads(config.CONFIG_FILE.read_text())["removed_modules"], ["good"])
+        self.assertEqual(manager.removed_listing(), [{"id": "good", "name": "Good"}])
+        # An update puts the files back and the service restarts: it stays uninstalled.
+        again = ModuleManager({"disabled_modules": [], "removed_modules": ["good"]}, GameContext())
+        again.discover()
+        self.assertNotIn("good", again.manifests)
+        entry = manager.restore_core("good")
+        self.assertEqual((entry["id"], entry["loaded"], entry["source"]), ("good", True, "core"))
+        self.assertEqual(json.loads(config.CONFIG_FILE.read_text())["removed_modules"], [])
+        self.assertEqual(manager.removed_listing(), [])
+        with self.assertRaises(ValueError):
+            manager.restore_core("good")  # nothing to restore any more
+
     def test_hot_add_and_remove(self):
         import invasor.modules as m
         d = m.USER_MODULES_DIR / "hot"
@@ -504,6 +525,76 @@ class Modules(unittest.TestCase):
             t.join(10)
         self.assertEqual(errors, [])
         self.assertIn("multi-file", self.manager.registry)
+
+    def test_a_hanging_setup_fails_to_load_and_never_wedges_the_panel(self):
+        import threading, time
+        patch(self, "invasor.modules.SETUP_TIMEOUT", 0.2)
+        gate = threading.Event()
+        self.addCleanup(gate.set)
+        self.user_module("stuck", "import threading\ndef setup(c):\n    threading.Event().wait(5)\n")
+        started = time.monotonic()
+        with self.assertLogs("invasor.modules", "ERROR") as logs:
+            self.manager.add("stuck")
+        self.assertLess(time.monotonic() - started, 2)
+        self.assertIn("still running", "\n".join(logs.output))
+        self.assertFalse(self.listing()["stuck"]["loaded"])
+        self.assertNotIn("stuck", self.manager.registry)
+
+    def test_listing_answers_while_a_module_is_loading(self):
+        import threading, time
+        self.user_module("slow", "import time\ndef setup(c):\n    time.sleep(0.6)\n")
+        loader = threading.Thread(target=lambda: self.manager.add("slow"))
+        loader.start()
+        time.sleep(0.2)  # setup() is running, holding the operations lock
+        started = time.monotonic()
+        self.manager.listing()
+        self.assertLess(time.monotonic() - started, 0.3)
+        loader.join(5)
+        self.assertIn("slow", self.manager.registry)
+
+    def test_setup_that_asks_the_manager_from_another_thread_does_not_deadlock(self):
+        self.user_module("asker", (
+            "import threading\n"
+            "def setup(c):\n"
+            "    t = threading.Thread(target=lambda: c.game_data('1'))\n"
+            "    t.start(); t.join(2)\n"
+        ))
+        self.manager.add("asker")
+        self.assertIn("asker", self.manager.registry)
+
+    def test_setup_never_runs_in_the_callers_thread(self):
+        import threading
+        self.user_module("where", "import threading\nMETHODS = {}\ndef setup(c):\n    METHODS['t'] = threading.current_thread().name\n")
+        self.manager.add("where")
+        self.assertNotEqual(self.manager.registry["where"]["t"], threading.current_thread().name)
+
+    def test_a_steam_start_callback_never_writes_after_the_module_is_removed(self):
+        import time
+        d = self.user_module("watcher2", (
+            "import pathlib, time\n"
+            "here = pathlib.Path(__file__).parent\n"
+            "def slow():\n    time.sleep(0.5)\n    (here / 'late').write_text('x')\n"
+            "def setup(c):\n    c.on_steam_start(slow)\n"
+        ))
+        self.manager.add("watcher2")
+        self.manager.steam_started("aaa")
+        time.sleep(0.2)  # the callback is inside slow()
+        self.manager.remove("watcher2", purge=True)
+        self.assertTrue((d / "late").exists())  # remove() waited for it, before the purge
+
+    def test_a_steam_start_callback_that_never_ends_does_not_block_unload(self):
+        import threading, time
+        patch(self, "invasor.modules.STEAM_START_JOIN", 0.2)
+        gate = threading.Event()
+        self.addCleanup(gate.set)
+        self.user_module("hang", "import threading\ndef setup(c):\n    c.on_steam_start(lambda: threading.Event().wait(5))\n")
+        self.manager.add("hang")
+        self.manager.steam_started("aaa")
+        time.sleep(0.2)
+        started = time.monotonic()
+        with self.assertLogs("invasor.modules", "WARNING"):
+            self.manager.set_enabled("hang", False)
+        self.assertLess(time.monotonic() - started, 2)
 
     def test_shutdown_tears_everything_down(self):
         events = self.manager.registry["good"]["events"]()

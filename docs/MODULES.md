@@ -52,8 +52,8 @@ modules/<id>/
 | `api` | yes | Module API version. Must be `1`; Invasor refuses modules written for an API it doesn't implement. |
 | `name` | yes | Display name. |
 | `version` | yes | Your module's version (free text, e.g. `"1.0.0"`). |
-| `author` | no | Who made it: free text, one line, up to 128 characters, e.g. `"Jane Doe"` or `"Jane Doe <jane@example.com>"`. Invasor shows only the name (never the email): "Name (version) by Jane Doe" in ⚙ Settings › Modules, and when installing the zip. Default: empty. |
-| `description` | no | One line, shown in the hint bar when the module is selected in ⚙ Settings › Modules, and when installing the zip. |
+| `author` | no | Who made it: free text, one line, up to 128 characters, e.g. `"Jane Doe"` or `"Jane Doe <jane@example.com>"`. Invasor shows only the name (never the email): "Name (version) by Jane Doe" in ⚙ Settings › Manage modules, and when installing the zip. Default: empty. |
+| `description` | no | One line, shown in the hint bar when the module is selected in ⚙ Settings › Manage modules, and when installing the zip. |
 | `order` | no | Integer, default tab position (lower first, then by name). Default 100. The user can reorder the modules in ⚙ Settings › Module order, and what they choose wins over this; a module they never placed goes after the ones they did, by this value. |
 | `tab` | no | Short tab label. Default: `name`. |
 | `min_core` | no | Oldest Invasor the module works with, as `"0.1.3"` (or `"0.1.3-rc1"`). A module that needs a newer one is refused when installing and, if it's already installed, isn't loaded and ⚙ Settings says why. A release candidate counts as older than its release: `0.1.3-rc2` doesn't meet `"0.1.3"`. Invasor versions that predate this key reject it as an unknown key. Default: any. |
@@ -138,8 +138,8 @@ it as usual. If one option changes others (e.g. a preset), do that in the module
 
 **How values are normalized:**
 
-- A number is clamped to `min..max` and snapped to the nearest step counted from `min`, with no float noise
-  (`0.1 + 0.2` is stored as `0.3`).
+- A number is clamped to `min..max` and snapped to the nearest step counted from `min` (halfway rounds up), with no
+  float noise (`0.1 + 0.2` is stored as `0.3`).
 - An option must match exactly: `1` and `"1"` are different values.
 - A stored value that is no longer valid (the schema changed, or the file was edited by hand) reads as its
   default, and the log says so.
@@ -217,9 +217,14 @@ METHODS = {"apply": apply}   # what the UI can call: ctx.call("apply")
   - Plain functions in `METHODS` run in a worker thread, so they may block (downloads, subprocesses…).
     Several calls can run at the same time.
   - `async def` functions run in the service's event loop and **must not block**.
-  - `setup`, `teardown` and `on_change` callbacks may run in any thread and must return quickly.
+  - `setup`, `teardown` and `on_change` callbacks may run in any thread and must return quickly. `setup`
+    (and `upgrade`, and importing `backend.py`) always runs in a worker thread, never in the event loop, so
+    `ctx.steam_call()` and `ctx.notify()` work there; together they get 20 seconds, after that the module
+    fails to load (it's torn down and the log says so).
   - `on_steam_start` callbacks get a thread of their own each time, so they may block. If Steam restarts
-    while one is still running, another one starts: guard it with a lock if that matters.
+    while one is still running, another one starts: guard it with a lock if that matters. When the module
+    is unloaded no new callback starts, and one still running is waited for up to 3 seconds before the
+    module's files or data are removed.
   - For background work, start your own thread (daemon) in `setup` and stop it in `teardown`. `teardown`
     gets 10 seconds (when the module is disabled, rescanned, replaced or the service stops); after that the
     module is considered stopped anyway and the log says so.
@@ -236,7 +241,7 @@ METHODS = {"apply": apply}   # what the UI can call: ctx.call("apply")
 - **Uninstall.** `teardown` also runs when the module is disabled, so it must never delete anything the user
   would want back. Undo what the module left outside its folder (another program's config, files in Steam's
   folders…) in `uninstall(context, purge)` instead. It runs only when the module is uninstalled: from ⚙ Settings
-  (installed modules only: the ones shipped with Invasor can only be disabled there), or for every module when
+  (also the ones shipped with Invasor, like Demo: they stay uninstalled across updates and ⚙ Settings can restore them), or for every module when
   Invasor itself is uninstalled (`invasor-installation.sh --uninstall`, whose `--purge` becomes `purge`). It runs
   after `teardown` and before its files are deleted, even if it's disabled (its code is imported without `setup`). `purge` is `True` when the user also
   asked to delete its settings and data; the core then deletes `~/.config/invasor/modules/<id>/` itself. It has
@@ -289,7 +294,8 @@ export default defineModule({
 
 - **The `ui` kit.** It works with the gamepad and touch out of the box.
 
-  - **Settings form:** `await ui.settingsForm(ctx, { keys? })`. It returns the form, its `controls` by key,
+  - **Settings form:** `await ui.settingsForm(ctx, { keys?, navHints? })` (`navHints: false` makes the hint bar show each field's own
+    `hint` alone, without the button help). It returns the form, its `controls` by key,
     `reload()` and `reset()` (which stores every default). `await ui.form(ctx, name, store)` is the same for a
     `forms` entry stored by the module (section 3).
   - **Value controls:** `toggle`, `checkbox`, `slider`, `number`, `radio` (an option with `swatch: "#hex"` shows as a colour dot), `select`, `text` and `password`, for values
@@ -346,8 +352,10 @@ export default defineModule({
 | `backend.py` fails to import, `upgrade` or `setup` throws (or calls `exit()`), or `METHODS` is bad | The tab shows "the module's backend didn't load (see log)". |
 | `uninstall` throws, hangs or the code no longer imports | It's logged and the module is uninstalled anyway. |
 | `ui.js` has a syntax error or throws at load | It is evaluated on its own: the log says so, and the tab shows "its UI didn't load". |
-| A render or hook throws | Only that page shows the error. |
-| A slow method | It runs in its own thread; the panel and the gamepad keep working. |
+| A `render` throws | Only that page shows the error. |
+| An `onShow`, `onHide`, `onGameChange`, `showInQam`, `destroy` or window `onClose` hook throws | It's caught and logged in the browser console only; nothing is shown on the page, and the rest keeps working. |
+| A slow method | It runs in its own thread; the panel and the gamepad keep working. Too many at once are answered with 503 instead of queueing. |
+| A `setup` that hangs | After 20 seconds the module fails to load and is torn down; the rest of Invasor is unaffected. |
 | Corrupt or invalid stored settings | Invalid values read as their defaults and are corrected in the file. A file that isn't JSON is moved to `settings.json.corrupt`. |
 
 ## 8. Developing a module in its own repository
@@ -370,13 +378,35 @@ A module doesn't have to live inside Invasor. Keep it in its own repository, nex
   `module.json`, the Python files, `dist/ui.js`, README and LICENSE (the one at the root of your repository, if the
   module folder has none). Never the tests.
 - **Install:**
-  - **On the console:** ⚙ Settings › Install module, then choose the zip.
+  - **On the console:** ⚙ Settings › Install module, then choose the zip, or open the Market (Library only) to install
+    from the organisation's repositories.
   - **From a terminal:** `python3 ~/Projects/invasor/tools/install_module.py <id or zip>`.
 
   Installed modules live in `~/.local/share/invasor/user-modules/<id>/`. Updating Invasor never touches that
   folder. Uninstalling from ⚙ Settings runs the module's `uninstall()` and removes its files. The user chooses
   whether to keep its settings and data (`~/.config/invasor/modules/<id>/`) in case it's installed again
   (`--uninstall <id> --purge` from a terminal deletes them).
+
+**The Market.** ⚙ Settings › Install module › Open the Market lists the newest release of every module repository
+named in `repos.conf` of the `Gamemode-Invasor/invasor-workspace` repository (`main` branch; the core `invasor` line is
+skipped). The Beta update channel also offers pre-releases. For a repository to appear:
+- its release (tag `vX.Y.Z`) has the assets `<id>-<version>.zip` and `<id>-<version>.zip.sha256` (the `release.yml`
+  of section 8 publishes them);
+- `<id>/module.json` exists at that tag with the same `version`, and a `min_core` this Invasor meets (otherwise the
+  card is shown but can't be installed).
+
+The card is read from that `module.json`; no module code runs to show it. Installing downloads the zip from that
+release only, checks its sha256 and then does exactly what choosing the zip by hand does. The checksum catches a
+corrupt download, not a compromised account, so `repos.conf` is part of what the user trusts.
+
+**Where the list is read from.** A GitHub Action of the workspace repository (`.github/workflows/market.yml`) runs
+`tools/gen_market.py` every hour, when `repos.conf` changes and on demand, and publishes the result as `market.json`
+on that repository's `market-data` branch. The app reads that one file (the newest stable release and the newest one
+pre-releases included, per repository; no URLs: the app rebuilds them inside the organisation's releases). So a new
+release shows up in the market within about an hour. If the file is missing, older than three days or invalid, the app
+asks GitHub repository by repository instead (about sixteen requests, of which about eight count against GitHub's
+limit of 60 an hour per IP), so the market keeps working without the Action. To run it by hand:
+`gh workflow run market.yml -R Gamemode-Invasor/invasor-workspace`.
 
 **What the core checks before installing a zip**, refusing it with a clear message otherwise:
 - **The zip itself:** it is a real zip within the size limits, with no absolute paths, no `..` and no
@@ -389,13 +419,14 @@ A module doesn't have to live inside Invasor. Keep it in its own repository, nex
 
 These checks keep a broken module from breaking Invasor; they don't make a module safe. A module is trusted code:
 its backend runs as your user and its UI runs inside Steam's window. Its `author` is whatever its `module.json`
-says. Install only modules from people you trust.
+says. Install only modules from people you trust. A disabled module's UI is still injected (so enabling it
+needs no re-injection) and holds the same API token as the others: disabling stops its backend, not its UI code.
 
 An installed module is loaded and its UI injected right away, with no restart. Reinstalling the same id replaces
 it after asking; if that fails half way, the previous version stays installed and loaded.
 
 Module folders are read when the service starts. A folder added, removed, renamed or edited by hand (in
-`modules/` or `user-modules/`) is picked up with **⚙ Settings › Modules › Rescan modules**: every module is
+`modules/` or `user-modules/`) is picked up with **⚙ Settings › Manage modules › Rescan modules**: every module is
 torn down and loaded again, and its UI injected, with no restart.
 
 ## 9. Before distributing

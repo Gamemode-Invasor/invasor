@@ -1,10 +1,12 @@
-- Each line of the update notes now shows on its own line in the panel
-- You can change from beta to stable channel and Invasor is downgraded
-- Rebranding ducky and fishy to patito and pescao
-- New "password" setting type for modules: what you type shows as dots (for API keys)
-- Modules can declare min_core, the oldest Invasor they need; an older one refuses to install them
-- Settings > Panel: choose what the handle shows, the icon, the letter I or nothing
-- Settings > Module order: reorder the module tabs with the controller or by touch
-- A module can now decide for itself whether it shows in Quick Access
-- The service puts Steam's CEF debugging file back when it starts, if something deleted it
+New
+- New module Market (Settings > Install module > Open the Market): browse the modules of the Invasor organization's repositories in a big window and install or update them with one press; downloads are checked before installing
+- New Settings > Manage Invasor: updates, restart Invasor or Steam, view the log, reset the configuration and uninstall
+- Settings: "Modules" is now "Manage modules"; Demo can be uninstalled and restored from there
+- The L1/R1 and L2/R2 labels beside the tabs can now be tapped to switch tab or section
+
+Fixes
+- Security: a module zip can no longer write files outside its install folder
+- Robustness: slow or hung modules, power cuts, failed updates and unresponsive Steam windows can no longer freeze Invasor, empty your configuration or leave a broken install
+- Quick Access always shows the panel and its "I" on the left; "Panel side" now only applies to the Library
+- Minor fixes: the library handle, module lists, tabs, forms, number settings and notifications stay in sync and no longer glitch
 ---

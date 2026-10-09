@@ -94,6 +94,7 @@ class Zips(unittest.TestCase):
             "not a zip": (lambda: ((self.home / "Downloads" / "bad.zip").write_text("nope"), "Downloads/bad.zip")[1], "valid zip"),
             "outside home": (lambda: "../x.zip", "inside your home"),
             "traversal": (lambda: self.zip("t.zip", {"hello/module.json": MANIFEST, "hello/../../evil": "x"}), "unsafe"),
+            "double slash escape": (lambda: self.zip("d.zip", {"hello/module.json": MANIFEST, f"hello/{self.home}/escaped": "x"}), "unsafe"),
             "symlink": (lambda: self.zip("l.zip", {"hello/module.json": MANIFEST}, links=["hello/link"]), "symbolic link"),
             "root files": (lambda: self.zip("r.zip", {"module.json": MANIFEST}), "folder named after"),
             "no manifest": (lambda: self.zip("n.zip", {"x/readme.txt": "hi"}), "no <id>/module.json"),
@@ -107,11 +108,20 @@ class Zips(unittest.TestCase):
             "broken backend": (lambda: self.good("b.zip", backend="raise RuntimeError('boom')\n"), "boom"),
             "exit backend": (lambda: self.good("e.zip", backend="import sys\nsys.exit(3)\n"), "SystemExit"),
             "bad METHODS": (lambda: self.good("x.zip", backend="METHODS = {'a': 1}\n"), "METHODS"),
+            "forged verdict": (lambda: self.good("f.zip", backend="import atexit\natexit.register(lambda: print('{\"ok\": true, \"error\": null}'))\nraise RuntimeError('boom')\n"), "couldn't be checked"),
         }
         for label, (make, msg) in cases.items():
             with self.subTest(case=label), self.assertRaisesRegex(InvalidArgument, msg):
                 install.install(make(), {"core", "demo"})
         self.assertEqual([p for p in self.user.iterdir()] if self.user.exists() else [], [])
+
+    def test_a_double_slash_never_writes_outside_the_staging_folder(self):
+        # "hello//<abs>" passes the name checks, but stripping "hello/" leaves an absolute path.
+        outside = self.home / "outside"
+        path = self.zip("slip.zip", {"hello/module.json": MANIFEST, f"hello/{outside}/marker": "x"})
+        with self.assertRaisesRegex(InvalidArgument, "unsafe"):
+            install.inspect(path, set())
+        self.assertFalse(outside.exists())
 
     def test_min_core_met_installs(self):
         p = self.zip("ok.zip", {"hello/module.json": {**MANIFEST, "min_core": "0.0.1"}, "hello/backend.py": "METHODS = {}\n"})

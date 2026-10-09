@@ -8,6 +8,7 @@ import css from "./overlay.css";
 import iconSvg from "../assets/invasor.svg";
 import { hiddenInQam } from "./qam";
 import { accentColor } from "./palette";
+import { panelOnLeft, type Side } from "./side";
 import { renderSettings, type ModuleInfo } from "./settings";
 import { tabRowHTML } from "./tabbar";
 import { createTabHost, type TabSpec } from "./tabhost";
@@ -25,6 +26,8 @@ export interface Overlay {
   isOpen(): boolean;
   /** False in Quick Access while no game runs: no "I" there, and nothing opens. */
   isAvailable(): boolean;
+  /** Hide this window's "I" because another window shows its own. */
+  setHandleHidden(hidden: boolean): void;
   destroy(): void;
 }
 
@@ -42,8 +45,6 @@ interface LiveModule {
   built: boolean;
   spec: TabSpec;
 }
-
-type Side = "auto" | "left" | "right";
 
 const GAME_POLL_MS = 3000;
 const TOAST_MS = 2500;
@@ -114,18 +115,30 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   // Quick Access offers the panel only while a game runs (the library always does).
   const qam = role === "quickaccess";
   let available = !qam;
+  // Another window's "I" is showing over this one (the library's, while Quick Access has its own).
+  let handleHidden = false;
+  let lastShown: boolean | null = null;
+  function showHandle() {
+    handle.style.display = available && !handleHidden ? "" : "none";
+    if (!qam) return;
+    // Tell the backend whether Quick Access shows its "I", so the library window hides its own
+    // (with the panel on the left, nothing covers it and two would show).
+    const shown = available && !document.hidden;
+    if (shown === lastShown) return;
+    lastShown = shown;
+    api.call("core", "set_qam_shown", { shown }).catch(() => {});
+  }
   function setAvailable(yes: boolean) {
     available = yes;
-    handle.style.display = yes ? "" : "none";
+    showHandle();
   }
   setAvailable(available);
 
   let game: GameState = { selected: null, running: null, highlighted: null };
   let gameKey = "";
   let pollTimer: number | undefined;
-  let toastTimer: number | undefined;
+  const toastTimers = new Map<HTMLElement, number>(); // one per toast element: the panel's and each window's
   let modules = new Map<string, LiveModule>();
-  let tabsLoaded = false;
 
   const windows = new Set<WindowHandle>(); // open big windows, closed with the panel
   const spaceListeners = new Map<string, Set<(canOpen: boolean) => void>>(); // per module id
@@ -146,22 +159,16 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     visible: () => !panel.hidden,
   });
 
-  // A module UI registering after the tabs were built (it was injected late): pick it
-  // up on the next open, or now if the panel is open.
+  // A module UI registering after the tabs were built (it was injected late): the next
+  // open reads the module list again anyway; if the panel is open, now.
   kit.onRegister(() => {
-    if (!tabsLoaded) return;
-    tabsLoaded = false;
-    if (!panel.hidden) {
-      tabsLoaded = true;
-      void rebuildTabs();
-    }
+    if (!panel.hidden) void rebuildTabs();
   });
 
   // ---------- side ----------
   function applySide(side: Side) {
-    // Auto: in Quick Access, Steam's menu sits on the right, so we live on the left.
-    const left = side === "left" || (side === "auto" && role === "quickaccess");
-    host.className = left ? "side-left" : "side-right";
+    // Quick Access is always on the left (its right edge is off screen); the setting is for the library.
+    host.className = panelOnLeft(role, side) ? "side-left" : "side-right";
   }
   applySide("auto");
 
@@ -204,8 +211,8 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     el.textContent = message;
     el.className = `toast ${kind}`;
     el.hidden = false;
-    window.clearTimeout(toastTimer);
-    toastTimer = window.setTimeout(() => (el.hidden = true), TOAST_MS);
+    window.clearTimeout(toastTimers.get(el));
+    toastTimers.set(el, window.setTimeout(() => (el.hidden = true), TOAST_MS));
   }
 
   // ---------- module plumbing ----------
@@ -290,8 +297,9 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     const r = resolve(m);
     if (!r) return null;
     const def = "def" in r ? r.def : null;
-    // A settings-only module gets a fresh def object each time: compare its schema instead.
-    const sig = JSON.stringify([m.tab, m.name, m.settings, "error" in r ? r.error : null, m.ui]);
+    // A settings-only module gets a fresh def object each time: compare its schema (settings
+    // and forms: ctx.forms is captured once) instead.
+    const sig = JSON.stringify([m.tab, m.name, m.settings, m.forms, "error" in r ? r.error : null, m.ui]);
     if (old && old.sig === sig && (old.def === def || !m.ui)) return old;
     const base = { id: m.id, label: m.tab || m.name, name: m.name };
     if (!def) return { id: m.id, sig, def: null, ctx: null, built: false, spec: { ...base, error: (r as { error: string }).error } };
@@ -314,12 +322,27 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     return live;
   }
 
+  /** A ctx for the built-in Settings tab (big windows need one); no module settings or forms. */
+  let coreCtx: ModuleCtx | null = null;
+  const settingsCtx = () =>
+    (coreCtx ??= makeCtx({ id: "core", name: "Invasor", tab: "Invasor", description: "", author: "", order: 0, enabled: true, loaded: true, error: null, source: "core", ui: false, ui_built: false, settings: [], forms: {} }));
+
   // Created once: passing the same spec again keeps the tab's content (see tabhost.ts).
   const settingsSpec: TabSpec = {
     id: SETTINGS_ID,
     label: "⚙ Settings",
     name: "Settings",
-    render: (el) => renderSettings(el, { api, version, toast, onModulesChanged: rebuildTabs, onPanelSide: applySide, onAccentColor: applyAccent, onHandleIcon: applyHandleIcon }),
+    render: (el) =>
+      renderSettings(el, {
+        api,
+        version,
+        toast,
+        onModulesChanged: rebuildTabs,
+        onPanelSide: applySide,
+        onAccentColor: applyAccent,
+        onHandleIcon: applyHandleIcon,
+        openWindow: (spec) => settingsCtx().openWindow(spec),
+      }),
   };
 
   function destroyModule(m: LiveModule) {
@@ -330,8 +353,11 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   /**
    * (Re)create the tabs from the backend's module list. Unchanged tabs keep their state.
    * False if the list couldn't be fetched: what's there stays (⚙ Settings at least).
+   * Overlapping calls: the one asked last wins, whichever answer arrives last.
    */
+  let rebuildSeq = 0;
   async function rebuildTabs(): Promise<boolean> {
+    const seq = ++rebuildSeq;
     let list: ModuleInfo[] = [];
     try {
       list = await api.call<ModuleInfo[]>("core", "modules");
@@ -340,7 +366,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       if (!tabs.count()) await tabs.set([settingsSpec]);
       return false;
     }
-    const keep = tabs.activeId();
+    if (seq !== rebuildSeq) return true; // a newer rebuild took over while we waited
     const before = modules;
     modules = new Map();
     for (const m of list) {
@@ -364,12 +390,13 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   let tabSeq = 0;
   async function applyTabs(): Promise<boolean> {
     const seq = ++tabSeq;
-    const keep = tabs.activeId();
     const all = [...modules.values()];
     const hidden = qam
       ? await hiddenInQam(all.filter((m) => m.def?.showInQam).map((m) => ({ id: m.id, fn: () => m.def!.showInQam!(m.ctx!) })))
       : new Set<string>();
     if (seq !== tabSeq) return false; // a newer call took over while we waited
+    // Read now, not before the wait: the user may have stepped to another tab meanwhile.
+    const keep = tabs.activeId();
     const visible = all.filter((m) => !hidden.has(m.id));
     const key = visible.map((m) => m.id).join();
     if (!tabsDirty && key === shownKey) return false;
@@ -404,7 +431,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       for (const m of modules.values()) {
         if (m.built && m.def) safe("onGameChange", () => m.def!.onGameChange?.(game, m.ctx!));
       }
-      if (qam && tabsLoaded && !panel.hidden) void applyTabs(); // a module may now want to show or hide
+      if (qam && !panel.hidden) void applyTabs(); // a module may now want to show or hide
     } catch {
       // Backend hiccup: keep the last known state, status line shows the problem.
     }
@@ -495,6 +522,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   if (qam) {
     window.addEventListener("focus", checkGame);
     document.addEventListener("visibilitychange", checkGame);
+    document.addEventListener("visibilitychange", showHandle);
     checkGame();
   }
 
@@ -532,16 +560,13 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     void refreshStatus();
     nav.reset();
     // Game first, so modules render with the current game already known.
+    // The module list is read on every open: the other window (Library / Quick Access) may
+    // have enabled, disabled or installed modules since. Unchanged tabs keep their state.
+    // A backend that isn't reachable yet just leaves what's there; the next open tries again.
     void refreshGame().then(async () => {
-      if (!tabsLoaded) {
-        tabsLoaded = true;
-        // Backend not reachable yet: try again on the next open.
-        if (!(await rebuildTabs())) tabsLoaded = false;
-      } else {
-        // Quick Access: ask the modules again; a changed bar already shows its active tab.
-        if (!(await applyTabs())) tabs.shown();
-        nav.reset();
-      }
+      await rebuildTabs();
+      tabs.shown(); // a no-op if the tab already got its onShow
+      nav.reset();
     });
     pollTimer = window.setInterval(refreshGame, GAME_POLL_MS);
   }
@@ -551,16 +576,22 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     setOpen: (open) => toggle(open),
     isOpen: () => !panel.hidden,
     isAvailable: () => available,
+    setHandleHidden(hidden) {
+      handleHidden = hidden;
+      showHandle();
+    },
     destroy() {
       for (const w of [...windows]) w.close();
+      if (qam && lastShown) api.call("core", "set_qam_shown", { shown: false }).catch(() => {});
       window.clearInterval(availTimer);
       window.removeEventListener("focus", checkGame);
       document.removeEventListener("visibilitychange", checkGame);
+      document.removeEventListener("visibilitychange", showHandle);
       window.removeEventListener("blur", closeIfGone);
       document.removeEventListener("visibilitychange", closeIfGone);
       window.clearInterval(pollTimer);
       window.clearInterval(fitTimer);
-      window.clearTimeout(toastTimer);
+      for (const t of toastTimers.values()) window.clearTimeout(t);
       tabs.clear();
       nav.destroy();
       for (const m of modules.values()) destroyModule(m);

@@ -218,7 +218,7 @@ export function createTabHost(o: TabHostOpts): TabHost {
     active = -1;
   }
 
-  return {
+  const host: TabHost = {
     async set(tabs, keepId) {
       // The same spec object again = the same tab: it survives with its content.
       const kept = new Map(states.filter((s) => tabs.includes(s.spec)).map((s) => [s.spec, s]));
@@ -248,6 +248,7 @@ export function createTabHost(o: TabHostOpts): TabHost {
         active = states.indexOf(current);
         renderBars();
         o.nav.ensureFocus(); // only if the focused control is gone
+        showActive(); // hidden() ran before this (a rebuild): the tab is back on screen, so is its onShow
         return;
       }
       const keep = states.findIndex((s) => s.spec.id === keepId);
@@ -265,4 +266,16 @@ export function createTabHost(o: TabHostOpts): TabHost {
     hidden: hideActive,
     clear,
   };
+
+  // The shoulder-button labels beside a tab row (L1/R1, L2/R2) are tappable too.
+  const bindKeys = (tabs: HTMLElement | null, step: (dir: -1 | 1) => void) => {
+    const key = (el: Element | null | undefined, dir: -1 | 1) => {
+      if (el?.classList.contains("tab-key")) el.addEventListener("click", () => step(dir));
+    };
+    key(tabs?.previousElementSibling, -1);
+    key(tabs?.nextElementSibling, 1);
+  };
+  bindKeys(o.mainTabs, host.step);
+  bindKeys(o.subTabs, host.stepSub);
+  return host;
 }

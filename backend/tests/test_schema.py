@@ -15,6 +15,11 @@ class Snap(unittest.TestCase):
     def test_float_steps_have_no_noise(self):
         self.assertEqual(schema.snap(0.1 + 0.2, 0, 1, 0.1), 0.3)
         self.assertEqual(schema.snap(0.75, 0, 1, 0.25), 0.75)
+        # Halfway goes up, as in the panel (frontend/test/values.test.ts has the same cases).
+        self.assertEqual(schema.snap(2, 1, 5, 2), 3)
+        self.assertEqual(schema.snap(0.5, 0, 1, 1), 1)
+        self.assertEqual(schema.snap(1.5, 0, 4, 1), 2)
+        self.assertEqual(schema.snap(2.5, 0, 4, 1), 3)
         self.assertEqual(schema.snap(1.26, 1, 2, 0.05), 1.25)
 
     def test_clamps_and_counts_from_min(self):

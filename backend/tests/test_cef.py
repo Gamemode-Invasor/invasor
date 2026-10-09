@@ -44,3 +44,25 @@ class Connect(unittest.IsolatedAsyncioTestCase):
                     await cef.CDPSession.connect(f"ws://127.0.0.1:{port}/devtools/page/x", timeout=0.2)
             finally:
                 done.set()
+
+
+class Send(unittest.IsolatedAsyncioTestCase):
+    async def test_a_window_that_stopped_reading_times_out_in_the_write_too(self):
+        """drain() waits when the peer isn't reading and the message is bigger than the buffer."""
+        class Stuck:
+            def write(self, data):
+                pass
+
+            async def drain(self):
+                await asyncio.Event().wait()
+
+            def close(self):
+                pass
+
+        session = cef.CDPSession(asyncio.StreamReader(), Stuck())
+        self.addCleanup(session._task.cancel)
+        started = asyncio.get_running_loop().time()
+        with self.assertRaises(asyncio.TimeoutError):
+            await session.send("Runtime.evaluate", timeout=0.2)
+        self.assertLess(asyncio.get_running_loop().time() - started, 1)
+        self.assertEqual(session._pending, {})

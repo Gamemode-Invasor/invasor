@@ -217,8 +217,9 @@ export default defineModule({
       label: "Text",
       async render(el, ctx) {
         summaryEl = ui.info("");
-        const form = await ui.settingsForm(ctx, { keys: ["name", "secret", "hide_in_qam"] });
+        const form = await ui.settingsForm(ctx, { keys: ["name", "secret", "hide_in_qam"], navHints: false });
         forms.push(form);
+        // navHints: false: the hint bar shows each field's own hint alone, without the button help.
         // Controls can be driven from code: set() a value, setDisabled() with a reason.
         const volume = () => controlsForm?.controls.volume;
         el.append(
@@ -229,6 +230,11 @@ export default defineModule({
             value: false,
             hint: "disables Volume in Controls",
             onChange: (on) => volume()?.setDisabled(on, "Locked from Demo › Text"),
+          }),
+          ui.button({
+            label: "Preview Volume at 100%",
+            // set() only moves what is drawn: nothing is saved and onChange doesn't fire.
+            onClick: () => volume()?.set(100),
           }),
           ui.button({
             label: "Reset values",

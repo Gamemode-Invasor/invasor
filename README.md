@@ -50,7 +50,7 @@ the bundled modules. On the target Steam Deck / SteamOS no Node is needed: extra
 `tar -xzf`), then double click `invasor-installation.sh` or run `./invasor-installation.sh --install`.
 
 ### Updates
-**⚙ Settings › Updates** has a *Check for updates* button and an *Install* one. Invasor asks GitHub
+**⚙ Settings › Manage Invasor** has a *Check for updates* button and an *Install* one. Invasor asks GitHub
 (`api.github.com`, the latest release of [Gamemode-Invasor/invasor](https://github.com/Gamemode-Invasor/invasor))
 and, when its tag is a higher version than the installed one, the install button is enabled. Installing
 downloads the release package, checks it against the `.sha256` published next to it and runs its installer.
@@ -70,7 +70,7 @@ candidate, choosing *Stable* offers the stable version even if it is older (*Go 
 confirm it first. If it is the same version, nothing is offered.
 
 Log: `journalctl --user -u invasor -f`. Optional configuration:
-`~/.config/invasor/config.json` (`open_combo`, `panel_side`, `targets`, `disabled_modules`, `dev_desktop`,
+`~/.config/invasor/config.json` (`open_combo`, `panel_side`, `targets`, `disabled_modules`, `removed_modules`, `dev_desktop`,
 `handle_icon`, `module_order`, `update_check`, `update_channel`; most of them can also be changed from the **⚙ Settings** tab).
 
 ## Using it with a controller
@@ -100,13 +100,12 @@ Both regular controllers (evdev: DualSense, Xbox…) and Steam Deck-protocol one
 read: a real Steam Deck, or handhelds such as the Legion Go virtualised by
 InputPlumber. To see which buttons the service detects: `python3 tools/pad.py`.
 
-**⚙ Settings tab** (always there, even with no modules): enable or disable modules,
-the shortcut that opens the panel, the panel side, the order of the modules' tabs (grab a module with A, move it with the D-pad), what the handle shows (the icon, the letter "I" or nothing), the accent colour (also of the handle), and "About" (version, status and
+**⚙ Settings tab** (always there, even with no modules): enable or disable modules (Manage modules), install one from a zip or from the Market (Library only), the shortcut that opens the panel, the panel side (Library only: Quick Access is always on the left), the order of the modules' tabs (grab a module with A, move it with the D-pad), what the handle shows (the icon, the letter "I" or nothing), the accent colour (also of the handle), "Manage Invasor" (updates, restart Invasor or Steam, view the log, reset the configuration, uninstall) and "About" (version, status and
 detected controllers). Invasor's own UI is in English; each module chooses its own
 language.
 
 ## Modules
-Invasor ships with only `demo` (a showcase, also used by `tools/smoke.py`) and the `_example` template.
+Invasor ships with only `demo` (a showcase, also used by `tools/smoke.py`) and the `_example` template. Demo can be uninstalled from ⚙ Settings › Manage modules (it stays uninstalled after updates; the same section has a *Restore* button).
 Real modules live in their own repositories and install as a zip from **⚙ Settings › Install module**:
 
 - [invasor-artwork](../invasor-artwork): community artwork from steamgriddb.com for your games and shortcuts.
@@ -162,7 +161,7 @@ Modules can also show a notification the way Steam shows an achievement (`ctx.no
 | `vgp_onbuttondown` events and their button numbers | gamepad navigation in the panel | the panel opens (L3+R3) but isn't navigable with the pad; touch and F10 still work |
 | `window.screenX` / `innerWidth` of Steam's windows | fitting the panel in Quick Access | it falls back to the learned width (348px) |
 | CSS class `.gpfocus` | returning focus after physical-keyboard typing | focus isn't returned; nothing else changes |
-| `SteamClient` (optional), in this window or in `SharedJSContext` | `ctx.steam.safeCall` / `ctx.steam_call` for modules (e.g. Artwork's live refresh) | calls fail cleanly (503); modules fall back (Artwork: the new art shows after restarting Steam) |
+| `SteamClient` (optional), in this window or in `SharedJSContext` | `ctx.steam.safeCall` / `ctx.steam_call` for modules (e.g. Artwork's live refresh), and `User.StartRestart` for ⚙ Settings › Manage Invasor › Restart Steam | calls fail cleanly (503); modules fall back (Artwork: the new art shows after restarting Steam) |
 
 ## Tests
 

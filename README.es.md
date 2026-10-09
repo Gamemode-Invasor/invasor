@@ -50,7 +50,7 @@ módulos incluidos. En la Steam Deck / SteamOS de destino no hace falta Node: se
 `tar -xzf`) y se abre `invasor-installation.sh` con doble clic o se ejecuta `./invasor-installation.sh --install`.
 
 ### Actualizaciones
-**⚙ Settings › Updates** tiene un botón *Check for updates* y otro de instalar. Invasor pregunta a GitHub
+**⚙ Settings › Manage Invasor** tiene un botón *Check for updates* y otro de instalar. Invasor pregunta a GitHub
 (`api.github.com`, la última release de [Gamemode-Invasor/invasor](https://github.com/Gamemode-Invasor/invasor))
 y, si su etiqueta es una versión superior a la instalada, se activa el botón de instalar. Instalar
 descarga el paquete de la release, lo comprueba con el `.sha256` publicado a su lado y ejecuta su instalador.
@@ -70,7 +70,7 @@ una candidata, elegir *Stable* ofrece la versión estable aunque sea más antigu
 se pide confirmación. Si es la misma versión, no se ofrece nada.
 
 Log: `journalctl --user -u invasor -f`. Configuración opcional:
-`~/.config/invasor/config.json` (`open_combo`, `panel_side`, `targets`, `disabled_modules`, `dev_desktop`,
+`~/.config/invasor/config.json` (`open_combo`, `panel_side`, `targets`, `disabled_modules`, `removed_modules`, `dev_desktop`,
 `handle_icon`, `module_order`, `update_check`, `update_channel`; la mayoría también se cambian desde la pestaña **⚙ Settings**).
 
 ## Uso con el mando
@@ -92,7 +92,8 @@ juego en marcha, y el panel de ahí omite los módulos que no pintan nada durant
 El panel ocupa el 40 % del ancho de la pantalla en la biblioteca (en Quick Access, la columna visible). Solo se desplaza el contenido; las
 sombras arriba y abajo indican que hay más por ver.
 
-Mientras el panel está abierto, Steam no recibe ninguna pulsación del mando. También
+Mientras el panel está abierto, Steam no recibe ninguna pulsación del mando (los botones
+Steam y ··· propios siempre pasan). También
 se puede abrir con la pestaña azul, con el dedo o con F10.
 
 Se leen tanto los mandos normales (evdev: DualSense, Xbox…) como los de protocolo
@@ -100,12 +101,12 @@ Steam Deck: una Steam Deck real, o handhelds como la Legion Go virtualizados por
 InputPlumber. Para ver qué botones detecta el servicio: `python3 tools/pad.py`.
 
 **Pestaña ⚙ Settings** (siempre presente, aunque no haya módulos): activar o
-desactivar módulos, atajo para abrir el panel, lado del panel, el orden de las pestañas de los módulos (se agarra un módulo con A y se mueve con la cruceta), qué muestra la pestaña (el icono, la letra "I" o nada), color de acento (también de la pestaña) y "About" (versión,
+desactivar módulos (Manage modules), instalar uno desde un zip o desde el Market (solo en la Biblioteca), atajo para abrir el panel, lado del panel (solo en la Biblioteca: Quick Access va siempre a la izquierda), el orden de las pestañas de los módulos (se agarra un módulo con A y se mueve con la cruceta), qué muestra la pestaña (el icono, la letra "I" o nada), color de acento (también de la pestaña), "Manage Invasor" (actualizaciones, reiniciar Invasor o Steam, ver el log, restablecer la configuración, desinstalar) y "About" (versión,
 estado y mandos detectados). La interfaz de invasor está en inglés; cada módulo
 elige su propio idioma.
 
 ## Módulos
-Invasor trae solo `demo` (una demostración que también usa `tools/smoke.py`) y la plantilla `_example`.
+Invasor trae solo `demo` (una demostración que también usa `tools/smoke.py`) y la plantilla `_example`. Demo se puede desinstalar desde ⚙ Settings › Manage modules (sigue desinstalado tras actualizar; en la misma sección hay un botón *Restore*).
 Los módulos de verdad viven en sus propios repositorios y se instalan como zip desde **⚙ Settings › Install
 module**:
 
@@ -163,7 +164,7 @@ Los módulos también pueden mostrar una notificación como las de los logros de
 | Eventos `vgp_onbuttondown` y sus números de botón | navegar el panel con el mando | el panel se abre (L3+R3) pero no se navega con el mando; el dedo y F10 siguen funcionando |
 | `window.screenX` / `innerWidth` de las ventanas de Steam | ajustar el panel en el menú rápido | usa el ancho aprendido (348 px) |
 | Clase CSS `.gpfocus` | devolver el foco tras escribir con teclado físico | no se devuelve el foco; nada más cambia |
-| `SteamClient` (opcional), en la ventana o en `SharedJSContext` | `ctx.steam.safeCall` / `ctx.steam_call` para módulos (p. ej. el refresco al momento de Artwork) | las llamadas fallan limpiamente (503) y los módulos tienen plan B (Artwork: el arte nuevo se ve tras reiniciar Steam) |
+| `SteamClient` (opcional), en la ventana o en `SharedJSContext` | `ctx.steam.safeCall` / `ctx.steam_call` para módulos (p. ej. el refresco al momento de Artwork), y `User.StartRestart` para ⚙ Settings › Manage Invasor › Restart Steam | las llamadas fallan limpiamente (503) y los módulos tienen plan B (Artwork: el arte nuevo se ve tras reiniciar Steam) |
 
 ## Pruebas
 

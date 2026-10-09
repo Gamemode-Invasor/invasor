@@ -35,7 +35,7 @@ DEFAULTS = {
     "log_level": "INFO",
     # Gamepad buttons held together to open/close the overlay (see gamepad.BUTTONS).
     "open_combo": ["L3", "R3"],
-    # Which side the panel opens on: "auto" (right in the library, left over Quick Access), "left", "right".
+    # Which side the panel opens on in the library: "auto" (right), "left", "right". Quick Access is always on the left.
     "panel_side": "auto",
     # Accent colour of the overlay and its "I" handle (one of ACCENT_COLORS).
     "accent_color": "blue",
@@ -45,6 +45,9 @@ DEFAULTS = {
     "module_order": [],
     # Module ids switched off from the panel.
     "disabled_modules": [],
+    # Modules shipped with Invasor (e.g. demo) that the user uninstalled. They stay uninstalled when
+    # Invasor updates (the installer puts their files back); ⚙ Settings can restore them.
+    "removed_modules": [],
     # DEVELOPMENT ONLY: also inject into the desktop client window, so the UI can be
     # tested (tools/smoke.py) without Game Mode/Big Picture. Keep false in normal use.
     "dev_desktop": False,
@@ -105,6 +108,7 @@ VALID = {
     "accent_color": lambda v: v in ACCENT_COLORS,
     "handle_icon": lambda v: v in HANDLE_ICONS,
     "disabled_modules": _str_list,
+    "removed_modules": _str_list,
     "module_order": _id_list,
     "dev_desktop": lambda v: isinstance(v, bool),
     "qam_visible_w": lambda v: v is None or (_is_int(v) and 200 <= v <= 4000),

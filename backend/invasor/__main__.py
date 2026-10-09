@@ -27,7 +27,7 @@ async def main():
     steam = SteamBridge(lambda expression, timeout: injector.evaluate_shared(expression, timeout))
     steam.loop = asyncio.get_running_loop()
     manager = ModuleManager(cfg, game, steam)
-    manager.discover()
+    await asyncio.to_thread(manager.discover)  # module code never runs in the event loop
     injector = Injector(cfg, manager.ui_scripts, on_steam_start=manager.steam_started)
     log = logging.getLogger("invasor")
 

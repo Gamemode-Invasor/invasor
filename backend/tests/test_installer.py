@@ -17,6 +17,7 @@ PYTHON = "/usr/bin/python3"
 FAKE_SYSTEMCTL = """#!/bin/sh
 echo "$@" >> "$FAKE_LOG"
 case "$*" in
+  *enable*) grep -q FAIL_ENABLE "$XDG_DATA_HOME/invasor/backend/invasor/__init__.py" && exit 1 ;;
   *is-active*) grep -q BROKEN "$XDG_DATA_HOME/invasor/backend/invasor/__init__.py" && exit 3 ;;
 esac
 exit 0
@@ -68,11 +69,11 @@ class Installer(unittest.TestCase):
             "INVASOR_HEALTH_TRIES": "3",
         }
 
-    def release(self, version, broken=False):
-        d = self.root / ("release-" + version + ("-broken" if broken else ""))
+    def release(self, version, broken=False, marker=""):
+        d = self.root / ("release-" + version + ("-broken" if broken else "") + ("-marked" if marker else ""))
         pkg = d / "backend/invasor"
         pkg.mkdir(parents=True)
-        pkg.joinpath("__init__.py").write_text('__version__ = "%s"\n%s' % (version, "# BROKEN\n" if broken else ""))
+        pkg.joinpath("__init__.py").write_text('__version__ = "%s"\n%s%s' % (version, "# BROKEN\n" if broken else "", marker))
         pkg.joinpath("config.py").write_text(CONFIG_PY.format(port=self.port))
         (d / "frontend/dist").mkdir(parents=True)
         (d / "frontend/dist/invasor.js").write_text("// ui\n")
@@ -104,6 +105,11 @@ class Installer(unittest.TestCase):
         self.assertEqual(self.installed_version(), "2.0.0")
         self.assertEqual(self.leftovers(), [])
 
+    def test_the_installer_is_kept_next_to_the_install(self):
+        # ⚙ Settings › Manage Invasor uninstalls with it.
+        self.assertEqual(self.install(self.release("1.0.0")).returncode, 0)
+        self.assertEqual((self.dest / "invasor-installation.sh").read_text(), SCRIPT.read_text())
+
     def test_a_broken_update_goes_back(self):
         self.assertEqual(self.install(self.release("1.0.0")).returncode, 0)
         unit_before = self.unit.read_text()
@@ -114,6 +120,25 @@ class Installer(unittest.TestCase):
         self.assertEqual(self.leftovers(), [])
         self.assertEqual(self.restarts(), 3)  # first install, the broken update, the way back
         self.assertIn("Going back to Invasor 1.0.0", r.stderr)
+
+    def test_a_failure_before_the_health_check_goes_back_too(self):
+        # systemctl enable fails: with `set -e` alone the script used to stop right there, half swapped.
+        self.assertEqual(self.install(self.release("1.0.0")).returncode, 0)
+        r = self.install(self.release("2.0.0", marker="# FAIL_ENABLE\n"))
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.installed_version(), "1.0.0")
+        self.assertEqual(self.leftovers(), [])
+        self.assertIn("Going back to Invasor 1.0.0", r.stderr)
+
+    def test_an_interrupted_install_leaves_a_backup_that_the_next_one_keeps(self):
+        self.assertEqual(self.install(self.release("1.0.0")).returncode, 0)
+        # What a run killed between the two moves leaves: the old backend aside, no new one yet.
+        (self.dest / "backend").rename(self.dest / ".old-backend")
+        r = self.install(self.release("2.0.0", broken=True))
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("interrupted", r.stderr)
+        self.assertEqual(self.installed_version(), "1.0.0")  # the backup survived both attempts
+        self.assertEqual(self.leftovers(), [])
 
     def test_the_installer_makes_the_cef_flag_and_says_to_restart_steam(self):
         flag = self.home / ".steam/steam/.cef-enable-remote-debugging"

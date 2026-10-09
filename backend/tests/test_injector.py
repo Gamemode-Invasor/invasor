@@ -134,6 +134,36 @@ class EvaluateByRole(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sorted(await inj.evaluate_all("x")), ["main", "qam"])
 
 
+class MainHandle(unittest.IsolatedAsyncioTestCase):
+    class Fake:
+        def __init__(self):
+            self.sent = []
+
+        async def evaluate(self, expression):
+            self.sent.append(expression)
+            return True
+
+    async def test_only_the_main_window_is_told_and_it_is_remembered(self):
+        main, qam = self.Fake(), self.Fake()
+        inj = Injector({"targets": []})
+        inj._live = {"a": (main, "main"), "b": (qam, "quickaccess")}
+        await inj.set_main_handle_hidden(True)
+        self.assertEqual(main.sent, ["window.__invasor?.setHandleHidden(true)"])
+        self.assertEqual(qam.sent, [])
+        await inj.set_main_handle_hidden(False)
+        self.assertEqual(main.sent[-1], "window.__invasor?.setHandleHidden(false)")
+
+    async def test_a_main_window_injected_later_gets_it(self):
+        inj = Injector({"targets": [], "bundle": __file__})
+        inj._payload = lambda role: "bundle"
+        inj._main_handle_hidden = True
+        main, qam = self.Fake(), self.Fake()
+        await inj._inject(main, "main", "main")
+        await inj._inject(qam, "qam", "quickaccess")
+        self.assertIn("window.__invasor?.setHandleHidden(true)", main.sent)
+        self.assertNotIn("window.__invasor?.setHandleHidden(true)", qam.sent)
+
+
 class RemoveOverlays(unittest.IsolatedAsyncioTestCase):
     async def test_every_page_is_cleaned_and_counted(self):
         from unittest import mock

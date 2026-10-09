@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from invasor import core
+from invasor import config, core
 from invasor.context import GameContext
 from invasor.gamepad import ComboWatcher
 from invasor.modules import ModuleManager
@@ -99,6 +99,113 @@ class Prefs(unittest.TestCase):
                 self.api["set_qam_width"](bad)
         self.assertEqual(self.api["prefs"]()["qam_visible_w"], 348)
 
+    def test_qam_shown_hides_the_library_handle(self):
+        import asyncio
+
+        class Inj:
+            def __init__(self):
+                self.calls = []
+
+            async def set_main_handle_hidden(self, hidden):
+                self.calls.append(hidden)
+
+        inj = Inj()
+        api = core.make_methods(ModuleManager(self.cfg, GameContext()), GameContext(), self.watcher, self.cfg, injector=inj)
+        self.assertTrue(asyncio.run(api["set_qam_shown"](True)))
+        asyncio.run(api["set_qam_shown"](False))
+        self.assertEqual(inj.calls, [True, False])
+        for bad in (1, "true", None):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                asyncio.run(api["set_qam_shown"](bad))
+        self.assertEqual(inj.calls, [True, False])
+
+    def test_manage_invasor_commands(self):
+        from unittest import mock
+
+        from invasor.schema import Unavailable
+
+        ok = mock.Mock(returncode=0, stdout="line 1\nline 2\n", stderr="")
+        with mock.patch("invasor.updater.subprocess.run", return_value=ok) as run:
+            self.assertTrue(self.api["restart_service"]())
+            cmd = run.call_args[0][0]
+            self.assertEqual(cmd[:5], ["systemd-run", "--user", "--collect", "--quiet", "--unit=invasor-restart"])
+            self.assertEqual(cmd[5:], ["systemctl", "--user", "restart", "invasor.service"])
+        with mock.patch("invasor.updater.subprocess.run", side_effect=FileNotFoundError):
+            with self.assertRaises(Unavailable):
+                self.api["restart_service"]()
+
+        # reset_config forgets config.json and restarts the service
+        self.config_file.write_text("{}")
+        with mock.patch("invasor.updater.subprocess.run", return_value=ok) as run:
+            self.api["reset_config"]()
+            self.assertFalse(self.config_file.exists())
+            self.assertIn("--unit=invasor-restart", run.call_args[0][0])
+        self.api["reset_config"]()  # nothing to forget is fine
+
+        with mock.patch("invasor.core.subprocess.run", return_value=ok) as run:
+            self.assertEqual(self.api["log_tail"](5), "line 1\nline 2\n")
+            self.assertEqual(run.call_args[0][0][:7], ["journalctl", "--user", "-u", "invasor.service", "-n", "5", "--no-pager"])
+        for bad in (0, 1001, "5", True, None):
+            with self.subTest(lines=bad), self.assertRaises(ValueError):
+                self.api["log_tail"](bad)
+        with mock.patch("invasor.core.subprocess.run", side_effect=FileNotFoundError):
+            with self.assertRaises(Unavailable):
+                self.api["log_tail"]()
+
+    def test_uninstall_invasor(self):
+        from unittest import mock
+
+        from invasor.schema import Unavailable
+
+        patch(self, "invasor.config.DATA_DIR", temp_dir(self) / "invasor")  # never the real install
+        script = config.DATA_DIR / "invasor-installation.sh"
+        ok = mock.Mock(returncode=0, stdout="", stderr="")
+        with self.assertRaises(Unavailable):  # an install made before the installer was kept
+            self.api["uninstall_invasor"]()
+        script.parent.mkdir(parents=True, exist_ok=True)
+        script.write_text("#!/bin/bash\n")
+        with mock.patch("invasor.updater.subprocess.run", return_value=ok) as run:
+            self.api["uninstall_invasor"]()
+            cmd = run.call_args[0][0]
+            self.assertIn("--unit=invasor-uninstall", cmd)
+            self.assertEqual(cmd[-2:], [str(script), "--uninstall"])
+            self.api["uninstall_invasor"](True)
+            self.assertEqual(run.call_args[0][0][-3:], [str(script), "--uninstall", "--purge"])
+        for bad in (1, "yes", None):
+            with self.subTest(purge=bad), self.assertRaises(ValueError):
+                self.api["uninstall_invasor"](bad)
+
+    def test_restart_steam_asks_steam_not_the_system(self):
+        import asyncio
+        from unittest import mock
+
+        from invasor.schema import Unavailable
+
+        steam = mock.Mock()
+        steam.call = mock.AsyncMock(return_value=None)
+        api = core.make_methods(ModuleManager(self.cfg, GameContext()), GameContext(), self.watcher, self.cfg, steam=steam)
+        self.assertTrue(asyncio.run(api["restart_steam"]()))
+        steam.call.assert_awaited_once_with("User.StartRestart", [False])
+        steam.call = mock.AsyncMock(side_effect=Unavailable("SteamClient.User.StartRestart isn't available"))
+        with self.assertRaises(Unavailable):
+            asyncio.run(api["restart_steam"]())
+        with self.assertRaises(Unavailable):  # no bridge at all
+            asyncio.run(self.api["restart_steam"]())
+
+    def test_a_shipped_module_is_uninstalled_through_the_api(self):
+        import asyncio
+        manager = ModuleManager(self.cfg, GameContext())
+        manager.discover()
+        api = core.make_methods(manager, GameContext(), self.watcher, self.cfg)
+        self.assertTrue(api["module_uninstall"]("mod"))
+        self.assertNotIn("mod", [m["id"] for m in api["modules"]()])
+        self.assertEqual(api["module_removed"](), [{"id": "mod", "name": "Mod"}])
+        with self.assertRaises(ValueError):
+            api["module_uninstall"]("ghost")
+        entry = asyncio.run(api["module_restore"]("mod"))
+        self.assertEqual(entry["id"], "mod")
+        self.assertEqual(api["module_removed"](), [])
+
     def test_module_settings_are_per_key_and_validated(self):
         self.assertEqual(self.api["settings_get"]("mod"), {"fps": 60})
         self.assertEqual(self.api["settings_set"]("mod", "fps", 151), 140)
@@ -173,10 +280,6 @@ class Highlighted(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(state), {"running", "selected", "highlighted"})
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class InstallRollback(unittest.IsolatedAsyncioTestCase):
     """A replace that fails after the old version was unloaded loads the old one again."""
 
@@ -204,3 +307,56 @@ class InstallRollback(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(OSError, "disk full"):
             await api["module_install"]("Downloads/hello.zip", replace=True)
         self.assertEqual(manager.registry["hello"]["hi"](), "old")
+
+
+class MarketMethods(unittest.IsolatedAsyncioTestCase):
+    """market_install hands the verified download to module_install and always deletes it."""
+
+    def make(self, listing):
+        work = temp_dir(self) / "market-x"
+        work.mkdir()
+        (work / "patito-0.2.1.zip").write_bytes(b"zip")
+        calls = []
+
+        class FakeMarket:
+            def list(self, refresh=False):
+                return {"modules": [], "notes": [], "refresh": refresh}
+
+            def download(self, repo):
+                calls.append(repo)
+                return "x/patito-0.2.1.zip", work, "patito"
+
+        class Manager:
+            manifests = {}
+
+            def listing(self):
+                return listing
+
+        cfg = {"open_combo": ["L3", "R3"], "disabled_modules": []}
+        api = core.make_methods(Manager(), GameContext(), ComboWatcher(cfg["open_combo"], lambda: None), cfg, market=FakeMarket())
+        return api, work, calls
+
+    async def test_install_new_then_replace_and_the_download_is_deleted(self):
+        for listing, replace in (([], False), ([{"id": "patito", "version": "0.2.0"}], True)):
+            with self.subTest(replace=replace):
+                api, work, calls = self.make(listing)
+                seen = {}
+
+                async def fake_run(fn, path, reserved, replace_, before):
+                    seen["replace"] = replace_
+                    return "patito"
+
+                patch(self, "invasor.modpool.run", fake_run)
+                with self.assertRaises(AttributeError):  # module_install goes on to load the module; only the hand-over matters
+                    await api["market_install"]("invasor-patito")
+                self.assertEqual(seen["replace"], replace)
+                self.assertFalse(work.exists())
+
+    async def test_list_passes_refresh_through(self):
+        api, _, _ = self.make([])
+        self.assertTrue((await api["market_list"](True))["refresh"])
+        self.assertFalse((await api["market_list"]())["refresh"])
+
+
+if __name__ == "__main__":
+    unittest.main()

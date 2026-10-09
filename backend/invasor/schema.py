@@ -82,9 +82,10 @@ def _decimals(x):
 
 def snap(value, lo, hi, step):
     """Clamp to [lo, hi] and round to the nearest step counted from lo, without float
-    noise: snap(0.30000000000000004, 0, 1, 0.1) == 0.3. Ints stay ints."""
+    noise: snap(0.30000000000000004, 0, 1, 0.1) == 0.3. Ints stay ints. Halfway rounds
+    up (like the panel's Math.round), not to the even step as round() would."""
     last = math.floor((hi - lo) / step + 1e-9)  # if hi isn't on a step, the last one below it
-    n = min(last, max(0, round((value - lo) / step)))
+    n = min(last, max(0, math.floor((value - lo) / step + 0.5)))
     v = lo + n * step
     places = max(_decimals(step), _decimals(lo))
     v = round(v, places)

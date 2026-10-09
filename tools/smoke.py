@@ -238,7 +238,7 @@ class Smoke:
             await asyncio.sleep(2.5)
             await self.goto_tab("⚙ Settings")
             # Installed behind the panel's back: Rescan draws the module list again.
-            await self.unfold("Modules")
+            await self.unfold("Manage modules")
             await self.goto("Rescan modules", limit=60)
             await self.press("A", wait=3.0)
             # Reordering (two modules are listed now): grab Smoke Demo, move it up, drop it.
@@ -263,7 +263,7 @@ class Smoke:
             await self.goto("Reset order", limit=20)
             await self.press("A", wait=1.5)
             self.check("reorder: Reset order forgets it", not saved_order(), saved_order())
-            await self.unfold("Modules")
+            await self.unfold("Manage modules")
             await self.goto("Rescan modules", limit=60)
             st = await self.goto("Uninstall Smoke Demo", limit=60, button="UP")  # it's above Rescan
             st = await self.press("A", wait=0.3)
@@ -443,6 +443,12 @@ class Smoke:
         # Control API: "Lock volume" disables Volume in Controls (selectable, but inert).
         await self.goto("Lock volume")
         await self.press("A")
+        await self.goto("Preview Volume at 100%")
+        await self.press("A")
+        await self.goto_sub("Controls")
+        st = await self.goto("Volume")
+        self.check("Control.set() moves the drawn value", "100" in str(st["value"]), st)
+        await self.goto_sub("Text")
         await self.goto_sub("Controls")
         st = await self.goto("Volume")
         st2 = await self.press("RIGHT")
@@ -580,12 +586,12 @@ class Smoke:
                    bool(demo) and demo[0] == "Demo (0.2.0) by FranjeGueje" and "Showcase" in demo[1], demo)
 
         print(" Settings")
-        await self.unfold("Updates")
+        await self.unfold("Manage Invasor")
         await self.goto("Check for updates")
         await self.press("A", wait=4.0)  # asks GitHub: no release yet, or up to date, are both fine
-        updates = await self.js(f"""(() => [...{SR}.querySelectorAll('.section')].find(s => s.textContent.startsWith('Updates'))
+        updates = await self.js(f"""(() => [...{SR}.querySelectorAll('.section')].find(s => s.textContent.startsWith('Manage Invasor'))
           ?.textContent ?? '')()""")
-        self.check("Updates: shows the installed version, and says it couldn't check or that it's up to date",
+        self.check("Manage Invasor: shows the installed version, and says it couldn't check or that it's up to date",
                    "Installed:" in updates and ("Couldn't check" in updates or "up to date" in updates), updates[:160])
         st = await self.unfold("Controller")
         st = await self.goto("Open/close panel")
