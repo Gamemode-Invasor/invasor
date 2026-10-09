@@ -8,6 +8,7 @@ import css from "./overlay.css";
 import iconSvg from "../assets/invasor.svg";
 import { hiddenInQam } from "./qam";
 import { accentColor } from "./palette";
+import { panelOnLeft, type Side } from "./side";
 import { renderSettings, type ModuleInfo } from "./settings";
 import { tabRowHTML } from "./tabbar";
 import { createTabHost, type TabSpec } from "./tabhost";
@@ -44,8 +45,6 @@ interface LiveModule {
   built: boolean;
   spec: TabSpec;
 }
-
-type Side = "auto" | "left" | "right";
 
 const GAME_POLL_MS = 3000;
 const TOAST_MS = 2500;
@@ -168,9 +167,8 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
 
   // ---------- side ----------
   function applySide(side: Side) {
-    // Auto: in Quick Access, Steam's menu sits on the right, so we live on the left.
-    const left = side === "left" || (side === "auto" && role === "quickaccess");
-    host.className = left ? "side-left" : "side-right";
+    // Quick Access is always on the left (its right edge is off screen); the setting is for the library.
+    host.className = panelOnLeft(role, side) ? "side-left" : "side-right";
   }
   applySide("auto");
 

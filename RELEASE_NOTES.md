@@ -14,4 +14,5 @@
 - rc2: Fix: Rescan modules now shows edited forms, Settings no longer draws twice after two quick actions, and notifications no longer get stuck on screen
 - rc2: Fix: number settings round halfway values up everywhere (module.json checks and the panel agree)
 - rc2: Demo shows every module feature: shortcut_exe, validated TOML saves, notification icons, Control.set and navHints
+- rc2: Fix: Quick Access always shows the panel and its "I" on the left; with "Panel side" set to Right the "I" vanished and the panel could not be opened. The setting now only applies to the Library
 ---

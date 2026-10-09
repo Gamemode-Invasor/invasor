@@ -35,7 +35,7 @@ DEFAULTS = {
     "log_level": "INFO",
     # Gamepad buttons held together to open/close the overlay (see gamepad.BUTTONS).
     "open_combo": ["L3", "R3"],
-    # Which side the panel opens on: "auto" (right in the library, left over Quick Access), "left", "right".
+    # Which side the panel opens on in the library: "auto" (right), "left", "right". Quick Access is always on the left.
     "panel_side": "auto",
     # Accent colour of the overlay and its "I" handle (one of ACCENT_COLORS).
     "accent_color": "blue",

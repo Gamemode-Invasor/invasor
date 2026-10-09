@@ -270,6 +270,7 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
   let savedSide = prefs.panel_side;
   const side = ui.radio({
     label: "Panel side",
+    hint: "Only for the Library. Quick Access always shows the panel on the left.",
     value: prefs.panel_side,
     options: [
       { value: "auto" as const, label: "Auto" },
