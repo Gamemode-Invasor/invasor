@@ -1,20 +1,12 @@
-- rc1: Fix: With the panel on the left, the library's handle hides while Quick Access shows its own: no more two "I" at once
-- rc1: Settings: "Modules" is now "Manage modules", and "Install module" comes before "Module order"
-- rc1: New Settings > Manage Invasor: updates, restart Invasor or Steam, view the log, reset the configuration and uninstall
-- rc1: Demo can be uninstalled from Settings > Manage modules, and restored from there; updates don't bring it back
-- rc2: Security fix: a module zip can no longer write files outside its install folder, not even when you only press Inspect
-- rc2: Fix: a module that hangs while starting no longer freezes Invasor; it fails to load after 20 seconds and the rest keeps working
-- rc2: Fix: modules can use Steam calls and notifications in setup() every time, including when Invasor starts
-- rc2: Fix: a slow module can no longer delay the panel or stop Invasor from shutting down cleanly; too many calls at once get a "try again" answer
-- rc2: Fix: a power cut can no longer leave your configuration or module settings empty
-- rc2: Fix: a Steam window that stops answering no longer blocks Invasor from using it again
-- rc2: Fix: if an update fails at any step, the previous version is put back; the backup of an interrupted update is kept
-- rc2: Fix: the panel reads the module list every time it opens, so changes made from Quick Access or the Library show up in the other one
-- rc2: Fix: a module tab no longer loses its onShow after the tabs are rebuilt, and no longer jumps back to the previous tab when you switch quickly
-- rc2: Fix: Rescan modules now shows edited forms, Settings no longer draws twice after two quick actions, and notifications no longer get stuck on screen
-- rc2: Fix: number settings round halfway values up everywhere (module.json checks and the panel agree)
-- rc2: Demo shows every module feature: shortcut_exe, validated TOML saves, notification icons, Control.set and navHints
-- rc2: Fix: Quick Access always shows the panel and its "I" on the left; with "Panel side" set to Right the "I" vanished and the panel could not be opened. The setting now only applies to the Library
-- rc3: The L1/R1 and L2/R2 labels beside the tabs can now be tapped to switch tab or section, and no longer have an outline
-- rc3: New module Market (Settings > Install module > Open the Market): browse the modules of the Invasor organization's repositories in a big window and install or update them with one press. New releases show up within about an hour, and downloads are checked before installing
+New
+- New module Market (Settings > Install module > Open the Market): browse the modules of the Invasor organization's repositories in a big window and install or update them with one press; downloads are checked before installing
+- New Settings > Manage Invasor: updates, restart Invasor or Steam, view the log, reset the configuration and uninstall
+- Settings: "Modules" is now "Manage modules"; Demo can be uninstalled and restored from there
+- The L1/R1 and L2/R2 labels beside the tabs can now be tapped to switch tab or section
+
+Fixes
+- Security: a module zip can no longer write files outside its install folder
+- Robustness: slow or hung modules, power cuts, failed updates and unresponsive Steam windows can no longer freeze Invasor, empty your configuration or leave a broken install
+- Quick Access always shows the panel and its "I" on the left; "Panel side" now only applies to the Library
+- Minor fixes: the library handle, module lists, tabs, forms, number settings and notifications stay in sync and no longer glitch
 ---
