@@ -378,13 +378,26 @@ A module doesn't have to live inside Invasor. Keep it in its own repository, nex
   `module.json`, the Python files, `dist/ui.js`, README and LICENSE (the one at the root of your repository, if the
   module folder has none). Never the tests.
 - **Install:**
-  - **On the console:** ⚙ Settings › Install module, then choose the zip.
+  - **On the console:** ⚙ Settings › Install module, then choose the zip, or open the Market (Library only) to install
+    from the organisation's repositories.
   - **From a terminal:** `python3 ~/Projects/invasor/tools/install_module.py <id or zip>`.
 
   Installed modules live in `~/.local/share/invasor/user-modules/<id>/`. Updating Invasor never touches that
   folder. Uninstalling from ⚙ Settings runs the module's `uninstall()` and removes its files. The user chooses
   whether to keep its settings and data (`~/.config/invasor/modules/<id>/`) in case it's installed again
   (`--uninstall <id> --purge` from a terminal deletes them).
+
+**The Market.** ⚙ Settings › Install module › Open the Market lists the newest release of every module repository
+named in `repos.conf` of the `Gamemode-Invasor/invasor-workspace` repository (`main` branch; the core `invasor` line is
+skipped). The Beta update channel also offers pre-releases. For a repository to appear:
+- its release (tag `vX.Y.Z`) has the assets `<id>-<version>.zip` and `<id>-<version>.zip.sha256` (the `release.yml`
+  of section 8 publishes them);
+- `<id>/module.json` exists at that tag with the same `version`, and a `min_core` this Invasor meets (otherwise the
+  card is shown but can't be installed).
+
+The card is read from that `module.json`; no module code runs to show it. Installing downloads the zip from that
+release only, checks its sha256 and then does exactly what choosing the zip by hand does. The checksum catches a
+corrupt download, not a compromised account, so `repos.conf` is part of what the user trusts.
 
 **What the core checks before installing a zip**, refusing it with a clear message otherwise:
 - **The zip itself:** it is a real zip within the size limits, with no absolute paths, no `..` and no

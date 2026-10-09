@@ -5,6 +5,7 @@ import type { Api } from "../api";
 import type { SettingsSchema, WindowHandle, WindowSpec } from "../module-api";
 import { steamAvailable } from "../steam";
 import { ui } from "./controls";
+import { renderMarket } from "./market";
 import { ACCENT_COLORS } from "./palette";
 import { reorderList } from "./reorder";
 
@@ -240,6 +241,24 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
     if (!listing.entries.length) rows.push(ui.info("No folders or .zip files here."));
     picker.replaceChildren(...rows);
   }
+  const openMarket = ui.button({
+    label: "Open the Market…",
+    hint: "A open",
+    onClick: () =>
+      void deps.openWindow({
+        title: "Module market",
+        render: (win) =>
+          renderMarket(win, {
+            api,
+            toast,
+            // Installed modules change the Settings lists behind the window too.
+            onModulesChanged: async () => {
+              await deps.onModulesChanged();
+              rerender();
+            },
+          }),
+      }),
+  });
   const startBrowsing = ui.button({ label: "Choose a module .zip…", onClick: () => void browse() });
   picker.append(startBrowsing);
 
@@ -562,7 +581,7 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
   el.append(
     ui.section("Manage Invasor", manageControls, { open: false }),
     ui.section("Manage modules", moduleControls, { open: false }),
-    ui.section("Install module", [ui.info("Module zips are checked before anything is installed."), picker], { open: false }),
+    ui.section("Install module", [ui.info("Module zips are checked before anything is installed."), openMarket, picker], { open: false }),
     ...(modules.length > 1 ? [ui.section("Module order", orderControls, { open: false })] : []),
     ui.section("Controller", [combo], { open: false }),
     ui.section("Panel", [side, handleIcon, color], { open: false }),

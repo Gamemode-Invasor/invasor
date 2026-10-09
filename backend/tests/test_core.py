@@ -309,5 +309,54 @@ class InstallRollback(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manager.registry["hello"]["hi"](), "old")
 
 
+class MarketMethods(unittest.IsolatedAsyncioTestCase):
+    """market_install hands the verified download to module_install and always deletes it."""
+
+    def make(self, listing):
+        work = temp_dir(self) / "market-x"
+        work.mkdir()
+        (work / "patito-0.2.1.zip").write_bytes(b"zip")
+        calls = []
+
+        class FakeMarket:
+            def list(self, refresh=False):
+                return {"modules": [], "notes": [], "refresh": refresh}
+
+            def download(self, repo):
+                calls.append(repo)
+                return "x/patito-0.2.1.zip", work, "patito"
+
+        class Manager:
+            manifests = {}
+
+            def listing(self):
+                return listing
+
+        cfg = {"open_combo": ["L3", "R3"], "disabled_modules": []}
+        api = core.make_methods(Manager(), GameContext(), ComboWatcher(cfg["open_combo"], lambda: None), cfg, market=FakeMarket())
+        return api, work, calls
+
+    async def test_install_new_then_replace_and_the_download_is_deleted(self):
+        for listing, replace in (([], False), ([{"id": "patito", "version": "0.2.0"}], True)):
+            with self.subTest(replace=replace):
+                api, work, calls = self.make(listing)
+                seen = {}
+
+                async def fake_run(fn, path, reserved, replace_, before):
+                    seen["replace"] = replace_
+                    return "patito"
+
+                patch(self, "invasor.modpool.run", fake_run)
+                with self.assertRaises(AttributeError):  # module_install goes on to load the module; only the hand-over matters
+                    await api["market_install"]("invasor-patito")
+                self.assertEqual(seen["replace"], replace)
+                self.assertFalse(work.exists())
+
+    async def test_list_passes_refresh_through(self):
+        api, _, _ = self.make([])
+        self.assertTrue((await api["market_list"](True))["refresh"])
+        self.assertFalse((await api["market_list"]())["refresh"])
+
+
 if __name__ == "__main__":
     unittest.main()

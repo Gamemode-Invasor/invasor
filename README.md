@@ -100,7 +100,7 @@ Both regular controllers (evdev: DualSense, Xbox…) and Steam Deck-protocol one
 read: a real Steam Deck, or handhelds such as the Legion Go virtualised by
 InputPlumber. To see which buttons the service detects: `python3 tools/pad.py`.
 
-**⚙ Settings tab** (always there, even with no modules): enable or disable modules (Manage modules), install one from a zip, the shortcut that opens the panel, the panel side (Library only: Quick Access is always on the left), the order of the modules' tabs (grab a module with A, move it with the D-pad), what the handle shows (the icon, the letter "I" or nothing), the accent colour (also of the handle), "Manage Invasor" (updates, restart Invasor or Steam, view the log, reset the configuration, uninstall) and "About" (version, status and
+**⚙ Settings tab** (always there, even with no modules): enable or disable modules (Manage modules), install one from a zip or from the Market (Library only), the shortcut that opens the panel, the panel side (Library only: Quick Access is always on the left), the order of the modules' tabs (grab a module with A, move it with the D-pad), what the handle shows (the icon, the letter "I" or nothing), the accent colour (also of the handle), "Manage Invasor" (updates, restart Invasor or Steam, view the log, reset the configuration, uninstall) and "About" (version, status and
 detected controllers). Invasor's own UI is in English; each module chooses its own
 language.
 

@@ -2,9 +2,11 @@
 import asyncio
 import logging
 import platform
+import shutil
 import subprocess
 
 from . import __version__, config, gamepad, install, modpool
+from .market import Market
 from .updater import Updater, run_detached
 from .schema import InvalidArgument, Unavailable
 from .storage import JsonStore
@@ -22,8 +24,12 @@ rm -f "$tmp"
 LOG_MAX_LINES = 1000
 
 
-def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater=None):
+def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater=None, market=None):
     updater = updater or Updater()
+    market = market or Market(
+        installed=lambda: {m["id"]: m["version"] for m in manager.listing()},
+        channel=lambda: cfg.get("update_channel", "stable"),
+    )
 
     def info():
         return {"version": __version__, "python": platform.python_version(), "kernel": platform.release()}
@@ -168,6 +174,20 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
             await injector.inject_module(mid, ui_js)
         log.info("installed module %s %s", mid, entry.get("version"))
         return entry
+
+    # ---------- ⚙ Settings › Install module › Open the Market (backend/invasor/market.py) ----------
+
+    async def market_list(refresh=False):
+        """{modules: [card], notes}: the newest release of every module repository of the organisation."""
+        return await asyncio.to_thread(market.list, bool(refresh))
+
+    async def market_install(repo):
+        """Download (sha256 checked) and install, or update, the market's module of a repository."""
+        path, work, mid = await asyncio.to_thread(market.download, repo)
+        try:
+            return await module_install(path, replace=any(m["id"] == mid for m in manager.listing()))
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
 
     def module_uninstall(id, purge=False):
         """Uninstall a module (its uninstall() runs first). With purge its settings and data
@@ -314,6 +334,8 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
         "module_browse": module_browse,
         "module_inspect": module_inspect,
         "module_install": module_install,
+        "market_list": market_list,
+        "market_install": market_install,
         "module_uninstall": module_uninstall,
         "module_removed": module_removed,
         "module_restore": module_restore,
