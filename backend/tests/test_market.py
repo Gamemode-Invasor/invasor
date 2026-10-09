@@ -1,7 +1,9 @@
+import copy
 import hashlib
 import json
 import unittest
 import urllib.error
+from datetime import datetime, timedelta, timezone
 
 from invasor import config, install, market
 from invasor.schema import InvalidArgument, Unavailable
@@ -167,6 +169,134 @@ class Catalog(unittest.TestCase):
     def test_stable_channel_never_shows_a_pre_release(self):
         self.net.answers[api("invasor-patito") + "/latest"] = release("invasor-patito", "patito", "0.3.0-rc1", prerelease=True)
         self.assertEqual([c["id"] for c in self.market().list()["modules"]], ["pescao"])
+
+
+def file_card(mid="patito", version="0.2.1", **extra):
+    return {"id": mid, "version": version, "tag": f"v{version}", "name": mid.title(), "description": "d",
+            "author": "Someone", "min_core": None, **extra}
+
+
+def market_file(generated=None, **extra):
+    generated = generated or datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    data = {"schema": 1, "generated": generated, "skipped": [], "modules": [
+        {"repo": "invasor-patito", "stable": file_card(), "beta": file_card(version="0.3.0-rc1")},
+        {"repo": "invasor-pescao", "stable": file_card("pescao"), "beta": None},
+    ], **extra}
+    return json.dumps(data)
+
+
+class FromFile(unittest.TestCase):
+    def market(self, answers=None, **kw):
+        self.net = Net(answers or {})
+        return market.Market(fetch=self.net.get, fetch_text=self.net.get, fetch_file=lambda *a: None, **kw)
+
+    def parse(self, text, beta=False, **kw):
+        return self.market()._from_file(text, beta, **kw)
+
+    def test_cards_are_rebuilt_with_urls_inside_the_organisations_releases(self):
+        entries, notes, generated = self.parse(market_file())
+        card = entries["invasor-patito"]
+        self.assertEqual(card["zip"], f"https://github.com/{market.ORG}/invasor-patito/releases/download/v0.2.1/patito-0.2.1.zip")
+        self.assertEqual(card["sha256"], card["zip"] + ".sha256")
+        self.assertEqual(sorted(entries), ["invasor-patito", "invasor-pescao"])
+        self.assertTrue(generated.endswith("Z"))
+
+    def test_urls_in_the_file_are_ignored(self):
+        data = json.loads(market_file())
+        data["modules"][0]["stable"].update(zip="https://evil.example/x.zip", sha256="https://evil.example/x")
+        card = self.parse(json.dumps(data))[0]["invasor-patito"]
+        self.assertTrue(card["zip"].startswith(f"https://github.com/{market.ORG}/invasor-patito/releases/download/"))
+
+    def test_stable_and_beta_channels(self):
+        stable, notes, _ = self.parse(market_file())
+        beta, beta_notes, _ = self.parse(market_file(), beta=True)
+        self.assertEqual((stable["invasor-patito"]["version"], beta["invasor-patito"]["version"]), ("0.2.1", "0.3.0-rc1"))
+        self.assertNotIn("invasor-pescao", beta)  # null: nothing on that channel
+        self.assertEqual(beta_notes, ["invasor-pescao: has no release yet"])
+
+    def test_a_file_that_cannot_be_used_raises(self):
+        old = (datetime.now(timezone.utc) - timedelta(days=4)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for text in ("not json", "[]", market_file(generated=old), market_file(generated="yesterday"),
+                     json.dumps({"schema": 2, "generated": "2026-10-09T00:00:00Z", "modules": []}),
+                     json.dumps({"schema": 1, "generated": "2026-10-09T00:00:00Z"}),
+                     "x" * (market.MAX_FILE + 1)):
+            with self.subTest(text=text[:40]):
+                with self.assertRaises(ValueError):
+                    self.parse(text)
+
+    def test_an_invalid_card_is_skipped_with_a_note_and_the_rest_stays(self):
+        for bad in ({"id": "Bad Id"}, {"tag": "latest"}, {"version": "9.9.9"}, {"name": ""}, {"min_core": "v1.0.0"}, {"description": 5}):
+            with self.subTest(bad=bad):
+                data = json.loads(market_file())
+                data["modules"][0]["stable"].update(bad)
+                entries, notes, _ = self.parse(json.dumps(data))
+                self.assertEqual(sorted(entries), ["invasor-pescao"])
+                self.assertEqual(len(notes), 1)
+                self.assertIn("invasor-patito", notes[0])
+
+    def test_odd_repositories_are_ignored(self):
+        data = json.loads(market_file())
+        data["modules"] += [{"repo": "../x", "stable": file_card()}, {"repo": "invasor", "stable": file_card()}, "x", {"repo": 5}]
+        self.assertEqual(sorted(self.parse(json.dumps(data))[0]), ["invasor-patito", "invasor-pescao"])
+
+    def test_long_texts_are_clipped_and_one_line(self):
+        data = json.loads(market_file())
+        data["modules"][0]["stable"].update(name="A\nB" + "x" * 500, description="d" * 5000, author="a\nb")
+        card = self.parse(json.dumps(data))[0]["invasor-patito"]
+        self.assertEqual((len(card["name"]) <= market.NAME_MAX, len(card["description"]), card["author"]),
+                         (True, market.DESCRIPTION_MAX, "a b"))
+        self.assertNotIn("\n", card["name"])
+
+    def test_skipped_notes_of_the_file_are_kept_without_repeating_missing_releases(self):
+        text = market_file(skipped=["invasor-x: its release has no module zip with a .sha256", "invasor-y: has no release yet", 5])
+        notes = self.parse(text)[1]
+        self.assertEqual(notes, ["invasor-x: its release has no module zip with a .sha256"])
+
+
+class FileOrLive(unittest.TestCase):
+    def setUp(self):
+        self.net = Net({
+            market.CATALOG_URL: "invasor-patito\n",
+            api("invasor-patito") + "/latest": release("invasor-patito", "patito", "0.2.1"),
+            raw("invasor-patito", "v0.2.1", "patito"): manifest("Patito", "0.2.1"),
+        })
+
+    def market(self):
+        return market.Market(fetch=self.net.get, fetch_text=self.net.get, fetch_file=lambda *a: None)
+
+    def test_the_file_is_enough_and_nothing_else_is_asked(self):
+        self.net.answers[market.FILE_URL] = market_file()
+        res = self.market().list()
+        self.assertEqual((res["source"], [c["id"] for c in res["modules"]]), ("file", ["patito", "pescao"]))
+        self.assertTrue(res["generated"])
+        self.assertEqual(self.net.asked, [market.FILE_URL])
+
+    def test_a_missing_stale_or_broken_file_falls_back_to_github(self):
+        old = (datetime.now(timezone.utc) - timedelta(days=9)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        for answer in (urllib.error.HTTPError("u", 404, "Not Found", {}, None), OSError("offline"), "nope", market_file(generated=old)):
+            with self.subTest(answer=str(answer)[:30]):
+                self.net.answers[market.FILE_URL] = answer
+                res = self.market().list()
+                self.assertEqual((res["source"], res["generated"], [c["id"] for c in res["modules"]]), ("live", None, ["patito"]))
+
+    def test_a_card_from_the_file_downloads_like_any_other(self):
+        home = temp_dir(self)
+        patch(self, "invasor.install.HOME", home)
+        patch(self, "invasor.config.CACHE_DIR", home / ".cache" / "invasor")
+        self.net.answers[market.FILE_URL] = market_file()
+        data = b"PK"
+        sha = hashlib.sha256(data).hexdigest()
+        asked = []
+
+        def fetch_file(url, dest, limit):
+            asked.append(url)
+            dest.write_bytes(data if url.endswith(".zip") else sha.encode())
+
+        m = market.Market(fetch=self.net.get, fetch_text=self.net.get, fetch_file=fetch_file)
+        path, work, mid = m.download("invasor-patito")
+        self.assertEqual(mid, "patito")
+        self.assertEqual(asked, [f"https://github.com/{market.ORG}/invasor-patito/releases/download/v0.2.1/patito-0.2.1.zip",
+                                 f"https://github.com/{market.ORG}/invasor-patito/releases/download/v0.2.1/patito-0.2.1.zip.sha256"])
 
 
 class Download(unittest.TestCase):

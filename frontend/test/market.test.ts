@@ -126,3 +126,12 @@ test("repositories without a card are listed as notes, an empty market says so",
   assert.match(el.textContent ?? "", /No modules available/);
   assert.match(el.textContent ?? "", /Not shown: invasor-x: has no release yet/);
 });
+
+test("when the catalog file's date is known it is shown; asked directly, nothing", async () => {
+  const a = setup({ modules: [card()], notes: [], source: "file", generated: "2026-10-09T12:07:00Z" });
+  await renderMarket(a.el, a.deps);
+  assert.match(a.el.textContent ?? "", /Catalog updated .*2026/);
+  const b = setup({ modules: [card()], notes: [], source: "live", generated: null });
+  await renderMarket(b.el, b.deps);
+  assert.doesNotMatch(b.el.textContent ?? "", /Catalog updated/);
+});

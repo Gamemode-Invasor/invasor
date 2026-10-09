@@ -20,6 +20,15 @@ export interface MarketCard {
   problem: string | null;
 }
 
+interface MarketList {
+  modules: MarketCard[];
+  notes: string[];
+  /** Where the list came from: the published catalog file, or GitHub asked directly. */
+  source?: "file" | "live";
+  /** When the catalog file was made (null when GitHub was asked directly). */
+  generated?: string | null;
+}
+
 export interface MarketDeps {
   api: Api;
   toast(message: string, kind?: "ok" | "error"): void;
@@ -51,7 +60,7 @@ export async function renderMarket(el: HTMLElement, deps: MarketDeps) {
 
   async function load(refresh = false) {
     el.replaceChildren(ui.info("Looking for modules…"));
-    let res: { modules: MarketCard[]; notes: string[] };
+    let res: MarketList;
     try {
       res = await api.call("core", "market_list", { refresh });
     } catch (e) {
@@ -87,7 +96,7 @@ export async function renderMarket(el: HTMLElement, deps: MarketDeps) {
     await load();
   }
 
-  function draw(res: { modules: MarketCard[]; notes: string[] }) {
+  function draw(res: MarketList) {
     const top = ui.button({ label: "Refresh", onClick: () => void load(true) });
     const grid = document.createElement("div");
     grid.className = "market-grid";
@@ -123,6 +132,8 @@ export async function renderMarket(el: HTMLElement, deps: MarketDeps) {
     if (res.modules.length) rows.push(grid);
     else rows.push(ui.info("No modules available right now."));
     if (res.notes.length) rows.push(ui.info(`Not shown: ${res.notes.join("; ")}`));
+    const made = res.generated ? new Date(res.generated) : null;
+    if (made && !Number.isNaN(made.getTime())) rows.push(ui.info(`Catalog updated ${made.toLocaleString()}`));
     el.replaceChildren(...rows);
   }
 
