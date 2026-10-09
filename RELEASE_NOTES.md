@@ -15,4 +15,5 @@
 - rc2: Fix: number settings round halfway values up everywhere (module.json checks and the panel agree)
 - rc2: Demo shows every module feature: shortcut_exe, validated TOML saves, notification icons, Control.set and navHints
 - rc2: Fix: Quick Access always shows the panel and its "I" on the left; with "Panel side" set to Right the "I" vanished and the panel could not be opened. The setting now only applies to the Library
+- rc3: The L1/R1 and L2/R2 labels beside the tabs can now be tapped to switch tab or section, and no longer have an outline
 ---
