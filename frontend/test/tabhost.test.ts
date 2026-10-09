@@ -80,3 +80,21 @@ test("a render that throws shows the error in its own pane only", async () => {
   assert.match(document.body.textContent ?? "", /boom/);
   assert.equal(tabs.count(), 2);
 });
+
+test("the L1/R1 labels beside a tab row step the tabs when tapped", async () => {
+  const log: string[] = [];
+  const div = () => document.body.appendChild(document.createElement("div"));
+  const nav = { ensureFocus() {}, reset() {} } as unknown as GamepadNav;
+  const row = div();
+  row.innerHTML = '<span class="tab-key">L1</span><div class="tabs"></div><span class="tab-key">R1</span>';
+  const tabs = createTabHost({ content: div(), mainTabs: row.querySelector<HTMLElement>(".tabs"), subBar: div(), subTabs: div(), nav, visible: () => true });
+  const spec = (id: string): TabSpec => ({ id, label: id, render: () => void log.push(id) });
+  await tabs.set([spec("a"), spec("b"), spec("c")]);
+  const [l1, r1] = row.querySelectorAll<HTMLElement>(".tab-key");
+  r1.click();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(tabs.activeId(), "b");
+  l1.click();
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(tabs.activeId(), "a");
+});

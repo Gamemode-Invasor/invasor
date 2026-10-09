@@ -393,9 +393,9 @@ details[open] > summary::before {
   font-size: 10px;
   font-weight: 700;
   color: #8b94a7;
-  border: 1px solid #3a4458;
-  border-radius: 4px;
-  padding: 1px 4px;
+  /* No outline, but a real button: tapping it steps to the previous/next tab. */
+  cursor: pointer;
+  padding: 6px 8px;
 }
 .tabs {
   flex: 1;
@@ -446,7 +446,6 @@ details[open] > summary::before {
 .tabbar.main .tab-key {
   font-size: 11px;
   color: #e6e9ef;
-  border-color: #8b94a7;
 }
 /* Sub-tab row alignment, chosen by each module (tabsAlign). Auto margins and flex
    only: works on any Chromium and still scrolls if the tabs overflow. */
