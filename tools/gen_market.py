@@ -32,7 +32,7 @@ CARD_KEYS = ("id", "version", "tag", "name", "description", "author", "min_core"
 def transient(reason):
     """True when a repository's reason for having no card is GitHub (or the network) failing, not the
     repository's own content."""
-    return reason.startswith(("GitHub answered", "error:")) or reason.startswith("module.json answered 5")
+    return reason.startswith(("GitHub answered", market.RATE_LIMITED, "error:")) or reason.startswith("module.json answered 5")
 
 
 def build_catalog(repos, entry, now):

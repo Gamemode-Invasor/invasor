@@ -20,6 +20,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import re
 import shutil
 import tempfile
@@ -42,6 +43,8 @@ FILE_URL = f"https://raw.githubusercontent.com/{ORG}/invasor-workspace/market-da
 FILE_SCHEMA = 1
 CORE_REPO = "invasor"  # listed in repos.conf, but it is the core, not a module
 NO_RELEASE = "has no release yet"
+RATE_LIMITED = "GitHub's request limit was reached"
+RATE_RETRY = 30  # seconds before an incomplete catalog is asked for again
 MAX_REPOS = 30
 MAX_CONF = 64 << 10
 MAX_MANIFEST = 256 << 10
@@ -64,6 +67,28 @@ def parse_repos_conf(text):
         if name and name != CORE_REPO and REPO_RE.match(name) and name not in repos:
             repos.append(name)
     return repos[:MAX_REPOS]
+
+
+def rate_limit_wait(error):
+    """Minutes until GitHub answers again when this HTTPError is its request limit (403/429 with no
+    request left, or a Retry-After), else None."""
+    if error.code not in (403, 429):
+        return None
+    headers = getattr(error, "headers", None)
+    get = getattr(headers, "get", None)
+    if get is None:
+        return None
+    seconds = None
+    try:
+        if get("Retry-After") is not None:
+            seconds = float(get("Retry-After"))
+        elif get("X-RateLimit-Remaining") == "0":
+            seconds = float(get("X-RateLimit-Reset", 0)) - time.time()
+    except ValueError:
+        return None
+    if seconds is None:
+        return None
+    return max(1, math.ceil(seconds / 60))
 
 
 def release_urls(repo, tag, mid, version):
@@ -118,7 +143,12 @@ class Market:
         try:
             release = self._fetch(f"{base}?per_page=30" if beta else f"{base}/latest")
         except urllib.error.HTTPError as e:
-            return NO_RELEASE if e.code == 404 else f"GitHub answered {e.code}"
+            if e.code == 404:
+                return NO_RELEASE
+            wait = rate_limit_wait(e)
+            if wait is not None:
+                return f"{RATE_LIMITED} (try again in about {wait} minute{'s' if wait != 1 else ''})"
+            return f"GitHub answered {e.code}"
         if beta:
             release = updater.Updater._newest(release)
         if not isinstance(release, dict) or release.get("draft") or (release.get("prerelease") and not beta):
@@ -222,15 +252,22 @@ class Market:
 
         with ThreadPoolExecutor(max_workers=WORKERS) as pool:
             results = list(pool.map(one, repos))
-        entries, notes = {}, []
+        entries, notes, limited = {}, [], []
         for repo, res in zip(repos, results):
             if isinstance(res, dict):
                 entries[repo] = res
+            elif res.startswith(RATE_LIMITED):
+                limited.append((repo, res))
             else:
                 log.info("market: %s %s", repo, res)
                 notes.append(f"{repo}: {res}")
+        if limited and not entries:
+            raise Unavailable(limited[0][1])  # nothing to show: say why instead of an empty market
+        if limited:
+            log.info("market: %s", limited[0][1])
+            notes.append(f"{limited[0][1]}: not shown: {', '.join(repo for repo, _ in limited)}")
         log.info("market: catalog asked of GitHub directly")
-        return entries, notes, {"source": "live", "generated": None}
+        return entries, notes, {"source": "live", "generated": None, "incomplete": bool(limited)}
 
     def _load(self):
         beta = self._channel() == "beta"
@@ -240,7 +277,10 @@ class Market:
             log.info("market: no usable market.json (%s)", e)
             found = self._load_live(beta)
         entries, notes, meta = found
-        return time.monotonic(), "beta" if beta else "stable", entries, notes, meta
+        when = time.monotonic()
+        if meta.get("incomplete"):  # asked again soon: the limit will have passed
+            when -= CACHE_SECONDS - RATE_RETRY
+        return when, "beta" if beta else "stable", entries, notes, meta
 
     def _catalog(self, refresh=False):
         with self._lock:

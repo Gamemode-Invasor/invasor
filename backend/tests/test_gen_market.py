@@ -54,7 +54,7 @@ class Build(unittest.TestCase):
         self.assertEqual(catalog["skipped"], ["invasor-a: has no release yet", "invasor-b: its release has no module zip with a .sha256"])
 
     def test_github_failing_is_a_problem_not_a_missing_module(self):
-        for reason in ("GitHub answered 502", "error: timed out", "module.json answered 503"):
+        for reason in ("GitHub answered 502", "error: timed out", "module.json answered 503", market.RATE_LIMITED + " (try again in about 4 minutes)"):
             with self.subTest(reason=reason):
                 table = {("invasor-a", False): reason, ("invasor-a", True): card("a", "1.0.0")}
                 _, problems = gen.build_catalog(["invasor-a"], entries(table), NOW)

@@ -1,7 +1,10 @@
 import copy
 import hashlib
+import io
 import json
+import time
 import unittest
+from unittest import mock
 import urllib.error
 from datetime import datetime, timedelta, timezone
 
@@ -54,7 +57,7 @@ class Net:
         return res
 
     def not_found(self):
-        return urllib.error.HTTPError("u", 404, "Not Found", {}, None)
+        return urllib.error.HTTPError("u", 404, "Not Found", {}, io.BytesIO())
 
 
 class Parse(unittest.TestCase):
@@ -273,7 +276,7 @@ class FileOrLive(unittest.TestCase):
 
     def test_a_missing_stale_or_broken_file_falls_back_to_github(self):
         old = (datetime.now(timezone.utc) - timedelta(days=9)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        for answer in (urllib.error.HTTPError("u", 404, "Not Found", {}, None), OSError("offline"), "nope", market_file(generated=old)):
+        for answer in (urllib.error.HTTPError("u", 404, "Not Found", {}, io.BytesIO()), OSError("offline"), "nope", market_file(generated=old)):
             with self.subTest(answer=str(answer)[:30]):
                 self.net.answers[market.FILE_URL] = answer
                 res = self.market().list()
@@ -297,6 +300,66 @@ class FileOrLive(unittest.TestCase):
         self.assertEqual(mid, "patito")
         self.assertEqual(asked, [f"https://github.com/{market.ORG}/invasor-patito/releases/download/v0.2.1/patito-0.2.1.zip",
                                  f"https://github.com/{market.ORG}/invasor-patito/releases/download/v0.2.1/patito-0.2.1.zip.sha256"])
+
+
+def limited(minutes=4, remaining="0"):
+    return urllib.error.HTTPError("u", 403, "rate limit exceeded", {"X-RateLimit-Remaining": remaining, "X-RateLimit-Reset": str(int(time.time()) + minutes * 60)}, None)
+
+
+class RateLimit(unittest.TestCase):
+    """GitHub's limit of 60 anonymous requests an hour: say so, instead of "GitHub answered 403"."""
+
+    def setUp(self):
+        self.net = Net({
+            market.CATALOG_URL: "invasor-patito\ninvasor-pescao\n",
+            api("invasor-patito") + "/latest": release("invasor-patito", "patito", "0.2.1"),
+            raw("invasor-patito", "v0.2.1", "patito"): manifest("Patito", "0.2.1"),
+            api("invasor-pescao") + "/latest": limited(),
+        })
+
+    def market(self):
+        return market.Market(fetch=self.net.get, fetch_text=self.net.get, fetch_file=lambda *a: None)
+
+    def test_the_wait_is_in_minutes_and_only_for_the_limit(self):
+        self.assertEqual(market.rate_limit_wait(limited(4)), 4)
+        self.assertEqual(market.rate_limit_wait(limited(0)), 1)
+        for e in (limited(4, remaining="12"), urllib.error.HTTPError("u", 404, "x", {}, io.BytesIO()), urllib.error.HTTPError("u", 403, "x", {}, io.BytesIO()),
+                  urllib.error.HTTPError("u", 500, "x", {"X-RateLimit-Remaining": "0"}, io.BytesIO())):
+            self.assertIsNone(market.rate_limit_wait(e))
+        e = urllib.error.HTTPError("u", 429, "x", {"Retry-After": "90"}, io.BytesIO())
+        self.assertEqual(market.rate_limit_wait(e), 2)
+
+    def test_some_modules_read_one_note_for_the_rest(self):
+        res = self.market().list()
+        self.assertEqual([c["id"] for c in res["modules"]], ["patito"])
+        self.assertEqual(len(res["notes"]), 1)
+        self.assertIn("request limit was reached (try again in about 4 minutes)", res["notes"][0])
+        self.assertIn("invasor-pescao", res["notes"][0])
+        self.assertNotIn("403", res["notes"][0])
+
+    def test_nothing_read_is_an_error_that_says_why(self):
+        self.net.answers[api("invasor-patito") + "/latest"] = limited(7)
+        with self.assertRaisesRegex(Unavailable, r"request limit was reached \(try again in about 7 minutes\)"):
+            self.market().list()
+
+    def test_an_incomplete_list_is_asked_again_soon_and_a_complete_one_is_not(self):
+        m = self.market()
+        m.list()
+        asked = len(self.net.asked)
+        m.list()
+        self.assertEqual(len(self.net.asked), asked)  # within the retry time: cached
+        with mock.patch("invasor.market.time.monotonic", return_value=time.monotonic() + market.RATE_RETRY + 1):
+            self.net.answers[api("invasor-pescao") + "/latest"] = release("invasor-pescao", "pescao", "0.2.1")
+            self.net.answers[raw("invasor-pescao", "v0.2.1", "pescao")] = manifest("Pescao", "0.2.1")
+            self.assertEqual([c["id"] for c in m.list()["modules"]], ["patito", "pescao"])
+        with mock.patch("invasor.market.time.monotonic", return_value=time.monotonic() + market.RATE_RETRY + 1):
+            asked = len(self.net.asked)
+            m.list()
+            self.assertEqual(len(self.net.asked), asked)  # complete now: cached for the long time
+
+    def test_any_other_403_stays_as_it_was(self):
+        self.net.answers[api("invasor-pescao") + "/latest"] = urllib.error.HTTPError("u", 403, "Forbidden", {}, io.BytesIO())
+        self.assertIn("invasor-pescao: GitHub answered 403", self.market().list()["notes"])
 
 
 class Download(unittest.TestCase):
