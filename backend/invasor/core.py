@@ -82,11 +82,11 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
             raise InvalidArgument("args must be a list")
         return await steam.call(path, args or [])
 
-    async def notify(title, body="", icon=""):
+    async def notify(title, body="", icon="", sound=""):
         """A notification as Steam shows an achievement (see SteamBridge.notify)."""
         if steam is None:
             raise Unavailable("SteamClient bridge not configured")
-        return await steam.notify(title, body, icon)
+        return await steam.notify(title, body, icon, sound=sound)
 
     # ---------- ⚙ Settings › Manage Invasor ----------
 

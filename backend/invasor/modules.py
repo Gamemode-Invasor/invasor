@@ -169,19 +169,20 @@ class ModuleContext:
             raise Unavailable("SteamClient bridge not configured")
         return await self._steam.call(path, args, timeout)
 
-    def notify(self, title, body="", icon="", timeout=15):
+    def notify(self, title, body="", icon="", timeout=15, sound=""):
         """Show a notification as Steam shows an achievement (title, optional body and
-        icon: an https URL or data:image/…;base64). For plain (threaded) methods. Raises
+        icon: an https URL or data:image/…;base64; sound: "trophy", "message", "toast", "chat",
+        "mention", "friend", "online", "ingame" or "none"; omitted: Steam decides). For plain (threaded) methods. Raises
         InvalidArgument for bad input and Unavailable when Steam can't show it: have a plan B."""
         if self._steam is None:
             raise Unavailable("SteamClient bridge not configured")
-        return self._steam.notify_sync(title, body, icon, timeout=timeout)
+        return self._steam.notify_sync(title, body, icon, timeout=timeout, sound=sound)
 
-    async def notify_async(self, title, body="", icon="", timeout=15):
+    async def notify_async(self, title, body="", icon="", timeout=15, sound=""):
         """The same as notify(), for `async def` methods."""
         if self._steam is None:
             raise Unavailable("SteamClient bridge not configured")
-        return await self._steam.notify(title, body, icon, timeout)
+        return await self._steam.notify(title, body, icon, timeout, sound)
 
     def game_data(self, appid):
         """Free-form storage for this module and one game."""

@@ -81,6 +81,7 @@ Steam's hidden page, which holds `SteamClient` and Steam's router. Invasor never
 | `SteamClient.<path>(…)` evaluated there | `backend/invasor/steam.py` `SteamBridge`, `injector.evaluate_shared` | `ctx.steam_call` / `steam_call_async` for module backends, and `core.steam_call` for UIs whose window has no `SteamClient`. |
 | `SteamClient.User.StartRestart(false)` (Steam's own *Restart now* call; without the argument it fails with `requires 1 arguments`) | `backend/invasor/core.py` `restart_steam` | ⚙ Settings › Manage Invasor › Restart Steam. If this Steam has no such function the button says so (503); nothing is killed from outside. |
 | `window.NotificationStore.OnNotification(id, 5, bytes)` | `steam.py` `SteamBridge.notify` (a fixed script) | `ctx.notify` / `core.notify`: a notification shown as Steam shows an achievement, with our title, text and icon. Type 5 and the message (`CAchievementNotification`) are Steam's public protobuf definitions (`steammessages_clientnotificationtypes.proto`), encoded by Invasor. Steam's achievement toast setting applies. |
+| `window.NotificationStore.PlayNotificationSound` / `ChooseSound` | `steam.py` `NOTIFY_JS` (only when `sound` is given) | `ctx.notify(…, sound=)`: Steam picks a visible toast's sound in `PlayNotificationSound`, through `ChooseSound`. Invasor wraps `PlayNotificationSound` once (`NotificationStore.__invasorSound = 2`) so a notification it sent (remembered by id, 60 s) is played with Steam's own sound number (enum `1` friend message … `5` achievement, `0` silent). `ProcessNotification` and `OnNotification` are MobX actions: read-only, never replaced. |
 
 The bridge only accepts dotted names (`Apps.SetCustomArtworkForApp`), never `constructor` or `prototype`.
 Arguments must be JSON, at most 176 MB, and each call has a 15 s timeout by default. Connecting to a page (here
@@ -96,6 +97,7 @@ How it can fail:
 - **The route format changes:** `selected` is null. Nothing else changes.
 - **A `SteamClient` function is renamed, removed or changes its arguments:** `Unavailable`, or Steam's own
   error passed through. Each caller must have a plan B (`docs/MODULES.md`).
+- **`PlayNotificationSound` / `ChooseSound` change:** the notification still shows, with Steam's own sound, whatever `sound` asked.
 - **`NotificationStore` or its `OnNotification` is renamed:** `notify` is `Unavailable` (503) and no notification
   shows. If the achievement message changes, the notification may show without some text. Nothing else is affected.
 
