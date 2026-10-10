@@ -342,6 +342,17 @@ export default defineModule({
         const path = "System.GetSystemInfo";
         el.append(
           statsEl,
+          ui.section("Notification sounds (Steam's own)", [
+            callButton(ctx, "Default (Steam decides)", async () => {
+              await ctx.call("notify", { title: "Demo", body: "No sound sent" });
+              return "Notification sent";
+            }),
+            ...["trophy", "message", "toast", "desktop", "chat", "mention", "alarm"].map((sound) =>
+              callButton(ctx, `Sound: ${sound}`, async () => {
+                await ctx.call("notify", { title: "Demo", body: `Sound: ${sound}`, sound });
+                return "Notification sent";
+              })),
+          ]),
           ui.section("Calls", [
             callButton(ctx, "Who am I", async () => JSON.stringify(await ctx.call("whoami"))),
             callButton(ctx, "Notify", async () => {

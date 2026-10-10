@@ -85,6 +85,16 @@ class Notify(unittest.IsolatedAsyncioTestCase):
         self.assertIn(b"\x1a\x05Hello", msg)  # field 3 (name), length 5
         self.assertIn(b"\x22\x05World", msg)  # field 4 (description)
 
+    async def test_sound_is_played_from_steam(self):
+        await self.bridge.notify("t", sound="message")
+        self.assertIn('const sound = "https://steamloopback.host/sounds/deck_ui_message_toast.wav";', self.calls[0])
+        for name in ("", "trophy"):
+            await self.bridge.notify("t", sound=name)
+            self.assertIn('const sound = "";', self.calls[-1])
+        for bad in ("../x.wav", "deck_ui_toast.wav", "nope"):
+            with self.subTest(bad=bad), self.assertRaises(InvalidArgument):
+                await self.bridge.notify("t", sound=bad)
+
     async def test_bad_input_never_reaches_steam(self):
         for args in (("",), ("x" * 65,), ("t", "x" * 257), ("t\x00",), ("t", "b", "http://x/i.png"),
                      ("t", "b", "javascript:alert(1)"), ("t", "b", "data:text/html;base64,AAAA"), (5,)):

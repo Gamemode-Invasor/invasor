@@ -61,7 +61,7 @@ class FakeCtx:
     def game_data(self, appid):
         return JsonStore(self._folder / "games" / f"{appid}.json")
 
-    def notify(self, title, body="", icon=""):
+    def notify(self, title, body="", icon="", sound=""):
         self.notified.append((title, body))
 
     def on_steam_start(self, cb):

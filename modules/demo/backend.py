@@ -107,13 +107,13 @@ def whoami():
             "upgraded_from": ctx.data.load().get("upgraded_from")}
 
 
-def notify(title="Demo", body=""):
-    ctx.notify(title, body, ICON)  # InvalidArgument/Unavailable reach the UI as clean errors
+def notify(title="Demo", body="", sound=""):
+    ctx.notify(title, body, ICON, sound=sound)  # no sound: Steam decides. InvalidArgument/Unavailable reach the UI as clean errors
     return {"ok": True}
 
 
-async def notify_async(title="Demo", body=""):
-    await ctx.notify_async(title, body, ICON)
+async def notify_async(title="Demo", body="", sound=""):
+    await ctx.notify_async(title, body, ICON, sound=sound)
     return {"ok": True}
 
 
