@@ -203,9 +203,40 @@ METHODS = {"apply": apply}   # what the UI can call: ctx.call("apply")
 | `game.selected`, `game.running` | `{"appid", "name", "shortcut"}`, or `None`. The highlighted game isn't here: it's read from Steam's page only when the UI asks, so it's available in `ctx.game()` in `ui.ts`. |
 | `log` | This module's logger (it writes to `journalctl --user -u invasor`). |
 | `id`, `path` | The module id and its folder. |
-| `notify(title, body="", icon="", sound="")` | A notification shown as Steam shows an achievement. Title up to 64 characters, body up to 256 (plain text); `icon` is an `https://` URL or an embedded `data:image/png|jpeg|gif|webp;base64,…` (up to 512 KB); `sound` picks one of Steam's own sounds by name: `trophy` (the achievement's, default), `message`, `toast`, `desktop`, `chat`, `mention`, `alarm`; any other name is `InvalidArgument`. From `async def` methods: `await notify_async(…)`. Raises `InvalidArgument` for bad input and `Unavailable` when Steam can't show it. Steam's own achievement toast setting applies. |
+| `notify(title, body="", icon="", sound="")` | A notification shown as Steam shows an achievement. Title up to 64 characters, body up to 256 (plain text); `icon` is an `https://` URL or an embedded `data:image/png|jpeg|gif|webp;base64,…` (up to 512 KB); `sound` picks one of Steam's own notification sounds by name: `trophy`, `message`, `toast`, `chat`, `mention`, `friend`, `online`, `ingame`, or `none` for silence; omitted, Steam decides (the achievement sound). Any other name is `InvalidArgument`. From `async def` methods: `await notify_async(…)`. Raises `InvalidArgument` for bad input and `Unavailable` when Steam can't show it. Steam's own achievement toast setting applies. |
 | `steam_call(path, *args)` | `SteamClient.<path>(*args)` (Steam's JS API), evaluated in Steam's `SharedJSContext`. Use it from plain methods; from `async def` methods use `await steam_call_async(path, *args)`. It raises `Unavailable` whenever Steam or that function isn't there, so always have a plan B. |
 | `InvalidArgument`, `Unavailable` | Errors to raise for a clean answer, with one log line and no traceback: `raise ctx.InvalidArgument("…")` gives 400 (the caller's mistake), and `raise ctx.Unavailable("…")` gives 503 (no network, a Steam function missing…). The UI receives the message. |
+
+**Notification sounds** (`sound` in `notify` / `notify_async`):
+
+Without `sound`, Steam decides (the achievement sound its toast always has). With it, Invasor
+asks Steam to play one of **Steam's own** sounds for that notification; there are no custom sounds.
+Steam still draws its usual toast; only the sound changes.
+
+| `sound` | Steam's sound | Game Mode (Big Picture) | Desktop client |
+|---|---|---|---|
+| *(omitted)* | Steam decides | achievement sound | `desktop_toast_default` |
+| `trophy` | achievement | `deck_ui_achievement_toast` | `desktop_toast_default` |
+| `toast` | generic toast | `deck_ui_toast` | `desktop_toast_default` (the same as `trophy`) |
+| `message` | message toast | `deck_ui_message_toast` | silent |
+| `chat` | chat message | `steam_chatroom_notification` | silent |
+| `mention` | chat mention | `steam_at_mention` | silent |
+| `friend` | friend message | `ui_steam_message_old_smooth` | silent |
+| `online` | friend online | `ui_steam_smoother_friend_online` | silent |
+| `ingame` | friend in game | `ui_steam_smoother_friend_join` | silent |
+| `none` | no sound | silent | silent |
+
+- **Steam picks the file by interface.** The names are Steam's own sound numbers; Steam maps each to a
+  file depending on whether it is in Game Mode or the desktop client, and on the desktop most of them have
+  none. So the choice is only fully audible in Game Mode; a module that needs to be heard on the desktop
+  should use `trophy`/`toast` or leave `sound` out.
+- **Steam's settings still apply.** Nothing plays if the user turned off Steam's UI sounds or "play a
+  sound on toast", or if Steam's own toast setting hides the notification. `none` is always silent.
+- **One at a time.** Steam shows toasts one after another, and plays a sound when each one appears, so a
+  burst of notifications is heard in order.
+- **A name that isn't in the table** is `InvalidArgument` (HTTP 400), and the answer lists the valid names.
+- If Steam changes and the sound can't be set, the notification still shows with Steam's own sound
+  (see `docs/API-Steam.md`).
 
 **Rules:**
 

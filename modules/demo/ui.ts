@@ -347,7 +347,7 @@ export default defineModule({
               await ctx.call("notify", { title: "Demo", body: "No sound sent" });
               return "Notification sent";
             }),
-            ...["trophy", "message", "toast", "desktop", "chat", "mention", "alarm"].map((sound) =>
+            ...["trophy", "message", "toast", "chat", "mention", "friend", "online", "ingame", "none"].map((sound) =>
               callButton(ctx, `Sound: ${sound}`, async () => {
                 await ctx.call("notify", { title: "Demo", body: `Sound: ${sound}`, sound });
                 return "Notification sent";

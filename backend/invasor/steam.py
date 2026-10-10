@@ -42,18 +42,20 @@ NOTIFY_BODY_MAX = 256
 NOTIFY_ICON_MAX = 512 << 10
 ICON_URL = re.compile(r"^https://[^\s\"'<>]{1,2040}$")
 ICON_DATA = re.compile(r"^data:image/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=]+$")
-# The sounds a notification can use, by name: Steam's own UI sounds (steamui/sounds, served by
-# Steam itself). "trophy" is the achievement toast's own sound, so nothing extra is played.
+# The sounds a notification can use, by name. Steam's toast config carries the sound as a number
+# of its own sound enum (the one Decky Loader's `sound` option takes too); NOTIFY_JS swaps it
+# for the one notification being shown. "" leaves it to Steam (the achievement sound), "none" is silent.
 SOUNDS = {
-    "trophy": "",
-    "message": "deck_ui_message_toast.wav",
-    "toast": "deck_ui_toast.wav",
-    "desktop": "desktop_toast_default.wav",
-    "chat": "steam_chatroom_notification.m4a",
-    "mention": "steam_at_mention.m4a",
-    "alarm": "timer_expired_alarm.wav",
+    "trophy": 5,   # ToastAchievement
+    "message": 4,  # ToastMessage
+    "toast": 6,    # ToastMisc
+    "chat": 3,     # ChatMessage
+    "mention": 2,  # ChatMention
+    "friend": 1,   # FriendMessage
+    "online": 8,   # FriendOnline
+    "ingame": 9,   # FriendInGame
+    "none": 0,
 }
-SOUND_URL = "https://steamloopback.host/sounds/"
 CONTROL = re.compile(r"[\x00-\x09\x0b-\x1f\x7f]")
 
 NOTIFY_JS = """(() => {
@@ -62,9 +64,34 @@ NOTIFY_JS = """(() => {
   const id = typeof ns.m_nNextTestNotificationID === 'number'
     ? ns.m_nNextTestNotificationID++
     : 900000000 + (window.__invasorNotifyId = (window.__invasorNotifyId || 0) + 1);
-  ns.OnNotification(id, %(type)d, new Uint8Array(%(bytes)s));
   const sound = %(sound)s;
-  if (sound) { try { const a = new Audio(sound); a.play().catch(() => {}); } catch (e) {} }
+  // The sound of a visible toast is chosen by Steam when the toast shows: NotificationStore
+  // .PlayNotificationSound(notification) looks the type's sound up through ChooseSound. Steam's
+  // own methods ProcessNotification/OnNotification are MobX actions (read-only), so instead
+  // that one method is taught, once, to use the sound remembered for this notification's id.
+  // Steam still draws its own toast; only the sound number changes (0: none).
+  if (sound !== null) {
+    const sounds = window.__invasorSounds = window.__invasorSounds || {};
+    const now = Date.now();
+    for (const k of Object.keys(sounds)) if (now - sounds[k].at > 60000) delete sounds[k];
+    if (ns.__invasorSound !== 2) {
+      if (ns.__invasorSound) delete ns.PlayNotificationSound;  // an older version of this patch
+      const play = ns.PlayNotificationSound, choose = ns.ChooseSound;
+      if (typeof play === 'function' && typeof choose === 'function') {
+        ns.PlayNotificationSound = function (n) {
+          const mine = n && sounds[n.notificationID];
+          if (!mine) return play.apply(this, arguments);
+          delete sounds[n.notificationID];
+          this.ChooseSound = (info, m) => choose.call(this, Object.assign({}, info, mine.sound ? {sound: mine.sound, playSound: true} : {playSound: false}), m);
+          try { return play.apply(this, arguments); } finally { delete this.ChooseSound; }
+        };
+        if (ns.PlayNotificationSound !== play) ns.__invasorSound = 2;
+      }
+    }
+    // If Steam changed and the sound can't be set, the notification still shows with Steam's own.
+    if (ns.__invasorSound === 2) sounds[id] = {sound, at: now};
+  }
+  ns.OnNotification(id, %(type)d, new Uint8Array(%(bytes)s));
   return {value: true};
 })()"""
 
@@ -95,7 +122,8 @@ def achievement_message(title, body, icon):
 def check_notification(title, body="", icon="", sound=""):
     """(title, body, icon, sound) cleaned, or InvalidArgument: plain text, a title, short
     texts, an icon that's an https URL or an embedded image (data:image/…;base64), and
-    optionally the name of a sound (see SOUNDS); `sound` comes back as its file name."""
+    optionally the name of a sound (see SOUNDS); `sound` comes back as Steam's number for it,
+    or None to leave it to Steam."""
     if not all(isinstance(v, str) for v in (title, body, icon, sound)):
         raise InvalidArgument("title, body, icon and sound must be text")
     title, body, icon, sound = title.strip(), body.strip(), icon.strip(), sound.strip()
@@ -109,7 +137,7 @@ def check_notification(title, body="", icon="", sound=""):
         raise InvalidArgument("icon: an https:// URL, or data:image/png|jpeg|gif|webp;base64,… up to 512 KB")
     if sound and sound not in SOUNDS:
         raise InvalidArgument(f"sound: one of {', '.join(SOUNDS)}")
-    return title, body, icon, SOUNDS.get(sound, "")
+    return title, body, icon, SOUNDS.get(sound)
 
 
 class SteamBridge:
@@ -146,7 +174,7 @@ class SteamBridge:
         data = list(achievement_message(title, body, icon))
         try:
             res = await self._evaluate(NOTIFY_JS % {"type": NOTIFY_TYPE_ACHIEVEMENT, "bytes": json.dumps(data),
-                                      "sound": json.dumps(SOUND_URL + sound if sound else "")}, timeout)
+                                      "sound": json.dumps(sound)}, timeout)
         except Unavailable:
             raise
         except Exception as e:

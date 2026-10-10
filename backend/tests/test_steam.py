@@ -1,4 +1,6 @@
 import asyncio
+import shutil
+import subprocess
 import json
 import unittest
 
@@ -85,15 +87,56 @@ class Notify(unittest.IsolatedAsyncioTestCase):
         self.assertIn(b"\x1a\x05Hello", msg)  # field 3 (name), length 5
         self.assertIn(b"\x22\x05World", msg)  # field 4 (description)
 
-    async def test_sound_is_played_from_steam(self):
+    async def test_sound_is_a_steam_sound_number(self):
         await self.bridge.notify("t", sound="message")
-        self.assertIn('const sound = "https://steamloopback.host/sounds/deck_ui_message_toast.wav";', self.calls[0])
-        for name in ("", "trophy"):
-            await self.bridge.notify("t", sound=name)
-            self.assertIn('const sound = "";', self.calls[-1])
+        self.assertIn("const sound = 4;", self.calls[0])
+        await self.bridge.notify("t", sound="none")
+        self.assertIn("const sound = 0;", self.calls[1])
+        for name in ("", ):
+            await self.bridge.notify("t", sound=name)  # Steam decides
+            self.assertIn("const sound = null;", self.calls[-1])
         for bad in ("../x.wav", "deck_ui_toast.wav", "nope"):
             with self.subTest(bad=bad), self.assertRaises(InvalidArgument):
                 await self.bridge.notify("t", sound=bad)
+
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    def test_the_script_sets_the_sound_of_the_toast_in_a_store_like_steam_s(self):
+        """Runs NOTIFY_JS against a stand-in NotificationStore whose OnNotification is read-only
+        (a MobX action in Steam) and whose toast plays its sound later, through
+        PlayNotificationSound, from the type's configuration."""
+        harness = r"""
+        const vm = require('vm');
+        class Store {
+          m_nNextTestNotificationID = 7;
+          played = [];
+          queue = [];
+          ChooseSound(info, n) { return info.playSound ? info.sound : null; }
+          PlayNotificationSound(n) { const s = this.ChooseSound({sound: 5, playSound: true}, n); if (s !== null) this.played.push(s); }
+        }
+        Object.defineProperty(Store.prototype, 'OnNotification', {value(id) { this.queue.push({notificationID: id}); }});
+        Object.defineProperty(Store.prototype, 'ProcessNotification', {value() {}});
+        const store = new Store();
+        const win = {NotificationStore: store};
+        const run = sound => vm.runInNewContext(SCRIPT.replace('SOUND', sound), {window: win, Date, Object});
+        const toastShows = () => store.PlayNotificationSound(store.queue.shift());
+        const out = {};
+        for (const [name, sound] of [['plain', 'null'], ['message', '4'], ['none', '0'], ['again', '3']]) {
+          out[name] = run(sound); toastShows();
+        }
+        out.played = store.played;
+        out.patched = store.__invasorSound;
+        out.ownChoose = Object.prototype.hasOwnProperty.call(store, 'ChooseSound');
+        console.log(JSON.stringify(out));
+        """
+        script = steam.NOTIFY_JS % {"type": 5, "bytes": "[1]", "sound": "SOUND"}
+        res = subprocess.run(["node", "-e", f"const SCRIPT = {json.dumps(script)};" + harness],
+                             capture_output=True, text=True, timeout=30)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        out = json.loads(res.stdout)
+        self.assertEqual(out["played"], [5, 4, 3])  # Steam's own, "message", (none: silent), "again"
+        self.assertEqual(out["patched"], 2)
+        self.assertFalse(out["ownChoose"])
+        self.assertTrue(all(out[k] == {"value": True} for k in ("plain", "message", "none", "again")))
 
     async def test_bad_input_never_reaches_steam(self):
         for args in (("",), ("x" * 65,), ("t", "x" * 257), ("t\x00",), ("t", "b", "http://x/i.png"),
