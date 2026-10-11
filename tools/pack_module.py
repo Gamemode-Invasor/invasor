@@ -7,7 +7,9 @@ The folder's name is the module id (e.g. invasor-patito/patito). Steps:
 1. typecheck and build its ui.ts (if any) with this core's kit -> <module>/dist/ui.js;
 2. tools/check_module.py (module.json, backend import, the module's own tests);
 3. zip it as <id>/… with only what the console needs: module.json, the Python files
-   (not tests/), dist/ui.js, README*/LICENSE*. Written as <id>-<version>.zip.
+   (not tests/), dist/ui.js, README*/LICENSE*, the files under bin/ (programs the module
+   runs, packed as executable) and under assets/ (images and other data it ships).
+   Written as <id>-<version>.zip.
 
 The zip installs from ⚙ Settings › Install module, or with tools/install_module.py.
 """
@@ -51,7 +53,7 @@ def files_to_pack(d):
             continue
         if rel.name.startswith("."):
             continue
-        if rel == Path("module.json") or rel == Path("dist/ui.js") or (len(rel.parts) == 1 and (
+        if rel == Path("module.json") or rel == Path("dist/ui.js") or rel.parts[0] in ("bin", "assets") or (len(rel.parts) == 1 and (
                 rel.suffix == ".py" or rel.stem.upper() in ("README", "LICENSE", "COPYING"))):
             yield p, rel
 
@@ -63,7 +65,13 @@ def pack(d, out):
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
         packed = set()
         for p, rel in files_to_pack(d):
-            z.write(p, f"{d.name}/{rel.as_posix()}")
+            if rel.parts[0] == "bin":
+                info = zipfile.ZipInfo.from_file(p, f"{d.name}/{rel.as_posix()}")
+                info.external_attr = 0o755 << 16
+                info.compress_type = zipfile.ZIP_DEFLATED
+                z.writestr(info, p.read_bytes())
+            else:
+                z.write(p, f"{d.name}/{rel.as_posix()}")
             packed.add(rel.stem.upper())
         # A module repository keeps its LICENSE at the root, next to the module folder.
         if "LICENSE" not in packed and (d.parent / "LICENSE").is_file():

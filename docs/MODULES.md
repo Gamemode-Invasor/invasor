@@ -407,7 +407,8 @@ A module doesn't have to live inside Invasor. Keep it in its own repository, nex
 - **Check and pack:** `python3 ~/Projects/invasor/tools/pack_module.py <id>`. It typechecks and builds `ui.ts`,
   runs `check_module.py` (tests included) and writes `<id>-<version>.zip` with only what the console needs:
   `module.json`, the Python files, `dist/ui.js`, README and LICENSE (the one at the root of your repository, if the
-  module folder has none). Never the tests.
+  module folder has none), the files under `bin/` (programs the module runs) and under `assets/` (images and other data it ships).
+  Never the tests. The installer doesn't keep the executable bit: `chmod` a program in `bin/` before running it.
 - **Install:**
   - **On the console:** ⚙ Settings › Install module, then choose the zip, or open the Market (Library only) to install
     from the organisation's repositories.
