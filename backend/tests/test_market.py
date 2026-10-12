@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from invasor import config, install, market
 from invasor.schema import InvalidArgument, Unavailable
 
-from .helpers import patch, temp_dir
+from .helpers import patch, temp_dir, http_error
 
 CONF = """# comment
 invasor
@@ -58,7 +58,7 @@ class Net:
         return res
 
     def not_found(self):
-        return urllib.error.HTTPError("u", 404, "Not Found", {}, io.BytesIO())
+        return http_error("u", 404, "Not Found", {})
 
 
 class Parse(unittest.TestCase):
@@ -290,7 +290,7 @@ class FileOrLive(unittest.TestCase):
 
     def test_a_missing_stale_or_broken_file_falls_back_to_github(self):
         old = (datetime.now(timezone.utc) - timedelta(days=9)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        for answer in (urllib.error.HTTPError("u", 404, "Not Found", {}, io.BytesIO()), OSError("offline"), "nope", market_file(generated=old)):
+        for answer in (http_error("u", 404, "Not Found", {}), OSError("offline"), "nope", market_file(generated=old)):
             with self.subTest(answer=str(answer)[:30]):
                 self.net.answers[market.FILE_URL] = answer
                 res = self.market().list()
@@ -333,7 +333,7 @@ class FileOrLive(unittest.TestCase):
 
 
 def limited(minutes=4, remaining="0"):
-    return urllib.error.HTTPError("u", 403, "rate limit exceeded", {"X-RateLimit-Remaining": remaining, "X-RateLimit-Reset": str(int(time.time()) + minutes * 60)}, None)
+    return http_error("u", 403, "rate limit exceeded", {"X-RateLimit-Remaining": remaining, "X-RateLimit-Reset": str(int(time.time()) + minutes * 60)})
 
 
 class RateLimit(unittest.TestCase):
@@ -353,10 +353,10 @@ class RateLimit(unittest.TestCase):
     def test_the_wait_is_in_minutes_and_only_for_the_limit(self):
         self.assertEqual(market.rate_limit_wait(limited(4)), 4)
         self.assertEqual(market.rate_limit_wait(limited(0)), 1)
-        for e in (limited(4, remaining="12"), urllib.error.HTTPError("u", 404, "x", {}, io.BytesIO()), urllib.error.HTTPError("u", 403, "x", {}, io.BytesIO()),
-                  urllib.error.HTTPError("u", 500, "x", {"X-RateLimit-Remaining": "0"}, io.BytesIO())):
+        for e in (limited(4, remaining="12"), http_error("u", 404, "x", {}), http_error("u", 403, "x", {}),
+                  http_error("u", 500, "x", {"X-RateLimit-Remaining": "0"})):
             self.assertIsNone(market.rate_limit_wait(e))
-        e = urllib.error.HTTPError("u", 429, "x", {"Retry-After": "90"}, io.BytesIO())
+        e = http_error("u", 429, "x", {"Retry-After": "90"})
         self.assertEqual(market.rate_limit_wait(e), 2)
 
     def test_some_modules_read_one_note_for_the_rest(self):
@@ -388,7 +388,7 @@ class RateLimit(unittest.TestCase):
             self.assertEqual(len(self.net.asked), asked)  # complete now: cached for the long time
 
     def test_any_other_403_stays_as_it_was(self):
-        self.net.answers[api("invasor-pescao") + "/latest"] = urllib.error.HTTPError("u", 403, "Forbidden", {}, io.BytesIO())
+        self.net.answers[api("invasor-pescao") + "/latest"] = http_error("u", 403, "Forbidden", {})
         self.assertIn("invasor-pescao: GitHub answered 403", self.market().list()["notes"])
 
 

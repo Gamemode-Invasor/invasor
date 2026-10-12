@@ -10,7 +10,7 @@ from unittest import mock
 from invasor import updater
 from invasor.schema import InvalidArgument, Unavailable
 
-from .helpers import patch, temp_dir
+from .helpers import patch, temp_dir, http_error
 
 BASE = updater.DOWNLOAD_PREFIX + "v0.2.0/"
 
@@ -92,7 +92,7 @@ class Check(unittest.TestCase):
                 self.assertEqual((res["available"], res["checked"]), (False, True))
 
     def test_no_release_offline_or_odd_answers_are_just_not_checked(self):
-        err = urllib.error.HTTPError(updater.RELEASE_URL, 404, "Not Found", {}, None)
+        err = http_error(updater.RELEASE_URL, 404, "Not Found", {})
         for answer in (err, OSError("offline"), ValueError("bad json"), [], release("v0.2.0", draft=True),
                        release("v0.2.0", prerelease=True), release("nightly"), release("v0.2.0", assets=False)):
             with self.subTest(answer=repr(answer)[:40]):
