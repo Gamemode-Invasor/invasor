@@ -11,6 +11,7 @@
 
 import type { GamepadNav } from "./gamepad-nav";
 import { alignOf, renderBar } from "./tabbar";
+import { esc, safe } from "./util";
 
 export interface PageSpec {
   label: string;
@@ -64,24 +65,10 @@ export interface TabHost {
   clear(): void;
 }
 
-function esc(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-}
-
 function showError(el: HTMLElement, name: string, e: unknown) {
   console.error(`[invasor] ${name} failed`, e);
   const msg = typeof e === "string" ? e : String((e as Error)?.message ?? e);
   el.innerHTML = `<p class="mod-error">Error in ${esc(name)}: ${esc(msg)}</p>`;
-}
-
-function safe(what: string, fn: () => unknown) {
-  const fail = (e: unknown) => console.error(`[invasor] ${what} failed`, e);
-  try {
-    const r = fn();
-    if (r instanceof Promise) r.catch(fail); // an async hook that rejects
-  } catch (e) {
-    fail(e);
-  }
 }
 
 interface SubState {

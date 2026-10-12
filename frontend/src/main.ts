@@ -8,7 +8,7 @@ declare global {
     __INVASOR_CFG?: InvasorCfg;
     __invasor?: {
       version: string;
-      toggle(): void;
+      toggle(): boolean;
       setOpen(open: boolean): void;
       state(): { role: string; open: boolean; focused: boolean; available: boolean };
       /** Hide this window's "I" while another window shows its own (set by the backend). */
@@ -75,8 +75,7 @@ function start(cfg: InvasorCfg, kit: KitRegistry) {
   // Keyboard toggle; the gamepad combo (L3+R3) is detected by the backend.
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "F10") {
-      e.preventDefault();
-      overlay.toggle();
+      if (overlay.toggle()) e.preventDefault(); // F10 stays Steam's when there's nothing to toggle
     }
   };
   window.addEventListener("keydown", onKey, true);

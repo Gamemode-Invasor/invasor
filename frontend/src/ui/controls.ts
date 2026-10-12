@@ -11,6 +11,7 @@
 import type { ModuleCtx, SettingField, SettingValue, SettingsSchema, WindowSpec } from "../module-api";
 import { createKeyboard, type MiniKeyboard } from "./keyboard";
 import { keepVisible } from "./scroll";
+import { NO_ROOM, safe } from "./util";
 import { isVideo, optionIndex, snap, whenMet } from "./values";
 
 export interface Option<T> {
@@ -37,16 +38,6 @@ interface Base<T> {
 }
 
 /** The idle hint of a control: its button help plus `hint`, or just `hint` (navHints false). */
-/** Run a module's callback from an event: a throw or a rejected promise is logged, never unhandled. */
-function guarded(fn: (() => unknown) | undefined) {
-  try {
-    const r = fn?.();
-    if (r instanceof Promise) r.catch((e) => console.error("[invasor] handler failed", e));
-  } catch (e) {
-    console.error("[invasor] handler failed", e);
-  }
-}
-
 function hintFor(o: { hint?: string; navHints?: boolean }, own: string) {
   return o.navHints === false ? (o.hint ?? "") : withHint(own, o.hint);
 }
@@ -82,7 +73,6 @@ export type SettingsForm = HTMLElement & {
 // Tile height/width ratios of Steam's artwork kinds, and a sensible column count.
 const GRID_ASPECTS = { grid: 1.5, hero: 31 / 96, logo: 0.5, icon: 1 };
 const GRID_COLUMNS = { grid: 5, hero: 2, logo: 3, icon: 6 };
-const NO_ROOM = "The expanded view is only available from the Library (Steam button → Library)";
 // Buttons a disabled control swallows: the ones that change values or act.
 const VALUE_BUTTONS = new Set(["A", "Y", "LEFT", "RIGHT"]);
 
@@ -183,7 +173,7 @@ function boolControl(kind: "toggle" | "checkbox", o: Base<boolean>): Control<boo
   el.addEventListener("click", () => {
     value = !value;
     paint();
-    guarded(() => o.onChange?.(value));
+    safe("handler", () => o.onChange?.(value));
   });
   const c = asControl(el, () => value, (v) => ((value = !!v), paint()), setDisabled);
   if (o.disabled) c.setDisabled(true);
@@ -658,7 +648,7 @@ export const ui = {
     el.dataset.hint = hint();
     el.textContent = o.label;
     const setDisabled = disableable(el, hint);
-    el.addEventListener("click", () => guarded(() => o.onClick()));
+    el.addEventListener("click", () => safe("handler", () => o.onClick()));
     const c = Object.assign(el, { setLabel: (l: string) => void (el.textContent = l), setDisabled });
     if (o.disabled) c.setDisabled(true);
     return c;
@@ -861,7 +851,7 @@ export const ui = {
         e.stopPropagation();
         hi = i;
         paint();
-        guarded(() => o.onActivate?.(item.id));
+        safe("handler", () => o.onActivate?.(item.id));
       });
       grid.appendChild(tile);
       return tile;
@@ -910,7 +900,7 @@ export const ui = {
         hi = Math.min(tiles.length - 1, hi + columns);
         return paint(), true;
       }
-      if (b === "A" && o.onActivate) return guarded(() => o.onActivate!(o.items[hi].id)), true;
+      if (b === "A" && o.onActivate) return safe("handler", () => o.onActivate!(o.items[hi].id)), true;
       if (b === "Y" && o.onSelect) {
         selected = o.items[hi].id;
         paint();

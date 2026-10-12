@@ -31,7 +31,7 @@ test("snap: clamps and counts steps from min (same as the backend)", () => {
 });
 
 test("optionIndex is strict", () => {
-  const opts = [{ value: 1 }, { value: "1" }, { value: true }];
+  const opts: { value: number | string | boolean }[] = [{ value: 1 }, { value: "1" }, { value: true }];
   assert.equal(optionIndex(opts, "1"), 1);
   assert.equal(optionIndex(opts, true), 2);
   assert.equal(optionIndex(opts, 2), -1);

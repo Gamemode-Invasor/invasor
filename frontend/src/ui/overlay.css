@@ -61,13 +61,6 @@ button:focus-visible {
   background: #3a4458;
   outline: none;
 }
-.options {
-  padding: 12px 16px;
-}
-.empty {
-  color: #8b94a7;
-  margin: 0;
-}
 .status {
   padding: 8px 16px;
   border-top: 1px solid #2f3746;
@@ -393,7 +386,7 @@ details[open] > summary::before {
   font-size: 10px;
   font-weight: 700;
   color: #8b94a7;
-  /* No outline, but a real button: tapping it steps to the previous/next tab. */
+  /* No outline; tapping it steps to the previous/next tab (tabhost.ts). */
   cursor: pointer;
   padding: 6px 8px;
 }

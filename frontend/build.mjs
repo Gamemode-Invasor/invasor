@@ -5,15 +5,12 @@
 // A module bundle imports "invasor" from src/kit-shim.ts: the kit (ui, defineModule)
 // comes from the already injected core at run time, never copied into the module.
 import { build, context } from "esbuild";
-import { existsSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 
 const here = import.meta.dirname;
 const modulesDir = resolve(here, "../modules");
 const ID = /^[a-z0-9][a-z0-9_-]*$/; // same rule as backend/invasor/schema.py
-
-// Left over from the single-bundle days: nothing imports it any more.
-rmSync(join(here, "src/modules.gen.ts"), { force: true });
 
 const common = {
   bundle: true,

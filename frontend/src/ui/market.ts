@@ -23,8 +23,6 @@ export interface MarketCard {
 interface MarketList {
   modules: MarketCard[];
   notes: string[];
-  /** Where the list came from: the published catalog file, or GitHub asked directly. */
-  source?: "file" | "live";
   /** When the catalog file was made (null when GitHub was asked directly). */
   generated?: string | null;
 }

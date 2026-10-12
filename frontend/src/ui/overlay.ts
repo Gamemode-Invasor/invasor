@@ -12,6 +12,7 @@ import { panelOnLeft, type Side } from "./side";
 import { renderSettings, type ModuleInfo } from "./settings";
 import { tabRowHTML } from "./tabbar";
 import { createTabHost, type TabSpec } from "./tabhost";
+import { NO_ROOM, esc, safe } from "./util";
 import { openBigWindow } from "./window";
 
 // The overlay lives in its own shadow root: Steam's CSS can't restyle it and ours
@@ -21,7 +22,7 @@ import { openBigWindow } from "./window";
 // optional sub-tabs inside a module (L2/R2), all handled by the tab host (tabhost.ts).
 
 export interface Overlay {
-  toggle(): void;
+  toggle(): boolean;
   setOpen(open: boolean): void;
   isOpen(): boolean;
   /** False in Quick Access while no game runs: no "I" there, and nothing opens. */
@@ -60,11 +61,6 @@ const SETTINGS_ID = "__settings";
 // A big window needs at least this share of the screen on screen (not the 348px
 // Quick Access column during a game).
 const WINDOW_MIN_SHARE = 0.6;
-const NO_ROOM_MESSAGE = "The expanded view is only available from the Library (Steam button → Library)";
-
-function esc(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-}
 
 export function createOverlay(api: Api, version: string, role: string, kit: KitRegistry): Overlay {
   const host = document.createElement("div");
@@ -131,6 +127,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   function setAvailable(yes: boolean) {
     available = yes;
     showHandle();
+    if (!yes && !panel.hidden) toggle(false); // the game ended: Quick Access has nothing to show
   }
   setAvailable(available);
 
@@ -213,7 +210,10 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     el.className = `toast ${kind}`;
     el.hidden = false;
     window.clearTimeout(toastTimers.get(el));
-    toastTimers.set(el, window.setTimeout(() => (el.hidden = true), TOAST_MS));
+    toastTimers.set(el, window.setTimeout(() => {
+      el.hidden = true;
+      toastTimers.delete(el);
+    }, TOAST_MS));
   }
 
   // ---------- module plumbing ----------
@@ -240,7 +240,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       canOpenWindow,
       openWindow(spec) {
         if (!canOpenWindow()) {
-          toast(NO_ROOM_MESSAGE, "error");
+          toast(NO_ROOM, "error");
           return null;
         }
         const handle = openBigWindow({ ...spec, onClose: () => (windows.delete(handle), spec.onClose?.()) }, { stage, nav, ctx });
@@ -269,16 +269,6 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   function canOpenWindow(): boolean {
     const visibleW = parseFloat(host.style.getPropertyValue("--visible-w")) || window.innerWidth;
     return visibleW >= screen.width * WINDOW_MIN_SHARE && window.innerHeight >= screen.height * WINDOW_MIN_SHARE;
-  }
-
-  function safe(what: string, fn: () => unknown) {
-    const fail = (e: unknown) => console.error(`[invasor] ${what} failed`, e);
-    try {
-      const r = fn();
-      if (r instanceof Promise) r.catch(fail); // an async hook that rejects
-    } catch (e) {
-      fail(e);
-    }
   }
 
   /** What a module's tab shows: its definition, or why it can't be shown. Null: no tab. */
@@ -531,10 +521,11 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   }
 
   // ---------- open / close ----------
-  function toggle(force?: boolean) {
+  /** True if it opened or closed the panel (false: nothing to do, e.g. no game in Quick Access). */
+  function toggle(force?: boolean): boolean {
     const open = force === undefined ? panel.hidden : force;
-    if (open === !panel.hidden) return;
-    if (open && !available) return;
+    if (open === !panel.hidden) return false;
+    if (open && !available) return false;
     panel.hidden = !open;
     window.clearInterval(pollTimer);
     window.clearInterval(fitTimer);
@@ -544,7 +535,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       tabs.hidden();
       // The highlighted tile of an imageGrid keeps its ring while the panel is closed: stop its video.
       for (const v of panel.querySelectorAll("video")) v.pause();
-      return;
+      return true;
     }
     fitToScreen();
     fitTimer = window.setInterval(fitToScreen, FIT_MS);
@@ -576,6 +567,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       nav.reset();
     }).catch((e) => console.error("[invasor] opening the panel failed", e));
     pollTimer = window.setInterval(refreshGame, GAME_POLL_MS);
+    return true;
   }
 
   return {
