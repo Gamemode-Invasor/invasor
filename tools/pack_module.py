@@ -14,6 +14,7 @@ The folder's name is the module id (e.g. invasor-patito/patito). Steps:
 The zip installs from ⚙ Settings › Install module, or with tools/install_module.py.
 """
 import json
+import re
 import subprocess
 import sys
 import zipfile
@@ -53,15 +54,16 @@ def files_to_pack(d):
             continue
         if rel.name.startswith("."):
             continue
-        if rel == Path("module.json") or rel == Path("dist/ui.js") or rel.parts[0] in ("bin", "assets") or (len(rel.parts) == 1 and (
-                rel.suffix == ".py" or rel.stem.upper() in ("README", "LICENSE", "COPYING"))):
+        if rel == Path("module.json") or rel == Path("dist/ui.js") or rel.parts[0] in ("bin", "assets") or rel.suffix == ".py" or (len(rel.parts) == 1 and (
+                rel.stem.upper() in ("README", "LICENSE", "COPYING"))):
             yield p, rel
 
 
 def pack(d, out):
     manifest = json.loads((d / "module.json").read_text())
     out.mkdir(parents=True, exist_ok=True)
-    zip_path = out / f"{d.name}-{manifest.get('version', '0')}.zip"
+    version = re.sub(r"[^A-Za-z0-9._-]", "_", str(manifest.get("version", "0")))  # it ends up in a file name
+    zip_path = out / f"{d.name}-{version}.zip"
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
         packed = set()
         for p, rel in files_to_pack(d):

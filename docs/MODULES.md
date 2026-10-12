@@ -203,7 +203,7 @@ METHODS = {"apply": apply}   # what the UI can call: ctx.call("apply")
 | `game.selected`, `game.running` | `{"appid", "name", "shortcut"}`, or `None`. The highlighted game isn't here: it's read from Steam's page only when the UI asks, so it's available in `ctx.game()` in `ui.ts`. |
 | `log` | This module's logger (it writes to `journalctl --user -u invasor`). |
 | `id`, `path` | The module id and its folder. |
-| `notify(title, body="", icon="", sound="")` | A notification shown as Steam shows an achievement. Title up to 64 characters, body up to 256 (plain text); `icon` is an `https://` URL or an embedded `data:image/png|jpeg|gif|webp;base64,…` (up to 512 KB); `sound` picks one of Steam's own notification sounds by name: `trophy`, `message`, `toast`, `chat`, `mention`, `friend`, `online`, `ingame`, or `none` for silence; omitted, Steam decides (the achievement sound). Any other name is `InvalidArgument`. From `async def` methods: `await notify_async(…)`. Raises `InvalidArgument` for bad input and `Unavailable` when Steam can't show it. Steam's own achievement toast setting applies. |
+| `notify(title, body="", icon="", timeout=15, sound="")` | A notification shown as Steam shows an achievement. Title up to 64 characters, body up to 256 (plain text); `icon` is an `https://` URL or an embedded `data:image/png|jpeg|gif|webp;base64,…` (up to 512 KB); `timeout` is how many seconds to wait for Steam; pass `sound` by keyword (`sound="trophy"`). `sound` picks one of Steam's own notification sounds by name: `trophy`, `message`, `toast`, `chat`, `mention`, `friend`, `online`, `ingame`, or `none` for silence; omitted, Steam decides (the achievement sound). Any other name is `InvalidArgument`. From `async def` methods: `await notify_async(…)`. Raises `InvalidArgument` for bad input and `Unavailable` when Steam can't show it. Steam's own achievement toast setting applies. |
 | `steam_call(path, *args)` | `SteamClient.<path>(*args)` (Steam's JS API), evaluated in Steam's `SharedJSContext`. Use it from plain methods; from `async def` methods use `await steam_call_async(path, *args)`. It raises `Unavailable` whenever Steam or that function isn't there, so always have a plan B. |
 | `InvalidArgument`, `Unavailable` | Errors to raise for a clean answer, with one log line and no traceback: `raise ctx.InvalidArgument("…")` gives 400 (the caller's mistake), and `raise ctx.Unavailable("…")` gives 503 (no network, a Steam function missing…). The UI receives the message. |
 
@@ -406,7 +406,7 @@ A module doesn't have to live inside Invasor. Keep it in its own repository, nex
   their own they look for `../invasor` next to the repository. See `patito/tests/test_backend.py` in the invasor-patito repository.
 - **Check and pack:** `python3 ~/Projects/invasor/tools/pack_module.py <id>`. It typechecks and builds `ui.ts`,
   runs `check_module.py` (tests included) and writes `<id>-<version>.zip` with only what the console needs:
-  `module.json`, the Python files, `dist/ui.js`, README and LICENSE (the one at the root of your repository, if the
+  `module.json`, the Python files (also those of sub-packages, never `tests/`), `dist/ui.js`, README and LICENSE (the one at the root of your repository, if the
   module folder has none), the files under `bin/` (programs the module runs) and under `assets/` (images and other data it ships).
   Never the tests. The installer doesn't keep the executable bit: `chmod` a program in `bin/` before running it.
 - **Install:**

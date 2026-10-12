@@ -67,7 +67,7 @@ def main(argv):
                 rel = src.relative_to(Path.home())
                 mid = install.install(str(rel), RESERVED, replace=True)
             print(f"installed {mid} in {install._user_dir() / mid}")
-    except InvalidArgument as e:
+    except (InvalidArgument, ValueError) as e:  # ValueError: a zip outside the home folder
         sys.exit(f"not installed: {e}")
     service("restart")
 
