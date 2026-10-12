@@ -43,3 +43,28 @@ test("a windowButton not yet on the page keeps listening", () => {
   assert.equal(listeners.size, 1);
   assert.match(button.textContent ?? "", /🔒/); // and it repaints
 });
+
+test("a button whose async onClick rejects logs it, nothing is left unhandled", async () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (e: unknown) => void unhandled.push(e);
+  process.on("unhandledRejection", onUnhandled);
+  const real = console.error;
+  const logged: unknown[] = [];
+  console.error = (...a: unknown[]) => void logged.push(a);
+  try {
+    const b = ui.button({
+      label: "x",
+      onClick: async () => {
+        throw new Error("nope");
+      },
+    });
+    b.click();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+  } finally {
+    console.error = real;
+    process.off("unhandledRejection", onUnhandled);
+  }
+  assert.equal(logged.length, 1);
+  assert.deepEqual(unhandled, []);
+});

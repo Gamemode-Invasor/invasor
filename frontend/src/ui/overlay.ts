@@ -368,9 +368,12 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       if (live) modules.set(m.id, live);
     }
     tabs.hidden(); // onHide before any module is destroyed
-    for (const [id, m] of before) if (modules.get(id) !== m) destroyModule(m);
+    const gone = [...before].filter(([id, m]) => modules.get(id) !== m).map(([, m]) => m);
     tabsDirty = true;
+    // Their tabs go first, then their code: in Quick Access applyTabs() waits (showInQam), and
+    // until the tabs are replaced a destroyed module's tab would still take presses.
     await applyTabs();
+    for (const m of gone) destroyModule(m);
     return true;
   }
 
