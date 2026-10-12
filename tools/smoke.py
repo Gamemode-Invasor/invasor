@@ -316,6 +316,11 @@ class Smoke:
         await self.js("window.__invasor.setOpen(true)")
         await asyncio.sleep(2.5)  # tabs build
         # The overlay remembers the last tab, and there may be any number of modules.
+        names = await self.js(f"[...{SR}.querySelectorAll('.tabbar.main .tab')].map(t => t.textContent)")
+        if "Demo" not in names:
+            self.check("the Demo module is enabled (the smoke test drives its tab)", False,
+                       f"tabs in this window: {names}. Enable or restore Demo in ⚙ Settings › Modules, then run it again")
+            return
         st = await self.goto_tab("Demo")
         st = await self.goto_sub("Controls")
         self.check("tab Demo › Controls", st["tab"] == "Demo" and st["sub"] == "Controls", st)
