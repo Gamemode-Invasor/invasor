@@ -150,9 +150,12 @@ class GameContext:
     def _game(self, appid):
         if appid is None:
             return None
-        shortcut = appid in _shortcut_names()
+        shortcuts = _shortcut_names()
+        shortcut = appid in shortcuts
+        if shortcut:  # never cached: the user may rename it (it's read from a small file)
+            return {"appid": appid, "name": shortcuts[appid], "shortcut": True}
         if appid not in self._names:
-            name = _shortcut_names()[appid] if shortcut else _app_name(appid)
+            name = _app_name(appid)
             if name is None:
                 # Not cached: the game may get installed / the shortcut renamed later.
                 return {"appid": appid, "name": None, "shortcut": shortcut}

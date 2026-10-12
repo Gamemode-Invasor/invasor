@@ -2,6 +2,7 @@ import copy
 import hashlib
 import io
 import json
+import shutil
 import time
 import unittest
 from unittest import mock
@@ -294,6 +295,22 @@ class FileOrLive(unittest.TestCase):
                 self.net.answers[market.FILE_URL] = answer
                 res = self.market().list()
                 self.assertEqual((res["source"], res["generated"], [c["id"] for c in res["modules"]]), ("live", None, ["patito"]))
+
+    def test_a_cache_outside_home_downloads_inside_it(self):
+        home = temp_dir(self)
+        patch(self, "invasor.install.HOME", home)
+        patch(self, "invasor.config.CACHE_DIR", temp_dir(self) / "other-disk" / "invasor")
+        self.net.answers[market.FILE_URL] = market_file()
+        data = b"PK"
+        sha = hashlib.sha256(data).hexdigest()
+
+        def fetch_file(url, dest, limit):
+            dest.write_bytes(data if url.endswith(".zip") else sha.encode())
+
+        m = market.Market(fetch=self.net.get, fetch_text=self.net.get, fetch_file=fetch_file)
+        path, work, mid = m.download("invasor-patito")
+        self.assertTrue((home / path).is_file())
+        shutil.rmtree(work)
 
     def test_a_card_from_the_file_downloads_like_any_other(self):
         home = temp_dir(self)

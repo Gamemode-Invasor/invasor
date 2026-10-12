@@ -259,6 +259,14 @@ class Highlighted(unittest.IsolatedAsyncioTestCase):
         self.api = core.make_methods(ModuleManager(cfg, GameContext()), GameContext(),
                                      ComboWatcher(cfg["open_combo"], lambda: None), cfg, FakeInjector())
 
+    def test_a_renamed_shortcut_shows_its_new_name(self):
+        names = {"3000000001": "Old"}
+        patch(self, "invasor.context._shortcut_names", lambda: names)
+        context = GameContext()
+        self.assertEqual(context._game("3000000001")["name"], "Old")
+        names["3000000001"] = "New"
+        self.assertEqual(context._game("3000000001")["name"], "New")
+
     async def highlighted(self, *tiles):
         self.tiles = list(tiles)
         return (await self.api["game"]())["highlighted"]

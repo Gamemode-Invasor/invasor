@@ -352,8 +352,13 @@ class Market:
         problem = schema.core_problem(entry, self._core)
         if problem:
             raise InvalidArgument(f"{entry['name']} {problem}")
-        config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        work = Path(tempfile.mkdtemp(prefix="market-", dir=config.CACHE_DIR))
+        # install() only takes zips inside the home folder: with XDG_CACHE_HOME elsewhere
+        # (another disk), the download goes to ~/.cache/invasor instead.
+        cache = config.CACHE_DIR
+        if install.HOME.resolve() not in cache.resolve().parents:
+            cache = install.HOME / ".cache" / "invasor"
+        cache.mkdir(parents=True, exist_ok=True)
+        work = Path(tempfile.mkdtemp(prefix="market-", dir=cache))
         try:
             zip_path = work / f"{entry['id']}-{entry['version']}.zip"
             try:

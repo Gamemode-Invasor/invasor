@@ -19,6 +19,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import zipfile
 from pathlib import Path, PurePosixPath
 
@@ -59,6 +60,8 @@ def browse(path=None):
     base = HOME.resolve()
     if path is None:  # first open: the downloads folder ("" is the home itself)
         target = downloads_dir() or HOME
+        if base not in target.resolve().parents:  # XDG_DOWNLOAD_DIR on another disk: not browsable
+            target = HOME
     else:
         target = (HOME / str(path)).resolve()
     target = target.resolve()
@@ -219,10 +222,19 @@ def inspect(path, reserved):
         shutil.rmtree(staging, ignore_errors=True)
 
 
+_install_lock = threading.Lock()
+
+
 def install(path, reserved, replace=False, before_replace=None):
     """Check and put the module in USER_MODULES_DIR/<id>. An installed one is replaced
     only with replace=True (before_replace(id) is called first, e.g. to tear it down).
+    One install at a time: two for the same id would swap the folder under each other.
     Returns the module id."""
+    with _install_lock:
+        return _install(path, reserved, replace, before_replace)
+
+
+def _install(path, reserved, replace, before_replace):
     staging, root, manifest = _unpack(_zip_path(path), reserved)
     mid = manifest["id"]
     target = _user_dir() / mid

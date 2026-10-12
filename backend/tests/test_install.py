@@ -54,6 +54,33 @@ class Zips(unittest.TestCase):
         (self.home / ".config/user-dirs.dirs").write_text('XDG_DOWNLOAD_DIR="$HOME/Descargas"\n')
         self.assertEqual(install.browse()["path"], "Descargas")
 
+    def test_a_downloads_folder_outside_home_falls_back_to_home(self):
+        elsewhere = temp_dir(self)
+        (self.home / ".config").mkdir()
+        (self.home / ".config/user-dirs.dirs").write_text(f'XDG_DOWNLOAD_DIR="{elsewhere}"\n')
+        self.assertEqual(install.browse()["path"], "")
+
+    def test_installs_of_the_same_module_never_overlap(self):
+        import threading, time
+        path = self.good()
+        inside, overlap = [], []
+
+        def slow_before(mid):
+            inside.append(1)
+            if len(inside) > 1:
+                overlap.append(1)
+            time.sleep(0.2)
+            inside.pop()
+
+        install.install(path, {"core"})
+        threads = [threading.Thread(target=install.install, args=(path, {"core"}, True, slow_before)) for _ in range(3)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(10)
+        self.assertEqual(overlap, [])
+        self.assertTrue((self.user / "hello").is_dir())
+
     def test_inspect_and_install_and_replace(self):
         path = self.good()
         info = install.inspect(path, {"core", "demo"})
