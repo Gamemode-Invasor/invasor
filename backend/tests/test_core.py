@@ -224,6 +224,16 @@ class Prefs(unittest.TestCase):
         with self.assertRaises(InvalidArgument):
             self.api["set_qam_width"](True)
 
+    def test_arguments_of_the_wrong_type_are_refused_not_guessed(self):
+        """bool("false") is True: a typo must never purge data or enable a module."""
+        from invasor.schema import InvalidArgument
+        for call in (lambda: self.api["set_enabled"]("mod", "false"),
+                     lambda: self.api["set_enabled"]([], True),
+                     lambda: self.api["module_uninstall"]("mod", "no"),
+                     lambda: self.api["module_uninstall"]([])):
+            with self.assertRaises(InvalidArgument):
+                call()
+
     def test_pads_lists_devices(self):
         self.assertIsInstance(self.api["pads"](), list)
 

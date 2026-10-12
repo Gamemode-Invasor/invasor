@@ -43,10 +43,21 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
     def modules():
         return manager.listing()
 
+    def _flag(name, value):
+        """A true/false argument: bool("false") is True, so anything else is refused, not guessed."""
+        if not isinstance(value, bool):
+            raise InvalidArgument(f"{name} must be true or false")
+        return value
+
+    def _id(id):
+        if not isinstance(id, str):
+            raise InvalidArgument("id must be a string")
+        return id
+
     def set_enabled(id, enabled):
-        if id not in manager.manifests:
+        if _id(id) not in manager.manifests:
             raise InvalidArgument(f"unknown module {id!r}")
-        manager.set_enabled(id, bool(enabled))
+        manager.set_enabled(id, _flag("enabled", enabled))
         return manager.listing()
 
     def _settings(id):
@@ -154,6 +165,7 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
     async def module_install(path, replace=False):
         """Check, install and load a module from a zip, and inject its UI right away.
         Module code (teardown, import, setup) runs in a worker thread, never in the event loop."""
+        replace = _flag("replace", replace)
         replaced = []
 
         def before_replace(mid):
@@ -161,7 +173,7 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
             manager.unload(mid)
 
         try:
-            mid = await modpool.run(install.install, path, _reserved(), bool(replace), before_replace)
+            mid = await modpool.run(install.install, path, _reserved(), replace, before_replace)
         except BaseException:
             # Failed after the old version was unloaded: it's still in place, load it again.
             for old in replaced:
@@ -193,13 +205,14 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
         """Uninstall a module (its uninstall() runs first). With purge its settings and data
         go too; otherwise they stay in case it's installed again. One shipped with Invasor
         (demo) stays uninstalled across updates and can be restored (module_restore)."""
-        m = manager.manifests.get(id)
+        purge = _flag("purge", purge)
+        m = manager.manifests.get(_id(id))
         if m is None:
             raise InvalidArgument(f"{id!r} isn't an installed module")
         if m.get("source") == "core":
-            manager.remove_core(id, bool(purge))
+            manager.remove_core(id, purge)
         else:
-            manager.remove(id, bool(purge))
+            manager.remove(id, purge)
             install.uninstall(id)
         log.info("uninstalled module %s%s", id, " and its data" if purge else "")
         return True
