@@ -554,6 +554,71 @@ class Modules(unittest.TestCase):
         self.assertFalse(self.listing()["stuck"]["loaded"])
         self.assertNotIn("stuck", self.manager.registry)
 
+    def test_a_setup_that_outlives_its_timeout_cannot_register_or_save_later(self):
+        import threading
+        patch(self, "invasor.modules.SETUP_TIMEOUT", 0.2)
+        release = threading.Event()
+        self.addCleanup(release.set)
+        outcome = []
+        self.user_module("late2", (
+            "import threading, time\n"
+            "import builtins\n"
+            "def setup(c):\n"
+            "    builtins.late_release_t.wait(5)\n"
+            "    for act in (lambda: c.settings.on_change(lambda k, v: None), lambda: c.settings.set('level', 3), lambda: c.data.save({'x': 1})):\n"
+            "        try:\n"
+            "            act(); builtins.late_outcome_t.append('allowed')\n"
+            "        except Exception as e:\n"
+            "            builtins.late_outcome_t.append(type(e).__name__)\n"
+        ), settings=SETTINGS)
+        import builtins
+        builtins.late_release_t, builtins.late_outcome_t = release, outcome
+        self.addCleanup(lambda: [delattr(builtins, n) for n in ("late_release_t", "late_outcome_t")])
+        with self.assertLogs("invasor.modules", "ERROR"):
+            self.manager.add("late2")
+        release.set()
+        import time
+        for _ in range(50):
+            if len(outcome) == 3:
+                break
+            time.sleep(0.05)
+        self.assertEqual(outcome, ["allowed", "Unavailable", "Unavailable"])  # on_change is ignored, not raised
+        self.assertEqual(self.manager.settings["late2"]._listeners, [])
+        self.assertFalse((self.data / "late2" / "data.json").exists())
+
+    def test_uninstalled_module_leaves_the_order_and_the_disabled_list(self):
+        self.manager.cfg["module_order"] = ["hot2", "good"]
+        self.manager.cfg["disabled_modules"] = ["hot2"]
+        d = self.user_module("hot2", "METHODS = {}\n")
+        self.manager.remove("hot2")
+        self.assertEqual(self.manager.cfg["module_order"], ["good"])
+        self.assertEqual(self.manager.cfg["disabled_modules"], [])
+        self.assertEqual(json.loads((self.data.parent / "config.json").read_text())["module_order"], ["good"])
+
+    def test_on_steam_start_inside_uninstall_is_ignored_with_a_warning(self):
+        self.user_module("bye", (
+            "import pathlib\n"
+            "def uninstall(c, purge):\n"
+            "    c.on_steam_start(lambda: None)\n"
+        ))
+        self.manager.add("bye")
+        with self.assertLogs("invasor.mod.bye", "WARNING") as logs:
+            self.manager.remove("bye")
+        self.assertIn("on_steam_start", logs.output[0])
+
+    def test_a_hanging_import_cannot_stop_an_uninstall(self):
+        import threading
+        patch(self, "invasor.modules.SETUP_TIMEOUT", 0.2)
+        self.user_module("frozen", "import threading\nthreading.Event().wait(5)\n")
+        self.manager.cfg["disabled_modules"] = ["frozen"]
+        self.manager.discover()
+        import time
+        started = time.monotonic()
+        with self.assertLogs("invasor.modules", "ERROR"):
+            self.manager.remove("frozen")
+        self.assertLess(time.monotonic() - started, 2)
+        self.assertNotIn("frozen", self.manager.manifests)
+
     def test_listing_answers_while_a_module_is_loading(self):
         import threading, time
         self.user_module("slow", "import time\ndef setup(c):\n    time.sleep(0.6)\n")

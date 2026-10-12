@@ -95,6 +95,30 @@ class Settings:
         self._listeners.clear()
 
 
+class ContextSettings:
+    """What ctx.settings is: the module's Settings, until the module is unloaded. After
+    that (a setup() that outlived its timeout, a thread left running) it can't register
+    callbacks or save, so nothing of the old instance reaches the next one."""
+
+    def __init__(self, settings, context):
+        self._settings = settings
+        self._context = context
+
+    def __getattr__(self, name):
+        return getattr(self._settings, name)
+
+    def set(self, key, value, notify=False):
+        if self._context._dead:
+            raise Unavailable("this module was unloaded: it can't change settings anymore")
+        return self._settings.set(key, value, notify)
+
+    def on_change(self, callback):
+        if self._context._dead:
+            self._context.log.warning("settings.on_change() ignored: the module was unloaded")
+            return
+        self._settings.on_change(callback)
+
+
 class Form:
     """A named form of module.json "forms": the module stores its values itself
     (e.g. in another program's config); this validates them with the same rules."""
@@ -135,15 +159,19 @@ class ModuleContext:
         self.path = path
         self.game = game  # context.GameContext: .selected / .running
         self.log = logging.getLogger(f"invasor.mod.{module_id}")
-        self.settings = settings
+        self._dead = False  # set when the module is unloaded: its callbacks no longer start
+        self._terminal = False  # the context of uninstall(): nothing is left to react to Steam
+        self.settings = ContextSettings(settings, self)
         # Free-form storage for whatever isn't a user setting (caches, state…).
-        self.data = JsonStore(DATA_DIR / module_id / "data.json")
+        self.data = JsonStore(DATA_DIR / module_id / "data.json", self._is_alive)
         self._steam = steam
         self._steam_start_cbs = []
         self._steam_start_threads = []
-        self._dead = False  # set when the module is unloaded: its callbacks no longer start
         # Set by the manager once the module is loaded: (cb) -> None, runs cb now if Steam is up.
         self._steam_start_now = None
+
+    def _is_alive(self):
+        return not self._dead
 
     def on_steam_start(self, cb):
         """cb() every time a new Steam instance is seen (Steam started or restarted), and
@@ -151,6 +179,9 @@ class ModuleContext:
         and may block; an exception is logged."""
         if not callable(cb):
             raise TypeError("on_steam_start needs a function")
+        if self._terminal:
+            self.log.warning("on_steam_start() in uninstall() is ignored: the module is going away")
+            return
         self._steam_start_cbs.append(cb)
         if self._steam_start_now is not None:
             self._steam_start_now(cb)
@@ -190,7 +221,7 @@ class ModuleContext:
         appid = str(appid)
         if not (appid.isascii() and appid.isdigit()):
             raise ValueError(f"invalid appid {appid!r}")
-        return JsonStore(DATA_DIR / self.id / "games" / f"{appid}.json")
+        return JsonStore(DATA_DIR / self.id / "games" / f"{appid}.json", self._is_alive)
 
 
 def _package(mid):
@@ -423,8 +454,8 @@ class ModuleManager:
             if module is None and manifest and "error" not in manifest:
                 # Disabled: its code is imported for the hook, without setup().
                 try:
-                    module = self._import(mid)
-                except MODULE_ERRORS:
+                    module = _bounded(f"import-{mid}", lambda: self._import(mid), SETUP_TIMEOUT)
+                except MODULE_ERRORS:  # TimeoutError too: a hanging import can't stop the uninstall
                     log.exception("module %s: its code doesn't load, uninstalled without its uninstall()", mid)
             self.registry.pop(mid, None)
             self._forget_context(mid)
@@ -438,6 +469,15 @@ class ModuleManager:
             self.settings.pop(mid, None)
             if purge:
                 shutil.rmtree(DATA_DIR / mid, ignore_errors=True)
+            self._forget_choices(mid)
+
+    def _forget_choices(self, mid):
+        """An uninstalled module leaves the user's order and the list of disabled ones:
+        otherwise they'd fill up (module_order has a limit) and a reinstall would come back disabled."""
+        for key in ("module_order", "disabled_modules"):
+            if mid in self.cfg.get(key, []):
+                self.cfg[key] = [m for m in self.cfg[key] if m != mid]
+                JsonStore(config.CONFIG_FILE).update(**{key: self.cfg[key]})
 
     def _run_uninstall(self, mid, module, purge):
         def run():
@@ -451,6 +491,7 @@ class ModuleManager:
         except MODULE_ERRORS:
             log.exception("module %s: no context for uninstall()", mid)
             return
+        context._terminal = True
         worker = threading.Thread(target=run, name=f"uninstall-{mid}", daemon=True)
         worker.start()
         worker.join(UNINSTALL_TIMEOUT)
@@ -524,7 +565,7 @@ class ModuleManager:
                     started["module"] = module
                     if module is None:
                         return module, None
-                    context = self._context(mid)
+                    context = started["context"] = self._context(mid)
                     if previous is not None and previous != manifest["version"] and hasattr(module, "upgrade"):
                         # Not recorded if it fails: the next load tries again.
                         log.info("module %s: upgrading from %s to %s", mid, previous, manifest["version"])
@@ -559,6 +600,9 @@ class ModuleManager:
                 return True
             except MODULE_ERRORS:
                 log.exception("module %s failed to load", mid)
+                if started.get("context") is not None:
+                    started["context"]._dead = True  # a setup() still running can't register or save anymore
+                self._forget_context(mid)
                 self._clear_listeners(mid)  # whatever setup() registered before failing
                 _forget(_package(mid))
                 return False

@@ -4,19 +4,27 @@ import logging
 import os
 import tempfile
 import threading
+import weakref
 from pathlib import Path
+
+from .schema import Unavailable
 
 log = logging.getLogger("invasor.storage")
 
 # One lock per file: module methods run in worker threads, and two of them updating the
 # same store at once must not lose each other's changes.
-_locks = {}
+# Weak: a lock lives while a store uses it, so one per appid doesn't pile up forever.
+_locks = weakref.WeakValueDictionary()
 _locks_guard = threading.Lock()
 
 
 def _lock_for(path):
+    key = str(path.resolve())
     with _locks_guard:
-        return _locks.setdefault(str(path.resolve()), threading.RLock())
+        lock = _locks.get(key)
+        if lock is None:
+            lock = _locks[key] = threading.RLock()
+        return lock
 
 
 def fsync_dir(path):
@@ -34,9 +42,13 @@ def fsync_dir(path):
 
 
 class JsonStore:
-    def __init__(self, path):
+    def __init__(self, path, alive=None):
+        """alive(): False once whoever owns the store is gone (an unloaded module): it
+        then refuses to write, so a thread that outlives its module can't bring back
+        files that were just purged."""
         self.path = Path(path)
         self._lock = _lock_for(self.path)
+        self._alive = alive
 
     def load(self):
         try:
@@ -58,6 +70,8 @@ class JsonStore:
     def save(self, data):
         # Write-then-rename so a crash or power loss never leaves half a file.
         with self._lock:
+            if self._alive is not None and not self._alive():
+                raise Unavailable("this module was unloaded: it can't save anymore")
             self.path.parent.mkdir(parents=True, exist_ok=True)
             fd, tmp = tempfile.mkstemp(dir=self.path.parent, prefix=f".{self.path.name}.")
             try:
