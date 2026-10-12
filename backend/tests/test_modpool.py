@@ -43,6 +43,17 @@ class Pool(unittest.IsolatedAsyncioTestCase):
         await asyncio.gather(*calls)
         self.assertEqual(await self.pool.run(lambda: "again"), "again")  # slots came back
 
+    async def test_a_call_that_never_ends_gives_its_slot_back(self):
+        patch(self, "invasor.modpool.MAX_RUNNING", 1)
+        patch(self, "invasor.modpool.SLOT_SECONDS", 0.1)
+        stuck = asyncio.create_task(self.pool.run(self.gate.wait, 5))
+        await asyncio.sleep(0.02)
+        with self.assertLogs("invasor.modpool", "WARNING"):
+            self.assertEqual(await asyncio.wait_for(self.pool.run(lambda: "free"), 2), "free")
+        self.gate.set()
+        await stuck  # the first caller still gets its answer, and the slot isn't released twice
+        self.assertEqual(await self.pool.run(lambda: "again"), "again")
+
     async def test_its_threads_never_keep_the_process_alive(self):
         task = asyncio.create_task(self.pool.run(self.gate.wait, 5))
         await asyncio.sleep(0.05)

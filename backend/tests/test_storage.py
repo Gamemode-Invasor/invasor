@@ -16,6 +16,35 @@ class Store(unittest.TestCase):
         self.store.save({"a": 1, "ñ": "sí"})
         self.assertEqual(self.store.load(), {"a": 1, "ñ": "sí"})
 
+    def test_a_store_whose_owner_is_gone_refuses_to_write(self):
+        from invasor.schema import Unavailable
+        alive = [True]
+        store = JsonStore(self.path, lambda: alive[0])
+        store.save({"a": 1})
+        alive[0] = False
+        with self.assertRaises(Unavailable):
+            store.save({"a": 2})
+        self.assertEqual(store.load(), {"a": 1})
+
+    def test_the_real_error_is_not_hidden_by_the_cleanup(self):
+        from unittest import mock
+
+        real = os.replace
+
+        def fail_after_rename(a, b):
+            real(a, b)
+            raise OSError("late failure")
+
+        with mock.patch("invasor.storage.os.replace", fail_after_rename), self.assertRaisesRegex(OSError, "late failure"):
+            self.store.save({"a": 1})
+
+    def test_locks_are_not_kept_for_stores_nobody_uses(self):
+        import gc
+        from invasor import storage
+        JsonStore(self.path.parent / "games" / "123.json")
+        gc.collect()
+        self.assertNotIn(str((self.path.parent / "games" / "123.json").resolve()), storage._locks)
+
     def test_data_is_flushed_to_disk_before_the_rename(self):
         from unittest import mock
         order = []

@@ -9,15 +9,21 @@ until systemd killed us, before any teardown() ran.
 Each call gets a daemon thread of its own (a call is a rare, human-paced event), at most
 MAX_RUNNING at a time. Calls beyond that wait, up to MAX_WAITING of them; past that the
 caller gets Unavailable (503) instead of an ever-growing queue. A call that never ends
-keeps its slot, but can't hold the service up when it stops.
+can't hold the service up when it stops, and gives its slot back after SLOT_SECONDS (the
+caller keeps waiting for it; the thread is left running), so that eight hung calls
+don't leave module calls unavailable until the service restarts.
 """
 import asyncio
+import logging
 import threading
 
 from .schema import Unavailable
 
 MAX_RUNNING = 8
 MAX_WAITING = 32
+SLOT_SECONDS = 600  # a call may legitimately take long (downloads); past this it no longer holds a slot
+
+log = logging.getLogger("invasor.modpool")
 
 
 class ModulePool:
@@ -52,6 +58,17 @@ class ModulePool:
             if not done.done():
                 setter(value)
 
+        slot = [True]
+
+        def give_back(late=False):
+            if slot[0]:
+                slot[0] = False
+                sem.release()
+                if late:
+                    log.warning("a module call is still running after %ss: its slot is free again", SLOT_SECONDS)
+
+        timer = loop.call_later(SLOT_SECONDS, give_back, True)
+
         def work():
             try:
                 result = fn(*args, **kwargs)
@@ -60,7 +77,8 @@ class ModulePool:
             else:
                 outcome = (done.set_result, result)
             try:
-                loop.call_soon_threadsafe(sem.release)
+                loop.call_soon_threadsafe(timer.cancel)
+                loop.call_soon_threadsafe(give_back)
                 loop.call_soon_threadsafe(settle, *outcome)
             except RuntimeError:
                 pass  # the loop is closed: the service is stopping
@@ -68,7 +86,8 @@ class ModulePool:
         try:
             threading.Thread(target=work, name="module-call", daemon=True).start()
         except BaseException:
-            sem.release()
+            timer.cancel()
+            give_back()
             raise
         return await done
 

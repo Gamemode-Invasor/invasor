@@ -35,6 +35,13 @@ class Zips(unittest.TestCase):
         files = {"hello/module.json": MANIFEST, "hello/backend.py": backend, "hello/helpers.py": "X = 1\n", **extra}
         return self.zip(name, files)
 
+    def test_degenerate_entries_are_refused_not_a_crash(self):
+        for bad in (".", "", "hello/../module.json"):
+            with self.subTest(entry=bad):
+                path = self.zip("odd.zip", {"hello/module.json": MANIFEST, bad: "x"})
+                with self.assertRaises(InvalidArgument):
+                    install.inspect(path, {"core"})
+
     def test_browse_lists_folders_and_zips_inside_home_only(self):
         self.good()
         (self.home / "Downloads" / "notes.txt").write_text("x")

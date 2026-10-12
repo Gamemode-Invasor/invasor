@@ -149,9 +149,9 @@ class BetaChannel(unittest.TestCase):
     def test_a_pre_release_machine_on_stable_is_offered_the_way_back(self):
         rels = [release("v0.1.3-rc1", prerelease=True), release("v0.1.2")]
         up = self.up(rels, current="0.1.3-rc1", channel="stable")
-        res = up.check()
+        res, package = up._check()
         self.assertEqual((res["checked"], res["available"], res["downgrade"], res["latest"]), (True, True, True, "0.1.2"))
-        self.assertEqual(up._package[0], updater.DOWNLOAD_PREFIX + "v0.1.2/invasor-0.1.2.tar.gz")
+        self.assertEqual(package[0], updater.DOWNLOAD_PREFIX + "v0.1.2/invasor-0.1.2.tar.gz")
 
     def test_the_beta_channel_never_goes_down(self):
         rels = [release("v0.1.3-rc1", prerelease=True), release("v0.1.2")]
@@ -198,8 +198,7 @@ class BetaChannel(unittest.TestCase):
 
     def test_the_package_is_found_by_the_pre_release_name(self):
         up = self.up([release("v0.1.3-rc1", prerelease=True)])
-        up.check()
-        self.assertEqual(up._package, (updater.DOWNLOAD_PREFIX + "v0.1.3-rc1/invasor-0.1.3-rc1.tar.gz",
+        self.assertEqual(up._check()[1], (updater.DOWNLOAD_PREFIX + "v0.1.3-rc1/invasor-0.1.3-rc1.tar.gz",
                                        updater.DOWNLOAD_PREFIX + "v0.1.3-rc1/invasor-0.1.3-rc1.tar.gz.sha256"))
 
 
@@ -346,3 +345,30 @@ class Background(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Downloads(unittest.TestCase):
+    def opener(self, final_url, data=b"abc"):
+        class Answer(io.BytesIO):
+            def geturl(self):
+                return final_url
+
+            def __enter__(self):
+                return self
+
+        fake = mock.Mock()
+        fake.open.return_value = Answer(data)
+        patch(self, "invasor.updater._opener", lambda: fake)
+
+    def test_a_download_that_stays_on_https_is_saved(self):
+        self.opener("https://objects.githubusercontent.com/x")
+        dest = temp_dir(self) / "f"
+        updater.download("https://github.com/x", dest, 100)
+        self.assertEqual(dest.read_bytes(), b"abc")
+
+    def test_a_redirect_out_of_https_is_refused(self):
+        self.opener("http://evil.example/x")
+        dest = temp_dir(self) / "f"
+        with self.assertRaisesRegex(ValueError, "non-https"):
+            updater.download("https://github.com/x", dest, 100)
+        self.assertFalse(dest.exists())

@@ -130,7 +130,9 @@ class ApiServer:
         except Unavailable as e:
             log.warning("%s unavailable: %s", name, e)
             return 503, {"error": str(e)}
-        except (Exception, SystemExit) as e:  # a module calling exit() must not stop the service
+        except asyncio.CancelledError:
+            raise  # the service is stopping: not an error of the module
+        except BaseException as e:  # a module calling exit() (or raising KeyboardInterrupt…) must not stop the service
             log.exception("%s failed", name)
             return 500, {"error": str(e) or type(e).__name__}
         try:

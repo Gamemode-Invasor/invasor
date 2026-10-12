@@ -34,6 +34,7 @@ function boot() {
   }
 
   const cfg = window.__INVASOR_CFG;
+  delete window.__INVASOR_CFG; // the token lives in this closure, not where any script of the page can read it
   if (!cfg) {
     console.error("[invasor] missing __INVASOR_CFG, not starting");
     return;

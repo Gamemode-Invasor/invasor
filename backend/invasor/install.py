@@ -114,6 +114,8 @@ def _members(zf):
     for i in infos:
         name = i.filename
         parts = PurePosixPath(name).parts
+        if not parts:  # "" or "." : not a file
+            raise InvalidArgument(f"unsafe path in the zip: {name!r}")
         if name.startswith("/") or "//" in name or "\\" in name or ".." in parts or (parts and ":" in parts[0]):
             raise InvalidArgument(f"unsafe path in the zip: {name!r}")
         if stat.S_ISLNK(i.external_attr >> 16):
