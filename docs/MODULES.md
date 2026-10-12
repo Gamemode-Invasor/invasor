@@ -279,6 +279,12 @@ Steam still draws its usual toast; only the sound changes.
   10 seconds; an error, `exit()` or running out of time is logged and the module is uninstalled anyway. From a
   terminal (`tools/install_module.py --uninstall`, uninstalling Invasor) the service is stopped and `steam_call`
   raises `Unavailable`, so it needs its plan B here too.
+  `ctx.on_steam_start` does nothing there (it's logged): nothing is left to react to. Uninstalling also
+  removes the module from the user's order and from the disabled list, so a reinstall starts enabled and last.
+- **After unload.** Once a module is unloaded (disabled, uninstalled, replaced, or its `setup` failed or timed
+  out) its `ctx` is retired: `ctx.settings.set`, `ctx.data` and `ctx.game_data` stores raise `Unavailable`
+  instead of saving, and `ctx.settings.on_change` ignores new callbacks (logged). A thread left running by an old
+  instance can't bring back files that were purged, or callbacks the core already forgot.
 - **Tools.** Only the Python standard library is available. Don't `pip install` anything: the service must
   keep working after system updates.
 
