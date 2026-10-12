@@ -17,8 +17,14 @@ export function makeApi(cfg: InvasorCfg) {
         headers: { "Content-Type": "application/json", "X-Invasor-Token": cfg.token },
         body: JSON.stringify(args),
       });
-      const body = await res.json();
-      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+      let body: { error?: string; result?: unknown };
+      try {
+        body = await res.json();
+      } catch {
+        throw new Error(`HTTP ${res.status}`); // not JSON: a proxy or an error page, not our backend
+      }
+      if (!res.ok) throw new Error(body?.error ?? `HTTP ${res.status}`);
+      if (!body || !("result" in body)) throw new Error("the backend's answer has no result");
       return body.result as T;
     },
   };
