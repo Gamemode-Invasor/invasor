@@ -286,7 +286,10 @@ class ModuleManager:
                 log.exception("module %s: on_steam_start callback failed", mid)
 
         worker = threading.Thread(target=run, name=f"steam-start-{mid}", daemon=True)
-        context._steam_start_threads = [t for t in context._steam_start_threads if t.is_alive()] + [worker]
+        with self._lock:  # _forget_context reads this list under the lock
+            if context._dead:
+                return
+            context._steam_start_threads = [t for t in context._steam_start_threads if t.is_alive()] + [worker]
         worker.start()
 
     def _clear_listeners(self, mid):
@@ -345,7 +348,7 @@ class ModuleManager:
             return
         try:
             manifest = schema.parse_manifest(json.loads((d / "module.json").read_text()), d.name)
-        except (OSError, ValueError) as e:
+        except (OSError, ValueError, ArithmeticError) as e:
             # The folder name is the id, so backend, frontend and settings always agree.
             log.error("module %s: invalid module.json: %s", d.name, e)
             self.manifests[d.name] = {"id": d.name, "name": d.name, "dir": d, "source": source,
@@ -540,12 +543,19 @@ class ModuleManager:
                     if started.get("module") is not None:
                         _teardown(mid, started["module"])
                     raise
-                if previous != manifest["version"]:
-                    self._version_store(mid).save({"version": manifest["version"]})
-                self.registry[mid] = dict(getattr(module, "METHODS", {}))
-                if module is not None:
-                    self._loaded[mid] = module
-                    self._adopt_context(mid, context)
+                try:
+                    if previous != manifest["version"]:
+                        self._version_store(mid).save({"version": manifest["version"]})
+                    if module is not None:
+                        self._loaded[mid] = module
+                        self._adopt_context(mid, context)
+                    self.registry[mid] = dict(getattr(module, "METHODS", {}))
+                except MODULE_ERRORS:
+                    # setup() succeeded but loading didn't: release what it started.
+                    self._loaded.pop(mid, None)
+                    if module is not None:
+                        _teardown(mid, module)
+                    raise
                 return True
             except MODULE_ERRORS:
                 log.exception("module %s failed to load", mid)

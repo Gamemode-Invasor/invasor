@@ -487,6 +487,20 @@ class Modules(unittest.TestCase):
             self.manager.add("halfway")
         self.assertEqual(self.manager.settings["halfway"]._listeners, [])
 
+    def test_failure_after_a_good_setup_still_tears_down(self):
+        self.user_module("late", (
+            "import pathlib\n"
+            "def setup(c):\n"
+            "    pathlib.Path(c.path / 'up').write_text('1')\n"
+            "def teardown():\n"
+            "    pathlib.Path(__file__).with_name('down').write_text('1')\n"
+        ))
+        patch(self, "invasor.modules.ModuleManager._adopt_context", lambda *a: (_ for _ in ()).throw(OSError("disk")))
+        with self.assertLogs("invasor.modules", "ERROR"):
+            self.manager.add("late")
+        self.assertTrue((self.manager.manifests["late"]["dir"] / "down").exists())
+        self.assertNotIn("late", self.manager.registry)
+
     def test_a_hanging_teardown_doesnt_block(self):
         self.user_module("stuck", "import time\ndef teardown():\n    time.sleep(30)\n")
         self.manager.add("stuck")

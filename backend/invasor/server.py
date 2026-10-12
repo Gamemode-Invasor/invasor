@@ -28,6 +28,12 @@ class ApiServer:
 
     async def _client(self, reader, writer):
         try:
+            await self._answer(reader, writer)
+        finally:
+            writer.close()  # also when the request is cancelled (the service stopping)
+
+    async def _answer(self, reader, writer):
+        try:
             status, body = await self._handle(reader)
             # A body may come already encoded (see _handle); everything else is JSON here.
             payload = b"" if status == 204 else body if isinstance(body, bytes) else json.dumps(body).encode()
@@ -50,8 +56,6 @@ class ApiServer:
             await writer.drain()
         except ConnectionError:
             pass  # the page went away (reload, window closed) before reading the answer
-        finally:
-            writer.close()
 
     async def _read_request(self, reader):
         """(method, path, headers, raw body). Time-limited: a stalled client can't hang around."""
