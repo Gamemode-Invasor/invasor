@@ -312,6 +312,12 @@ class Smoke:
             return
         instance = await cef.browser_id()
         self.check("Steam instance id readable (/json/version, for on_steam_start)", instance is not None, instance)
+        # Demo is the module this test drives. If the user uninstalled it (a shipped module can be),
+        # bring it back for the run: config.json is restored at the end, which uninstalls it again.
+        _, body = await self.api("module_removed")
+        if any(m["id"] == "demo" for m in (body.get("result") or [])):
+            st, body = await self.api("module_restore", id="demo")
+            self.check("Demo was uninstalled: restored for this run", st == 200, body)
         await self.js("window.__invasor.setOpen(false)")
         await self.js("window.__invasor.setOpen(true)")
         await asyncio.sleep(2.5)  # tabs build
@@ -555,7 +561,7 @@ class Smoke:
         st = await self.goto("Open expanded view")
         await self.js(f"{SR}.host.style.setProperty('--visible-w', '348px')")
         await asyncio.sleep(1.0)  # next space check (every 500 ms while open)
-        lock = await self.js(f"""(() => {{ const b = {SR}.querySelector('.window-button .ctl-button');
+        lock = await self.js(f"""(() => {{ const b = {SR}.querySelector('.pane:not([hidden]) .window-button .ctl-button');
           return {{ locked: b.classList.contains('locked'), text: b.textContent, note: !b.parentElement.querySelector('.locked-note').hidden,
                     ring: b.classList.contains('nav-focus'), hint: {SR}.querySelector('.panel .hints').textContent }}; }})()""")
         self.check("no room: the button locks itself (lock and note)", lock["locked"] and lock["text"].startswith("🔒") and lock["note"], lock)
@@ -564,7 +570,7 @@ class Smoke:
         self.check("locked: A doesn't open, it explains", await self.window() is None and "Library" in (st["toast"] or ""), st)
         await self.js(f"{SR}.host.style.setProperty('--visible-w', innerWidth + 'px')")
         await asyncio.sleep(1.0)
-        unlocked = await self.js(f"!{SR}.querySelector('.window-button .ctl-button').classList.contains('locked')")
+        unlocked = await self.js(f"!{SR}.querySelector('.pane:not([hidden]) .window-button .ctl-button').classList.contains('locked')")
         self.check("room again: it unlocks itself", unlocked)
 
         # ctx.openWindow with a handle: retitle it and close it from code.
@@ -609,7 +615,7 @@ class Smoke:
         print(" Backend")
         st = await self.goto_sub("Backend")
         await asyncio.sleep(1.5)
-        first_info = f"{SR}.querySelector('.pane:not([hidden]) .ctl-info')?.textContent ?? ''"
+        first_info = f"[...{SR}.querySelectorAll('.ctl-info')].map(e => e.textContent).find(t => t.startsWith('Backend thread: up')) ?? ''"
         stats = await self.js(first_info)
         self.check("stats line: backend thread uptime, Python files and visits",
                    "Backend thread: up" in stats and "Python files:" in stats and "Backend tab visits:" in stats, stats)
@@ -653,12 +659,13 @@ class Smoke:
         existed = profile.exists()
         try:
             await self.unfold("Profile (stored by the module)")
-            _, body = await self.api("profile_get", feature="demo")
-            scale0 = body["result"]["scale"]
+            st, body = await self.api("profile_get", feature="demo")
+            self.check("ui.form: the backend answers profile_get", st == 200, body)
+            scale0 = (body.get("result") or {}).get("scale")
             st = await self.goto("Scale", limit=6)
             st = await self.press("RIGHT", wait=0.8)
             _, body = await self.api("profile_get", feature="demo")
-            self.check("ui.form: a change is stored by the module's backend", body["result"]["scale"] != scale0, (scale0, body))
+            self.check("ui.form: a change is stored by the module's backend", (body.get("result") or {}).get("scale") not in (None, scale0), (scale0, body))
             await self.press("LEFT", wait=0.8)
         finally:
             if not existed:
