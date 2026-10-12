@@ -184,7 +184,7 @@ def _unpack(zip_path, reserved):
         mid = prefix.rstrip("/")  # the folder name is the id, as in modules/<id>/
         try:
             manifest = schema.parse_manifest(raw, mid)
-        except schema.SchemaError as e:
+        except (schema.SchemaError, ArithmeticError) as e:
             raise InvalidArgument(f"module.json: {e}") from None
         problem = schema.core_problem(manifest, __version__)
         if problem:

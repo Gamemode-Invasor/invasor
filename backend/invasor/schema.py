@@ -17,6 +17,7 @@ AUTHOR_MAX = 128
 KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 TEXT_MAX_LENGTH = 256
+MAX_STEPS = 1e9  # slider/number: how many steps min..max may hold (snap() counts them)
 
 # Keys each field type accepts besides key/type/label/default/hint.
 FIELD_EXTRA = {
@@ -170,6 +171,9 @@ def _parse_field(raw, path, keys):
         if not _is_number(step) or step <= 0:
             _fail(f"{path}.step", "must be a positive number")
         field["step"] = step
+        steps = (field["max"] - field["min"]) / step
+        if not math.isfinite(steps) or steps > MAX_STEPS:
+            _fail(f"{path}.step", "is too small for the min..max range")
         if "unit" in raw:
             field["unit"] = _str(raw, "unit", f"{path}.")
     elif t in ("radio", "select"):
