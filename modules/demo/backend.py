@@ -4,8 +4,8 @@
 - storage: ctx.data and ctx.game_data;
 - forms + toml: the "profile" form, stored by the module in a TOML file (saved with a validate=
   check that sees the new file before it replaces the old one);
-- game: info() and shortcut_exe() in whoami;
-- Steam: notify (with an icon) / notify_async, steam_call / steam_call_async, always with a plan B;
+- game: info() and shortcut_exe() in whoami; ctx.id and ctx.path (the module's folder) too;
+- Steam: notify (with an icon, a timeout and a sound) / notify_async, steam_call / steam_call_async, always with a plan B;
 - clean errors: InvalidArgument (400) and Unavailable (503);
 - plain and `async def` methods, a background thread stopped in teardown();
 - on_steam_start: counts the Steam starts it has seen;
@@ -103,12 +103,12 @@ def whoami():
     game = ctx.game.running or ctx.game.selected
     # shortcut_exe: what a non-Steam shortcut launches (None for a Steam game).
     exe = ctx.game.shortcut_exe(game["appid"]) if game and game.get("shortcut") else None
-    return {"module": ctx.id, "game": game, "info": ctx.game.info(game["appid"]) if game else None, "exe": exe,
+    return {"module": ctx.id, "folder": Path(ctx.path).name, "game": game, "info": ctx.game.info(game["appid"]) if game else None, "exe": exe,
             "upgraded_from": ctx.data.load().get("upgraded_from")}
 
 
 def notify(title="Demo", body="", sound=""):
-    ctx.notify(title, body, ICON, sound=sound)  # no sound: Steam decides. InvalidArgument/Unavailable reach the UI as clean errors
+    ctx.notify(title, body, ICON, timeout=10, sound=sound)  # timeout: seconds to wait for Steam. No sound: Steam decides. InvalidArgument/Unavailable reach the UI as clean errors
     return {"ok": True}
 
 
@@ -158,7 +158,8 @@ def visit(appid=None):
 
 def stats():
     data = ctx.data.load()
-    return {"uptime": _uptime, "visits": data.get("visits", 0), "upgraded_from": data.get("upgraded_from"),
+    # ctx.path: the module's own folder (here, to say how many Python files it ships).
+    return {"uptime": _uptime, "files": len(list(Path(ctx.path).glob("*.py"))), "visits": data.get("visits", 0), "upgraded_from": data.get("upgraded_from"),
             "steam_starts": data.get("steam_starts", 0), "last_steam_start": data.get("last_steam_start")}
 
 

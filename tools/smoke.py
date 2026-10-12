@@ -6,7 +6,9 @@ vgp_onbuttondown events Steam sends) and checks: panel width (40% of the screen)
 module tabs (L1/R1), sub-tabs (L2/R2), foldable sections (X), every demo control
 (drawn from Demo's module.json), a disabled control, the select list, the built-in
 keyboard, the confirm dialog, scrolling of long content, the expanded view, the
-module.json rules (when, disabled_when), backend errors, a custom control, the
+module.json rules (when, disabled_when), backend calls and errors (every notification
+button and sound, ui.choose, ui.form), the stats line, windows opened with a handle, a
+standalone ui.number and Control.get(), the keyboard's show/hide key, a custom control, the
 Settings tab, installing a module zip and its upgrade/uninstall hooks, backend
 validation of settings and the isolation of a broken module UI. Needs Steam running with
 CEF debugging, the invasor service installed and the "demo" module enabled.
@@ -18,6 +20,8 @@ so the overlay is re-injected exactly as it was.
 """
 import asyncio
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -31,6 +35,7 @@ from invasor.config import CONFIG_DIR, CONFIG_FILE  # noqa: E402
 BTN = {"A": 1, "B": 2, "X": 3, "Y": 4, "L1": 5, "R1": 6, "L2": 7, "R2": 8, "UP": 9, "DOWN": 10, "LEFT": 11, "RIGHT": 12}
 DEMO_DIR = CONFIG_DIR / "modules" / "demo"
 DEMO_SETTINGS = DEMO_DIR / "settings.json"
+SOUNDS = ["trophy", "message", "toast", "chat", "mention", "friend", "online", "ingame", "none"]  # Demo › Backend buttons
 SR = "document.getElementById('invasor-root').shadowRoot"
 # Everything the checks look at: tabs, the control under the blue ring, open popups.
 STATE = f"""(() => {{
@@ -423,6 +428,13 @@ class Smoke:
         self.check("password: A opens the keyboard", st["keyboard"], st)
         st = await self.press("A")
         self.check("password: A types", st["value"] == secret0 + "q" and st["masked"], st)
+        # The keyboard's own show/hide key (bottom row, before OK) reveals the text and hides it again.
+        await self.press("DOWN", "DOWN", "DOWN", "RIGHT", "RIGHT", "RIGHT", "RIGHT")
+        st = await self.press("A")
+        self.check("password: the keyboard's show key reveals the text", not st["masked"] and st["keyboard"], st)
+        st = await self.press("A")
+        self.check("password: pressing it again hides the text", st["masked"], st)
+        await self.press("UP", "UP", "UP", "LEFT", "LEFT", "LEFT", "LEFT")
         st = await self.press("B")
         self.check("password: B closes the keyboard, still masked", not st["keyboard"] and st["masked"], st)
         stored = json.loads(DEMO_SETTINGS.read_text()).get("secret") if DEMO_SETTINGS.exists() else None
@@ -470,6 +482,20 @@ class Smoke:
         st = await self.press("B", wait=0.3)
         unchanged = (DEMO_SETTINGS.read_text() if DEMO_SETTINGS.exists() else None) == saved
         self.check("confirm: B cancels without changing anything", not st["modal"] and st["open"] and unchanged, st)
+        # Accepted: OK runs the reset of every form and says so.
+        await self.goto("Reset values")
+        await self.press("A", wait=0.3)
+        await self.press("RIGHT")
+        st = await self.press("A", wait=1.5)
+        self.check("confirm: OK resets the values", not st["modal"] and st["toast"] == "Values reset", st)
+        # ui.number outside a settings form, and Control.get().
+        st = await self.goto("Standalone number")
+        self.check("ui.number: shows its start value", "5" in str(st["value"]), st)
+        st = await self.press("RIGHT")
+        self.check("ui.number: → raises it", "6" in str(st["value"]), st)
+        await self.goto("Read the number")
+        st = await self.press("A", wait=0.4)
+        self.check("Control.get() returns what the control shows", st["toast"] == "Standalone number: 6", st)
 
         print(" Scroll (Long list)")
         st = await self.goto_sub("Long list")
@@ -536,6 +562,21 @@ class Smoke:
         unlocked = await self.js(f"!{SR}.querySelector('.window-button .ctl-button').classList.contains('locked')")
         self.check("room again: it unlocks itself", unlocked)
 
+        # ctx.openWindow with a handle: retitle it and close it from code.
+        await self.goto("Open with a handle")
+        await self.press("A", wait=0.8)
+        title_js = f"{SR}.querySelector('.iwin .iwin-title')?.textContent ?? null"
+        title = await self.js(title_js)
+        self.check("ctx.openWindow: opens a window titled by the module", title == "Window handle", title)
+        if title is not None:
+            await self.goto("Change the title")
+            await self.press("A", wait=0.3)
+            title = await self.js(title_js)
+            self.check("handle.setTitle: retitles the window", "retitled 1" in str(title), title)
+            await self.goto("Close from code")
+            st = await self.press("A", wait=0.6)
+            self.check("handle.close: closes it and onClose runs", await self.window() is None and "Window closed" in (st["toast"] or ""), st)
+
         print(" Rules (when, disabled_when)")
         st = await self.goto_sub("Rules")
         self.check("reaches Rules", st["sub"] == "Rules", st)
@@ -562,9 +603,61 @@ class Smoke:
 
         print(" Backend")
         st = await self.goto_sub("Backend")
+        await asyncio.sleep(1.5)
+        first_info = f"{SR}.querySelector('.pane:not([hidden]) .ctl-info')?.textContent ?? ''"
+        stats = await self.js(first_info)
+        self.check("stats line: backend thread uptime, Python files and visits",
+                   "Backend thread: up" in stats and "Python files:" in stats and "Backend tab visits:" in stats, stats)
+        await asyncio.sleep(2.0)
+        self.check("stats line refreshes every second", await self.js(first_info) != stats, stats)
+        # Every notification button: Steam's own sounds, with the toast of the answer.
+        for label in ["Default (Steam decides)", *(f"Sound: {s}" for s in SOUNDS)]:
+            await self.goto(label, limit=6)
+            st = await self.press("A", wait=1.5)
+            self.check(f"notify: {label}", st["toast"] == "Notification sent", st)
+        for label, want in (
+            ("Who am I", '"folder":"demo"'),
+            ("Notify", "Notification sent"),
+            ("Notify (async method)", "Notification sent"),
+            ("Steam info (backend)", '"available"'),
+            ("Steam info (async method)", '"available"'),
+        ):
+            await self.goto(label, limit=6)
+            st = await self.press("A", wait=1.5)
+            self.check(f"call: {label}", want in (st["toast"] or ""), st)
+        await self.goto("Steam info (from here)", limit=6)
+        st = await self.press("A", wait=1.5)
+        self.check("call: Steam info (from here) answers, or says it's not available", bool(st["toast"]), st)
         await self.goto("Fail: invalid argument")
         st = await self.press("A", wait=1.0)
         self.check("a backend InvalidArgument reaches the UI as a clean error", "InvalidArgument" in (st["toast"] or ""), st)
+        await self.goto("Fail: unavailable", limit=4)
+        st = await self.press("A", wait=1.0)
+        self.check("a backend Unavailable reaches the UI as a clean error", "Unavailable" in (st["toast"] or ""), st)
+        await self.goto("Fail: choose how", limit=4)
+        st = await self.press("A", wait=0.5)
+        self.check("ui.choose: A opens the dialog on Cancel", st["modal"] and st["label"] == "Cancel", st)
+        st = await self.press("B", wait=1.0)
+        self.check("ui.choose: B cancels", not st["modal"] and st["toast"] == "Cancelled", st)
+        await self.press("A", wait=0.5)
+        await self.goto("Unavailable (503)", limit=4, button="RIGHT")
+        st = await self.press("A", wait=1.0)
+        self.check("ui.choose: the chosen value reaches the backend", not st["modal"] and "Unavailable: 503" in (st["toast"] or ""), st)
+        # ui.form: the Profile section is stored by the module itself (a TOML file outside Invasor's folders).
+        profile = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "invasor-demo" / "profile.toml"
+        existed = profile.exists()
+        try:
+            await self.unfold("Profile (stored by the module)")
+            _, body = await self.api("profile_get", feature="demo")
+            scale0 = body["result"]["scale"]
+            st = await self.goto("Scale", limit=6)
+            st = await self.press("RIGHT", wait=0.8)
+            _, body = await self.api("profile_get", feature="demo")
+            self.check("ui.form: a change is stored by the module's backend", body["result"]["scale"] != scale0, (scale0, body))
+            await self.press("LEFT", wait=0.8)
+        finally:
+            if not existed:
+                shutil.rmtree(profile.parent, ignore_errors=True)  # only what this run created
         await self.goto("Counter")
         st = await self.press("RIGHT", "RIGHT")
         self.check("custom control: invasor:button ←→", st["value"] == "2", st)

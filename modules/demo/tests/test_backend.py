@@ -45,6 +45,7 @@ class FakeCtx:
     Unavailable = schema.Unavailable
     toml = tomlio
     id = "demo"
+    path = HERE
 
     def __init__(self, folder):
         manifest = schema.parse_manifest(json.loads((HERE / "module.json").read_text()), "demo")
@@ -61,8 +62,9 @@ class FakeCtx:
     def game_data(self, appid):
         return JsonStore(self._folder / "games" / f"{appid}.json")
 
-    def notify(self, title, body="", icon="", sound=""):
+    def notify(self, title, body="", icon="", timeout=15, sound=""):
         self.notified.append((title, body))
+        self.last_notify = {"timeout": timeout, "sound": sound}
 
     def on_steam_start(self, cb):
         self.steam_start_cbs.append(cb)
@@ -127,6 +129,12 @@ class Backend(unittest.TestCase):
         stats = self.b.stats()
         self.assertEqual(stats["steam_starts"], 2)
         self.assertRegex(stats["last_steam_start"], r"^\d\d:\d\d:\d\d$")
+
+    def test_notify_passes_timeout_and_sound_and_ctx_path_is_used(self):
+        self.b.notify("T", "B", sound="trophy")
+        self.assertEqual(self.ctx.last_notify, {"timeout": 10, "sound": "trophy"})
+        self.assertEqual(self.b.whoami()["folder"], "demo")
+        self.assertGreaterEqual(self.b.stats()["files"], 2)  # backend.py and helpers.py
 
     def test_upgrade_is_remembered(self):
         self.assertIsNone(self.b.whoami()["upgraded_from"])
