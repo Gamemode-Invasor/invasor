@@ -74,11 +74,13 @@ function showError(el: HTMLElement, name: string, e: unknown) {
   el.innerHTML = `<p class="mod-error">Error in ${esc(name)}: ${esc(msg)}</p>`;
 }
 
-function safe(what: string, fn: () => void) {
+function safe(what: string, fn: () => unknown) {
+  const fail = (e: unknown) => console.error(`[invasor] ${what} failed`, e);
   try {
-    fn();
+    const r = fn();
+    if (r instanceof Promise) r.catch(fail); // an async hook that rejects
   } catch (e) {
-    console.error(`[invasor] ${what} failed`, e);
+    fail(e);
   }
 }
 

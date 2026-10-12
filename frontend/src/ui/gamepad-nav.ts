@@ -363,6 +363,7 @@ export function attachGamepadNav(
       stage.removeEventListener("invasor:refocus", onRefocus);
       stage.removeEventListener("scroll", updateScrollHints, { capture: true });
       observer.disconnect();
+      window.clearTimeout(thumbFade);
     },
   };
 }

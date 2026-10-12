@@ -61,7 +61,7 @@ export function reorderList(items: ReorderItem[], onCommit: (ids: string[]) => P
     const parent = lines[0].el.parentElement;
     const after = lines[lines.length - 1].el.nextSibling; // whatever follows the block of rows
     const byId = new Map(lines.map((l) => [l.id, l]));
-    lines.splice(0, lines.length, ...order.map((id) => byId.get(id)!));
+    lines.splice(0, lines.length, ...order.map((id) => byId.get(id)).filter((l): l is Line => !!l));
     for (const l of lines) parent?.insertBefore(l.el, after);
     paint();
   };
@@ -71,7 +71,9 @@ export function reorderList(items: ReorderItem[], onCommit: (ids: string[]) => P
   };
   const refocus = (l: Line) => l.el.dispatchEvent(new CustomEvent("invasor:refocus", { bubbles: true, detail: l.el }));
 
-  const save = async () => {
+  // One save at a time: two in flight could finish out of order and leave `committed` behind the backend.
+  let saving: Promise<void> = Promise.resolve();
+  const save = () => (saving = saving.then(async () => {
     const order = ids();
     if (order.join() === committed.join()) return;
     try {
@@ -80,7 +82,7 @@ export function reorderList(items: ReorderItem[], onCommit: (ids: string[]) => P
     } catch {
       apply(committed); // onCommit already told the user
     }
-  };
+  }));
   const release = () => {
     if (!grabbed) return;
     grabbed.el.classList.remove("grabbed");

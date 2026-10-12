@@ -136,6 +136,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
 
   let game: GameState = { selected: null, running: null, highlighted: null };
   let gameKey = "";
+  let destroyed = false; // set by destroy(): answers still on their way must not drive the hooks
   let pollTimer: number | undefined;
   const toastTimers = new Map<HTMLElement, number>(); // one per toast element: the panel's and each window's
   let modules = new Map<string, LiveModule>();
@@ -162,7 +163,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   // A module UI registering after the tabs were built (it was injected late): the next
   // open reads the module list again anyway; if the panel is open, now.
   kit.onRegister(() => {
-    if (!panel.hidden) void rebuildTabs();
+    if (!panel.hidden) rebuildTabs().catch((e) => console.error("[invasor] rebuild failed", e));
   });
 
   // ---------- side ----------
@@ -270,11 +271,13 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     return visibleW >= screen.width * WINDOW_MIN_SHARE && window.innerHeight >= screen.height * WINDOW_MIN_SHARE;
   }
 
-  function safe(what: string, fn: () => void) {
+  function safe(what: string, fn: () => unknown) {
+    const fail = (e: unknown) => console.error(`[invasor] ${what} failed`, e);
     try {
-      fn();
+      const r = fn();
+      if (r instanceof Promise) r.catch(fail); // an async hook that rejects
     } catch (e) {
-      console.error(`[invasor] ${what} failed`, e);
+      fail(e);
     }
   }
 
@@ -366,7 +369,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       if (!tabs.count()) await tabs.set([settingsSpec]);
       return false;
     }
-    if (seq !== rebuildSeq) return true; // a newer rebuild took over while we waited
+    if (seq !== rebuildSeq || destroyed) return true; // a newer rebuild took over while we waited
     const before = modules;
     modules = new Map();
     for (const m of list) {
@@ -394,7 +397,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     const hidden = qam
       ? await hiddenInQam(all.filter((m) => m.def?.showInQam).map((m) => ({ id: m.id, fn: () => m.def!.showInQam!(m.ctx!) })))
       : new Set<string>();
-    if (seq !== tabSeq) return false; // a newer call took over while we waited
+    if (seq !== tabSeq || destroyed) return false; // a newer call took over while we waited
     // Read now, not before the wait: the user may have stepped to another tab meanwhile.
     const keep = tabs.activeId();
     const visible = all.filter((m) => !hidden.has(m.id));
@@ -422,6 +425,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   async function refreshGame() {
     try {
       const next = await api.call<GameState>("core", "game");
+      if (destroyed) return;
       if (qam) setAvailable(next.running !== null);
       const key = JSON.stringify(next);
       if (key === gameKey) return;
@@ -538,6 +542,8 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       for (const w of [...windows]) w.close(); // big windows go with the panel
       panel.dispatchEvent(new CustomEvent("invasor:dismiss")); // e.g. cancel an open ui.confirm
       tabs.hidden();
+      // The highlighted tile of an imageGrid keeps its ring while the panel is closed: stop its video.
+      for (const v of panel.querySelectorAll("video")) v.pause();
       return;
     }
     fitToScreen();
@@ -565,9 +571,10 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     // A backend that isn't reachable yet just leaves what's there; the next open tries again.
     void refreshGame().then(async () => {
       await rebuildTabs();
+      if (destroyed) return;
       tabs.shown(); // a no-op if the tab already got its onShow
       nav.reset();
-    });
+    }).catch((e) => console.error("[invasor] opening the panel failed", e));
     pollTimer = window.setInterval(refreshGame, GAME_POLL_MS);
   }
 
@@ -581,6 +588,8 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       showHandle();
     },
     destroy() {
+      destroyed = true;
+      panel.dispatchEvent(new CustomEvent("invasor:dismiss")); // a pending ui.confirm/choose resolves
       for (const w of [...windows]) w.close();
       if (qam && lastShown) api.call("core", "set_qam_shown", { shown: false }).catch(() => {});
       window.clearInterval(availTimer);

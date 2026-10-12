@@ -91,7 +91,7 @@ export function openBigWindow(spec: WindowSpec, { stage, nav, ctx }: WindowDeps)
   $(".close").addEventListener("click", close);
 
   stage.appendChild(win);
-  void host.set(tabs);
+  host.set(tabs).catch((e) => console.error("[invasor] window tabs failed", e));
 
   return {
     close,

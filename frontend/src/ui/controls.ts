@@ -37,6 +37,16 @@ interface Base<T> {
 }
 
 /** The idle hint of a control: its button help plus `hint`, or just `hint` (navHints false). */
+/** Run a module's callback from an event: a throw or a rejected promise is logged, never unhandled. */
+function guarded(fn: (() => unknown) | undefined) {
+  try {
+    const r = fn?.();
+    if (r instanceof Promise) r.catch((e) => console.error("[invasor] handler failed", e));
+  } catch (e) {
+    console.error("[invasor] handler failed", e);
+  }
+}
+
 function hintFor(o: { hint?: string; navHints?: boolean }, own: string) {
   return o.navHints === false ? (o.hint ?? "") : withHint(own, o.hint);
 }
@@ -173,7 +183,7 @@ function boolControl(kind: "toggle" | "checkbox", o: Base<boolean>): Control<boo
   el.addEventListener("click", () => {
     value = !value;
     paint();
-    o.onChange?.(value);
+    guarded(() => o.onChange?.(value));
   });
   const c = asControl(el, () => value, (v) => ((value = !!v), paint()), setDisabled);
   if (o.disabled) c.setDisabled(true);
@@ -387,7 +397,7 @@ function textField(o: Base<string> & { placeholder?: string; maxLength?: number 
     input.autocomplete = "new-password";
   }
   if (o.maxLength && o.maxLength > 0) input.maxLength = o.maxLength;
-  input.value = (o.value ?? "").slice(0, o.maxLength || undefined);
+  input.value = (o.value ?? "").slice(0, o.maxLength && o.maxLength > 0 ? o.maxLength : undefined);
   input.placeholder = o.placeholder ?? "";
   body.appendChild(input);
   const showHide = {
@@ -460,7 +470,7 @@ function textField(o: Base<string> & { placeholder?: string; maxLength?: number 
     return false; // A -> core click -> open()
   });
   const set = (v: string) => {
-    input.value = (v ?? "").slice(0, o.maxLength || undefined);
+    input.value = (v ?? "").slice(0, o.maxLength && o.maxLength > 0 ? o.maxLength : undefined);
     committed = input.value;
   };
   const c = asControl(el, () => input.value, set, setDisabled);
@@ -648,7 +658,7 @@ export const ui = {
     el.dataset.hint = hint();
     el.textContent = o.label;
     const setDisabled = disableable(el, hint);
-    el.addEventListener("click", () => o.onClick());
+    el.addEventListener("click", () => guarded(() => o.onClick()));
     const c = Object.assign(el, { setLabel: (l: string) => void (el.textContent = l), setDisabled });
     if (o.disabled) c.setDisabled(true);
     return c;
@@ -851,7 +861,7 @@ export const ui = {
         e.stopPropagation();
         hi = i;
         paint();
-        o.onActivate?.(item.id);
+        guarded(() => o.onActivate?.(item.id));
       });
       grid.appendChild(tile);
       return tile;
@@ -900,7 +910,7 @@ export const ui = {
         hi = Math.min(tiles.length - 1, hi + columns);
         return paint(), true;
       }
-      if (b === "A" && o.onActivate) return o.onActivate(o.items[hi].id), true;
+      if (b === "A" && o.onActivate) return guarded(() => o.onActivate!(o.items[hi].id)), true;
       if (b === "Y" && o.onSelect) {
         selected = o.items[hi].id;
         paint();
