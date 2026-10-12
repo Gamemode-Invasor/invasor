@@ -113,6 +113,7 @@ class Market:
         self._core = core_version
         self._fetch, self._text, self._download = fetch, fetch_text, fetch_file
         self._lock = threading.Lock()
+        self._failed = None  # (channel, when, error) of the last catalog that couldn't be loaded
         self._cache = None  # (when, channel, {repo: entry}, [notes], {source, generated})
 
     # ---------- the catalog ----------
@@ -286,7 +287,15 @@ class Market:
         with self._lock:
             channel = "beta" if self._channel() == "beta" else "stable"
             if refresh or self._cache is None or self._cache[1] != channel or time.monotonic() - self._cache[0] > CACHE_SECONDS:
-                self._cache = self._load()
+                failed = self._failed
+                if failed and not refresh and failed[0] == channel and time.monotonic() - failed[1] < RATE_RETRY:
+                    raise failed[2]  # a dead network costs one attempt, not one per call
+                try:
+                    self._cache = self._load()
+                except Unavailable as e:
+                    self._failed = (channel, time.monotonic(), e)
+                    raise
+                self._failed = None
             return self._cache
 
     @staticmethod

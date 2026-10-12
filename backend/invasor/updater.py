@@ -81,12 +81,15 @@ def download(url, dest, limit):
     if not url.startswith("https://"):
         raise ValueError(f"not an https URL: {url}")
     size = 0
-    with _opener().open(_request(url), timeout=TIMEOUT) as r, open(dest, "wb") as f:
-        while chunk := r.read(1 << 16):
-            size += len(chunk)
-            if size > limit:
-                raise ValueError("download too large")
-            f.write(chunk)
+    with _opener().open(_request(url), timeout=TIMEOUT) as r:
+        if not r.geturl().startswith("https://"):  # a redirect may leave https
+            raise ValueError(f"redirected to a non-https URL: {r.geturl()}")
+        with open(dest, "wb") as f:
+            while chunk := r.read(1 << 16):
+                size += len(chunk)
+                if size > limit:
+                    raise ValueError("download too large")
+                f.write(chunk)
 
 
 def run_detached(unit, argv, what="update"):

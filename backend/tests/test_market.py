@@ -150,6 +150,19 @@ class Catalog(unittest.TestCase):
         with self.assertRaises(Unavailable):
             self.market().list()
 
+    def test_a_dead_network_costs_one_attempt_until_refreshed(self):
+        self.net.answers[market.CATALOG_URL] = OSError("offline")
+        m = self.market()
+        with self.assertRaises(Unavailable):
+            m.list()
+        asked = len(self.net.asked)
+        with self.assertRaises(Unavailable):
+            m.list()
+        self.assertEqual(len(self.net.asked), asked)  # not asked again
+        with self.assertRaises(Unavailable):
+            m.list(refresh=True)  # an explicit retry does ask
+        self.assertGreater(len(self.net.asked), asked)
+
     def test_cached_until_refreshed_and_per_channel(self):
         m = self.market()
         m.list()

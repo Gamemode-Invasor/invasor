@@ -49,5 +49,5 @@ def loads_binary(data: bytes) -> dict:
 
     try:
         return read_map()
-    except (IndexError, ValueError, struct.error) as e:
+    except (IndexError, ValueError, struct.error, RecursionError) as e:
         raise VDFError(str(e)) from e

@@ -68,7 +68,10 @@ class JsonStore:
                 os.replace(tmp, self.path)
                 fsync_dir(self.path.parent)
             except BaseException:
-                os.unlink(tmp)
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass  # already renamed: don't hide the real error
                 raise
 
     def transform(self, fn):

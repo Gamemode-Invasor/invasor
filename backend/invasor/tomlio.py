@@ -156,6 +156,9 @@ def save(path, data, expected_mtime=None, backup=True, validate=None):
         os.replace(tmp, path)
         fsync_dir(path.parent)
     except BaseException:
-        os.unlink(tmp)
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass  # already renamed: don't hide the real error
         raise
     return path.stat().st_mtime_ns
