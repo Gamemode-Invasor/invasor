@@ -1,5 +1,6 @@
 import json
 import stat
+import sys
 import unittest
 import zipfile
 from unittest import mock
@@ -37,6 +38,8 @@ class Zips(unittest.TestCase):
 
     def test_degenerate_entries_are_refused_not_a_crash(self):
         for bad in (".", "", "hello/../module.json"):
+            if not bad and sys.version_info < (3, 10):
+                continue  # zipfile before 3.10 can't even write an entry with an empty name
             with self.subTest(entry=bad):
                 path = self.zip("odd.zip", {"hello/module.json": MANIFEST, bad: "x"})
                 with self.assertRaises(InvalidArgument):
