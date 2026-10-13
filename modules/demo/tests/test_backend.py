@@ -176,7 +176,7 @@ class Backend(unittest.TestCase):
     def test_notify_passes_timeout_and_sound_and_ctx_path_is_used(self):
         self.b.notify("T", "B", sound="trophy")
         self.assertEqual(self.ctx.last_notify, {"timeout": 10, "sound": "trophy"})
-        self.assertEqual(self.b.whoami()["folder"], "demo")
+        self.assertEqual(self.b.whoami()["folder"], HERE.name)  # whatever the folder is called (the smoke runs a renamed copy)
         self.assertGreaterEqual(self.b.stats()["files"], 2)  # backend.py and helpers.py
 
     def test_upgrade_is_remembered(self):

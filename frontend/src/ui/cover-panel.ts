@@ -1,4 +1,5 @@
-// A panel that covers the Invasor panel (Tasks, Settings): the same place and size, opened from
+// A panel that covers the Invasor panel (Tasks, Settings): the same place and width, and always the full
+// height of the window (the Invasor panel is as tall as its tab, which can be little), opened from
 // the panel by a button of the pad (Select, Start) or of its header, and while it is open it is the
 // layer the pad drives (see gamepad-nav.ts: B or its own button close it and the pad goes back
 // to the Invasor panel, with the ring where it was). Big windows and dialogs still open above it.
@@ -65,9 +66,6 @@ export function createCoverPanel({ stage, panel, nav, kind, title, backHint, onO
 
   function open() {
     if (isOpen()) return;
-    // Same height as the panel it covers, so it looks like the panel changed rather than a second one appeared.
-    const height = panel.getBoundingClientRect().height;
-    if (height > 0) el.style.height = `${height}px`;
     opener = panel.querySelector<HTMLElement>(".nav-focus");
     panel.classList.add("covered");
     el.hidden = false;

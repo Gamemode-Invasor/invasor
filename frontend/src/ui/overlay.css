@@ -39,6 +39,10 @@
 .cover-panel > * {
   flex: none;
 }
+.cover-panel {
+  /* Always the whole height, however little the Invasor panel under it has to show. */
+  height: calc(100vh - 16px);
+}
 .cover-panel > .content-wrap {
   flex: 1 1 auto;
 }

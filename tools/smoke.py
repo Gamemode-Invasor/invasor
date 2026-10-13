@@ -111,13 +111,24 @@ class Smoke:
         return await self.state()
 
     async def goto(self, label, limit=20, button="DOWN"):
-        """Move down (or `button`) until the ring is on the control called `label`."""
+        """Move down (or `button`) until the ring is on the control called `label`; if it isn't that way,
+        the other way (a list drawn again puts the ring wherever it was, which may be past the control)."""
         st = await self.state()
         for _ in range(limit):
             if st["label"] == label:
                 return st
             st = await self.press(button)
+        other = {"DOWN": "UP", "UP": "DOWN"}.get(button)
+        for _ in range(limit if other else 0):
+            if st["label"] == label:
+                return st
+            st = await self.press(other)
         return st
+
+    async def hints(self):
+        """The pad's hint bar of the layer in front: a panel that covers the Invasor one, else the panel."""
+        return await self.js(f"""(() => {{ const r = {SR};
+          return (r.querySelector('.cover-panel:not([hidden]) .hints') ?? r.querySelector('.panel .hints')).textContent; }})()""")
 
     async def open_settings(self):
         """Start opens the Settings panel over the Invasor one (it is built the first time: give it a moment)."""
@@ -224,6 +235,7 @@ class Smoke:
         import pack_module
         work = Path(tempfile.mkdtemp(prefix=".invasor-smoke-", dir=Path.home()))
         outside = CONFIG_DIR.parent / "invasor-smoke-demo"
+        order0 = None  # the module order saved before the test, if the test got as far as reading it
         try:
             mod = work / "smoke-demo"
             shutil.copytree(ROOT / "modules" / "demo", mod, ignore=shutil.ignore_patterns("__pycache__"))
@@ -259,27 +271,36 @@ class Smoke:
             def saved_order():
                 return json.loads(CONFIG_FILE.read_text()).get("module_order") if CONFIG_FILE.exists() else None
 
+            st, body = await self.api("modules")
+            ids0 = [m["id"] for m in body["result"]] if st == 200 else []
+            order0 = saved_order()  # the user may have an order of their own: it must come back as it was
+            at = ids0.index("smoke-demo") if "smoke-demo" in ids0 else 0
+            move = "UP" if at > 0 else "DOWN"  # one row towards the middle of the list
+            moved = list(ids0)
+            if len(moved) > 1:
+                to = at - 1 if move == "UP" else at + 1
+                moved[at], moved[to] = moved[to], moved[at]
             await self.unfold("Module order")
             st = await self.goto("Smoke Demo")
             st = await self.press("A", wait=0.3)
-            self.check("reorder: A grabs the row and the hint says how to drop it", "drop" in await self.js(f"{SR}.querySelector('.cover-panel:not([hidden]) .hints, .panel .hints').textContent"), st)
-            await self.press("UP", wait=0.3)
+            self.check("reorder: A grabs the row and the hint says how to drop it", "drop" in await self.hints(), st)
+            await self.press(move, wait=0.3)
             st = await self.state()
             self.check("reorder: the ring follows the moved row", st["label"] == "Smoke Demo", st)
             await self.press("B", wait=0.3)
-            self.check("reorder: B puts it back and saves nothing", not saved_order(), saved_order())
+            self.check("reorder: B puts it back and saves nothing", saved_order() == order0, (saved_order(), order0))
             await self.press("A", wait=0.3)
-            await self.press("UP", wait=0.3)
+            await self.press(move, wait=0.3)
             await self.press("A", wait=1.0)
             st, body = await self.api("modules")
             ids = [m["id"] for m in body["result"]] if st == 200 else body
-            self.check("reorder: dropping saves it and the module list follows", saved_order() and saved_order()[0] == "smoke-demo" and ids[0] == "smoke-demo", (saved_order(), ids))
+            self.check("reorder: dropping saves it and the module list follows", saved_order() == moved and ids == moved, (saved_order(), ids, moved))
             await self.goto("Reset order", limit=20)
             await self.press("A", wait=1.5)
             self.check("reorder: Reset order forgets it", not saved_order(), saved_order())
             await self.unfold("Manage modules")
             await self.goto("Rescan modules", limit=60)
-            st = await self.goto("Uninstall Smoke Demo", limit=60, button="UP")  # it's above Rescan
+            st = await self.goto("Uninstall Smoke Demo", limit=60, button="UP")  # above Rescan, or below if the order differs
             st = await self.press("A", wait=0.3)
             self.check("uninstall: a dialog that starts on Cancel", st["modal"] and st["label"] == "Cancel", st)
             st = await self.press("RIGHT")
@@ -295,6 +316,8 @@ class Smoke:
             await self.close_cover()  # Settings goes back to the Invasor panel
         finally:
             await self.api("module_uninstall", id="smoke-demo", purge=True)
+            if order0 is not None:
+                await self.api("set_pref", key="module_order", value=order0)
             shutil.rmtree(work, ignore_errors=True)
             shutil.rmtree(CONFIG_DIR / "modules" / "smoke-demo", ignore_errors=True)
             shutil.rmtree(outside, ignore_errors=True)
@@ -307,6 +330,7 @@ class Smoke:
         """Is the `kind` panel (tasks, settings) open, is the Invasor panel covered, and which module tab is on."""
         return await self.js(f"""(() => {{ const r = {SR}; const t = r.querySelector('.cover-panel[data-kind="{kind}"]');
           return {{open: !!t && !t.hidden, covered: r.querySelector('.panel').classList.contains('covered'),
+                   height: t ? Math.round(t.getBoundingClientRect().height) : 0, windowHeight: innerHeight,
                    tab: r.querySelector('.tabbar.main .tab.on')?.textContent ?? null,
                    hint: t?.querySelector('.hints')?.textContent ?? '',
                    handle: r.querySelector('.handle').dataset.tasks ?? '', button: r.querySelector('.tasks-btn').dataset.tasks ?? '',
@@ -495,7 +519,7 @@ class Smoke:
         await self.goto_sub("Controls")
         st = await self.goto("Volume")
         st2 = await self.press("RIGHT")
-        hint = await self.js(f"{SR}.querySelector('.cover-panel:not([hidden]) .hints, .panel .hints').textContent")
+        hint = await self.hints()
         self.check("disabled control: selectable, ignores ←→, hint says why",
                    st2["label"] == "Volume" and st2["value"] == st["value"] and "Locked from Demo" in hint, (st2, hint))
         await self.goto_sub("Text")
@@ -622,6 +646,9 @@ class Smoke:
         fan = await self.field("Fan")
         self.check("disabled_when: Custom enables Fan again", not fan["disabled"], fan)
         st = await self.goto("Adaptive")
+        if st["on"]:  # the saved settings may have it on: start from off
+            await self.press("A", wait=0.4)
+            st = await self.state()
         shown = await self.field("Multiplier")
         self.check("when: Multiplier shows while Adaptive is off", not st["on"] and shown["shown"], (st, shown))
         await self.press("A", wait=0.4)
@@ -648,9 +675,10 @@ class Smoke:
         st, body = await self.api("slow_task", feature="demo", seconds=1, fail=True)
         self.check("tasks: a failing task answers 503", st == 503, (st, body))
         st, body = await self.api("tasks")
-        recent = [(t["module"], t["state"]) for t in body.get("recent", [])] if st == 200 else body
+        listing = body.get("result") if st == 200 and isinstance(body, dict) else None
+        recent = [(t["module"], t["state"]) for t in (listing or {}).get("recent", [])]
         self.check("tasks: core.tasks() lists both as ended, the newest first",
-                   st == 200 and recent[:2] == [("demo", "failed"), ("demo", "done")] and not body["active"], recent)
+                   listing is not None and recent[:2] == [("demo", "failed"), ("demo", "done")] and not listing["active"], (st, body))
         # Every notification button: Steam's own sounds, with the toast of the answer.
         for label in ["Default (Steam decides)", *(f"Sound: {s}" for s in SOUNDS)]:
             await self.goto(label, limit=6)
@@ -709,16 +737,28 @@ class Smoke:
         print(" Tabs")
         st = await self.goto_sub("Controls")
         self.check("back to Controls", st["sub"] == "Controls", st)
-        st = await self.press("R1", wait=0.6)
-        self.check("R1 goes to the next tab", st["tab"] != "Demo" and st["open"], st)
-        st = await self.press("L1", wait=0.4)
-        self.check("L1 goes back to Demo", st["tab"] == "Demo", st)
         names = await self.js(f"[...{SR}.querySelectorAll('.tabbar.main .tab')].map(t => t.textContent)")
+        at = names.index("Demo") if "Demo" in names else -1
+        if 0 <= at < len(names) - 1:
+            st = await self.press("R1", wait=0.6)
+            self.check("R1 goes to the next tab", st["tab"] == names[at + 1] and st["open"], (st["tab"], names))
+            st = await self.press("L1", wait=0.4)
+            self.check("L1 goes back to Demo", st["tab"] == "Demo", st["tab"])
+        else:
+            # Settings left the row: the last module tab has nothing after it.
+            st = await self.press("R1", wait=0.6)
+            self.check("R1 on the last tab stays there (Settings isn't in the row)", st["tab"] == "Demo" and st["open"], (st["tab"], names))
+            if at > 0:
+                st = await self.press("L1", wait=0.6)
+                self.check("L1 goes to the previous tab", st["tab"] == names[at - 1], (st["tab"], names))
+                st = await self.press("R1", wait=0.6)
+                self.check("R1 comes back to Demo", st["tab"] == "Demo", st["tab"])
         self.check("Settings is not a tab of the row any more", "⚙ Settings" not in names and len(names) >= 1, names)
         before_cover = await self.state()
         st = await self.open_settings()
         sp = await self.tasks_state("settings")
         self.check("Settings: Start opens it over the Invasor panel", sp["open"] and sp["covered"], sp)
+        self.check("Settings: it takes the whole height of the window", abs(sp["height"] - (sp["windowHeight"] - 16)) <= 2, sp)
         demo = await self.js(f"""(() => {{ const c = [...{SR}.querySelectorAll('.ctl')].find(c => c.querySelector('.ctl-label')?.textContent?.startsWith('Demo ('));
           return c ? [c.querySelector('.ctl-label').textContent, c.dataset.hint ?? ''] : null; }})()""")
         self.check("Modules: Demo's label shows version and author (no email), its hint the description",
@@ -727,9 +767,16 @@ class Smoke:
         print(" Settings")
         await self.unfold("Manage Invasor")
         await self.goto("Check for updates")
-        await self.press("A", wait=4.0)  # asks GitHub: no release yet, or up to date, are both fine
-        updates = await self.js(f"""(() => [...{SR}.querySelectorAll('.section')].find(s => s.textContent.startsWith('Manage Invasor'))
-          ?.textContent ?? '')()""")
+        await self.press("A", wait=0.5)  # asks GitHub: no release yet, or up to date, are both fine
+        # Its answer redraws the section (the button under the ring is replaced): wait for it, whatever it takes
+        # (a fixed wait made the next steps race against it), then let the ring settle.
+        for _ in range(40):
+            updates = await self.js(f"""(() => [...{SR}.querySelectorAll('.section')].find(s => s.textContent.startsWith('Manage Invasor'))
+              ?.textContent ?? '')()""")
+            if "Couldn't check" in updates or "up to date" in updates:
+                break
+            await asyncio.sleep(0.5)
+        await asyncio.sleep(0.6)
         self.check("Manage Invasor: shows the installed version, and says it couldn't check or that it's up to date",
                    "Installed:" in updates and ("Couldn't check" in updates or "up to date" in updates), updates[:160])
         st = await self.unfold("Controller")
@@ -825,6 +872,7 @@ class Smoke:
         await self.press("SELECT", wait=0.4)
         t = await self.tasks_state()
         self.check("tasks: Select shows the Tasks panel over the Invasor one", t["open"] and t["covered"], t)
+        self.check("tasks: it takes the whole height of the window, whatever the Invasor panel's", abs(t["height"] - (t["windowHeight"] - 16)) <= 2, t)
         self.check("tasks: its hint bar says how to go back", "Select back" in t["hint"], t)
         await self.press("R1", "L1", "R2", "L2", wait=0.3)
         t = await self.tasks_state()

@@ -17,7 +17,7 @@ import { keepVisible } from "./scroll";
 // Y is each control's "special value" (e.g. back to default), Select shows/hides the Tasks
 // panel and Start the Settings panel. Controls get first say.
 // SELECT is 13 and START 14 in Steam's button enum (L3/R3 are 15/16 as confirmed below);
-// Select is confirmed in Game Mode like the others, Start still to be: if it does nothing, check 14.
+// Both are confirmed in Game Mode, like the others.
 const BTN = { A: 1, B: 2, X: 3, L1: 5, R1: 6, L2: 7, R2: 8, UP: 9, DOWN: 10, LEFT: 11, RIGHT: 12, SELECT: 13, START: 14 } as const;
 // Steam's button numbers (detail.button), confirmed in Game Mode logs. Unknown ones go out as "BTN_<n>".
 const NAMES: Record<number, string> = {
