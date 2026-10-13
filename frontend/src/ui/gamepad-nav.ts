@@ -14,20 +14,24 @@ import { keepVisible } from "./scroll";
 // Only the top layer is navigable; it has its own scroller, scrollbar and hint bar.
 
 // Button roles: A/B/L1/R1/L2/R2 and the D-pad navigate, X folds/unfolds sections,
-// Y is each control's "special value" (e.g. back to default). Controls get first say.
-const BTN = { A: 1, B: 2, X: 3, L1: 5, R1: 6, L2: 7, R2: 8, UP: 9, DOWN: 10, LEFT: 11, RIGHT: 12 } as const;
+// Y is each control's "special value" (e.g. back to default), Select shows/hides the Tasks
+// panel. Controls get first say.
+// SELECT is 13 in Steam's button enum (START is 14, L3/R3 are 15/16 as confirmed below); not
+// yet confirmed in Game Mode logs like the others: if Select does nothing, check this number.
+const BTN = { A: 1, B: 2, X: 3, L1: 5, R1: 6, L2: 7, R2: 8, UP: 9, DOWN: 10, LEFT: 11, RIGHT: 12, SELECT: 13 } as const;
 // Steam's button numbers (detail.button), confirmed in Game Mode logs. Unknown ones go out as "BTN_<n>".
 const NAMES: Record<number, string> = {
   1: "A", 2: "B", 3: "X", 4: "Y", 5: "L1", 6: "R1", 7: "L2", 8: "R2",
-  9: "UP", 10: "DOWN", 11: "LEFT", 12: "RIGHT", 15: "L3", 16: "R3",
+  9: "UP", 10: "DOWN", 11: "LEFT", 12: "RIGHT", 13: "SELECT", 15: "L3", 16: "R3",
 };
 const BASE_HINT = "A select · B close";
-// Steam button numbers the panel handles (A B X Y, L1 R1 L2 R2, D-pad, L3 R3).
-const NAV_CODES = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 15, 16]);
+// Steam button numbers the panel handles (A B X Y, L1 R1 L2 R2, D-pad, Select, L3 R3).
+const NAV_CODES = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16]);
 const EVENTS = ["vgp_onbuttondown", "vgp_onbuttonup", "keydown", "keyup"];
 const ARROWS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "Escape", "Backspace"]);
-// .close is skipped: B already closes, and A right after opening shouldn't.
-const FOCUSABLE = "button:not(.handle):not(.close), summary, input, select, textarea, [data-nav]";
+// .close is skipped: B already closes, and A right after opening shouldn't. .tasks-btn is the touch
+// way into the Tasks panel: the pad has Select for that.
+const FOCUSABLE = "button:not(.handle):not(.close):not(.tasks-btn), summary, input, select, textarea, [data-nav]";
 
 export interface GamepadNav {
   /** Put the focus ring on the first control of the top layer (and scroll it to the top). */
@@ -46,11 +50,13 @@ export interface NavOptions {
   onSubTab?(dir: -1 | 1): void;
   /** Panel layer: extra always-on hint, e.g. "L1/R1 module". (Windows use data-extra-hint.) */
   extraHint?(): string;
+  /** Panel or Tasks layer: Select was pressed (not while a big window or a dialog is on top, nor repeated). */
+  onSelect?(): void;
 }
 
 /** Sent to a big window (.iwin) for its own tabs: detail {level: 1 | 2, dir: -1 | 1}. */
 export const WINDOW_TAB_EVENT = "invasor:window-tab";
-/** Sent to a big window when B (with nothing else taking it) should close it. */
+/** Sent to a big window, or to the Tasks panel, when B (with nothing else taking it) should close it. */
 export const WINDOW_CLOSE_EVENT = "invasor:window-close";
 
 const MIN_THUMB = 24; // px
@@ -75,8 +81,10 @@ export function attachGamepadNav(
     const wins = stage.querySelectorAll<HTMLElement>(".iwin");
     return wins.length ? wins[wins.length - 1] : null;
   };
-  /** The layer that owns the pad: a big window or the panel. */
-  const layer = () => topWindow() ?? panel;
+  /** The open Tasks panel, if any: it covers the Invasor panel and owns the pad over it. */
+  const tasksPanel = () => stage.querySelector<HTMLElement>(".tasks-panel:not([hidden])");
+  /** The layer that owns the pad: a big window, else the Tasks panel, else the panel. */
+  const layer = () => topWindow() ?? tasksPanel() ?? panel;
   /** Where the ring can go: the layer's open dialog (ui.confirm), else the layer. */
   const scope = () => layer().querySelector<HTMLElement>(".modal") ?? layer();
   const scroller = () => layer().querySelector<HTMLElement>(".content");
@@ -268,6 +276,7 @@ export function attachGamepadNav(
   function tabs(level: 1 | 2, dir: -1 | 1) {
     const win = topWindow();
     if (win) return void win.dispatchEvent(new CustomEvent(WINDOW_TAB_EVENT, { detail: { level, dir } }));
+    if (tasksPanel()) return; // no tabs there: the panel's are covered, not to be switched blind
     return level === 1 ? opts.onTab?.(dir) : opts.onSubTab?.(dir);
   }
 
@@ -301,10 +310,14 @@ export function attachGamepadNav(
       case BTN.A:
         return activate();
       case BTN.B: {
-        // B closes the top layer: a big window first, the panel last.
-        const win = topWindow();
-        return win ? void win.dispatchEvent(new CustomEvent(WINDOW_CLOSE_EVENT)) : close();
+        // B closes the top layer: a big window first, then the Tasks panel, the panel last.
+        const top = topWindow() ?? tasksPanel();
+        return top ? void top.dispatchEvent(new CustomEvent(WINDOW_CLOSE_EVENT)) : close();
       }
+      case BTN.SELECT:
+        // Shows/hides Tasks, but never over a big window or a dialog, and holding it doesn't flicker it.
+        if (d.is_repeat || topWindow() || layer().querySelector(".modal")) return;
+        return opts.onSelect?.();
       case BTN.X:
         return toggleSection();
       case BTN.L1:

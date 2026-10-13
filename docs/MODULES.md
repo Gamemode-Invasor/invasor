@@ -368,7 +368,9 @@ export default defineModule({
   | Y | The control's special value |
 
   For a control of your own, set `data-nav` and a `data-hint`, and listen to `invasor:button` on it, calling
-  `preventDefault()` for what you handle.
+  `preventDefault()` for what you handle. `detail.button` is `"A"`, `"B"`, `"X"`, `"Y"`, `"UP"`, `"DOWN"`, `"LEFT"`, `"RIGHT"`,
+  `"L1"`, `"R1"`, `"L2"`, `"R2"`, `"SELECT"` (the core uses it to show the Tasks panel; take it first with `preventDefault()` if your control needs it)
+  or `"BTN_<n>"`.
 - **Imports.** Import only from `"invasor"`. Everything in `module-api.ts` is the contract; the rest of the
   core can change.
 

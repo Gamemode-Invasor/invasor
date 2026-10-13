@@ -32,7 +32,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from invasor import cef, context  # noqa: E402
 from invasor.config import CONFIG_DIR, CONFIG_FILE  # noqa: E402
 
-BTN = {"A": 1, "B": 2, "X": 3, "Y": 4, "L1": 5, "R1": 6, "L2": 7, "R2": 8, "UP": 9, "DOWN": 10, "LEFT": 11, "RIGHT": 12}
+BTN = {"A": 1, "B": 2, "X": 3, "Y": 4, "L1": 5, "R1": 6, "L2": 7, "R2": 8, "UP": 9, "DOWN": 10, "LEFT": 11, "RIGHT": 12, "SELECT": 13}
 DEMO_DIR = CONFIG_DIR / "modules" / "demo"
 DEMO_SETTINGS = DEMO_DIR / "settings.json"
 SOUNDS = ["trophy", "message", "toast", "chat", "mention", "friend", "online", "ingame", "none"]  # Demo › Backend buttons
@@ -292,6 +292,13 @@ class Smoke:
     async def window(self):
         """State of the open big window (None if there isn't one)."""
         return await self.js(WINDOW)
+
+    async def tasks_state(self):
+        """Is the Tasks panel open, is the Invasor panel covered by it, and which module tab is on."""
+        return await self.js(f"""(() => {{ const r = {SR}; const t = r.querySelector('.tasks-panel');
+          return {{open: !!t && !t.hidden, covered: r.querySelector('.panel').classList.contains('covered'),
+                   tab: r.querySelector('.tabbar.main .tab.on')?.textContent ?? null,
+                   hint: t?.querySelector('.hints')?.textContent ?? ''}}; }})()""")
 
     async def nudge(self):
         """Change the focused value with → (or ← at the end). Returns (before, after, undo button)."""
@@ -791,6 +798,36 @@ class Smoke:
         await asyncio.sleep(1.0)
         st = await self.state()
         self.check("a broken module UI leaves the panel working", st["open"] and st["tab"] is not None, st)
+
+        print(" Tasks panel")
+        before = await self.tasks_state()
+        self.check("tasks: closed to begin with", not before["open"] and not before["covered"], before)
+        await self.press("SELECT", wait=0.4)
+        t = await self.tasks_state()
+        self.check("tasks: Select shows the Tasks panel over the Invasor one", t["open"] and t["covered"], t)
+        self.check("tasks: its hint bar says how to go back", "Select back" in t["hint"], t)
+        await self.press("R1", "L1", "R2", "L2", wait=0.3)
+        t = await self.tasks_state()
+        self.check("tasks: L1/R1 and L2/R2 don't switch the tabs underneath", t["open"] and t["tab"] == before["tab"], (t, before))
+        await self.press("SELECT", wait=0.4)
+        t = await self.tasks_state()
+        self.check("tasks: Select again gives the pad back to Invasor", not t["open"] and not t["covered"] and t["tab"] == before["tab"], t)
+        await self.press("SELECT", "B", wait=0.4)
+        t = await self.tasks_state()
+        st = await self.state()
+        self.check("tasks: B closes Tasks first, the Invasor panel stays open", not t["open"] and st["open"], (t, st))
+        await self.js(f"{SR}.querySelector('.tasks-btn').click()")
+        t = await self.tasks_state()
+        self.check("tasks: the header's Tasks button opens it by touch", t["open"] and t["covered"], t)
+        await self.js(f"{SR}.querySelector('.tasks-panel .close').click()")
+        t = await self.tasks_state()
+        self.check("tasks: its ✕ closes it by touch", not t["open"] and not t["covered"], t)
+        await self.press("SELECT", wait=0.4)
+        await self.js(f"{SR}.querySelector('.close').click()")
+        t = await self.tasks_state()
+        self.check("tasks: closing Invasor closes Tasks too", not t["open"] and not t["covered"], t)
+        await self.js("window.__invasor?.setOpen(true)")
+        await asyncio.sleep(0.6)
 
         st = await self.press("B")
         self.check("B closes the panel", not st["open"], st)

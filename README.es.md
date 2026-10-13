@@ -88,6 +88,7 @@ juego en marcha, y el panel de ahí omite los módulos que no pintan nada durant
 | A / B | Aceptar / cerrar (o cancelar, según el control) |
 | X | Plegar / desplegar la sección (desde su título o desde dentro) |
 | Y | Valor especial del control, p. ej. volver al valor por defecto |
+| Select | Mostrar / ocultar el panel Tasks (también con el botón **Tasks** de la cabecera del panel). B también lo cierra |
 
 El panel ocupa el 40 % del ancho de la pantalla en la biblioteca (en Quick Access, la columna visible). Solo se desplaza el contenido; las
 sombras arriba y abajo indican que hay más por ver.

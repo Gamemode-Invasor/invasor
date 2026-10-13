@@ -88,6 +88,7 @@ game is running, and the panel there leaves out modules that have nothing to do 
 | A / B | Select / close (or cancel, depending on the control) |
 | X | Fold / unfold the section (from its title or from inside it) |
 | Y | The control's special value, e.g. back to its default |
+| Select | Show / hide the Tasks panel (also the **Tasks** button in the panel's header). B closes it too |
 
 The panel takes 40% of the screen width in the Library (in Quick Access, the visible column). Only its content scrolls; the shadows at the
 top and bottom show there's more to see.
@@ -158,7 +159,7 @@ Modules can also show a notification the way Steam shows an achievement (`ctx.no
 | Window URLs: `useragent=Valve%20Steam%20Gamepad`, title `QuickAccess_…` | which windows get the panel | adjustable without code via `targets` in `config.json` |
 | `SharedJSContext` URL `/routes/library/app/<id>` | the selected game (and modules' `game_selected` event) | the selected game isn't shown and the event never runs; the running game still is (it comes from `/proc`) |
 | Library tile under the cursor: `document.activeElement` (`role="link"`), its artwork URL `/assets/<appid>/` or `/customimages/<appid>`, its `aria-labelledby` name (matched against `shortcuts.vdf`) | the highlighted game | `highlighted` is null; running and selected are unaffected |
-| `vgp_onbuttondown` events and their button numbers | gamepad navigation in the panel | the panel opens (L3+R3) but isn't navigable with the pad; touch and F10 still work |
+| `vgp_onbuttondown` events and their button numbers (Select is 13) | gamepad navigation in the panel, and Select for the Tasks panel | the panel opens (L3+R3) but isn't navigable with the pad (Tasks opens with its header button); touch and F10 still work |
 | `window.screenX` / `innerWidth` of Steam's windows | fitting the panel in Quick Access | it falls back to the learned width (348px) |
 | CSS class `.gpfocus` | returning focus after physical-keyboard typing | focus isn't returned; nothing else changes |
 | `SteamClient` (optional), in this window or in `SharedJSContext` | `ctx.steam.safeCall` / `ctx.steam_call` for modules (e.g. Artwork's live refresh), and `User.StartRestart` for ⚙ Settings › Manage Invasor › Restart Steam | calls fail cleanly (503); modules fall back (Artwork: the new art shows after restarting Steam) |

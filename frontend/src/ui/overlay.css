@@ -6,10 +6,12 @@
   --accent-fg: #fff;
 }
 .handle,
-.panel {
+.panel,
+.tasks-panel {
   pointer-events: auto;
 }
-.panel {
+.panel,
+.tasks-panel {
   position: fixed;
   top: 8px;
   right: 8px;
@@ -29,11 +31,35 @@
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
   font: 15px/1.4 system-ui, sans-serif;
 }
-.panel[hidden] {
+.panel[hidden],
+.tasks-panel[hidden] {
   display: none;
 }
-.panel > * {
+.panel > *,
+.tasks-panel > * {
   flex: none;
+}
+.tasks-panel > .content-wrap {
+  flex: 1 1 auto;
+}
+/* The Tasks panel is on top of it, in the same place: the pad and touch only reach the one in front. */
+.panel.covered {
+  visibility: hidden;
+}
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tasks-btn {
+  font-size: 13px;
+  padding: 4px 10px;
+}
+.tasks-empty {
+  margin: 0;
+  padding: 8px 0;
+  color: #8b94a7;
+  font-size: 14px;
 }
 header {
   display: flex;
@@ -104,7 +130,8 @@ button:focus-visible {
   left: 0;
   border-radius: 0 8px 8px 0;
 }
-:host(.side-left) .panel {
+:host(.side-left) .panel,
+:host(.side-left) .tasks-panel {
   right: auto;
   left: 8px;
 }

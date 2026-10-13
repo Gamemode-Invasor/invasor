@@ -12,6 +12,7 @@ import { panelOnLeft, type Side } from "./side";
 import { renderSettings, type ModuleInfo } from "./settings";
 import { tabRowHTML } from "./tabbar";
 import { createTabHost, type TabSpec } from "./tabhost";
+import { createTasksPanel } from "./tasks-panel";
 import { NO_ROOM, esc, safe } from "./util";
 import { openBigWindow } from "./window";
 
@@ -76,7 +77,10 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     <div class="panel" hidden>
       <header>
         <span>Invasor <small>${esc(version)}</small></span>
-        <button class="close" aria-label="Close">✕</button>
+        <span class="head-actions">
+          <button class="tasks-btn" aria-label="Open the tasks panel">Tasks</button>
+          <button class="close" aria-label="Close">✕</button>
+        </span>
       </header>
       <div class="game"></div>
       ${tabRowHTML("main", "L1", "R1")}
@@ -145,8 +149,15 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   const nav = attachGamepadNav(stage, panel, () => toggle(false), {
     onTab: (dir) => tabs.step(dir),
     onSubTab: (dir) => tabs.stepSub(dir),
-    extraHint: () => (tabs.hasSub() ? "L1/R1 module · L2/R2 section" : tabs.count() > 1 ? "L1/R1 module" : ""),
+    extraHint: () => {
+      const tabHint = tabs.hasSub() ? "L1/R1 module · L2/R2 section" : tabs.count() > 1 ? "L1/R1 module" : "";
+      return tabHint ? `${tabHint} · Select tasks` : "Select tasks";
+    },
+    onSelect: () => tasksPanel.toggle(),
   });
+  // Covers the panel on Select (or its "Tasks" button) and gives the pad back on Select or B.
+  const tasksPanel = createTasksPanel({ stage, panel, nav });
+  $(".tasks-btn").addEventListener("click", () => tasksPanel.toggle());
 
   const tabs = createTabHost({
     content: $<HTMLElement>(".content"),
@@ -533,6 +544,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     window.clearInterval(pollTimer);
     window.clearInterval(fitTimer);
     if (!open) {
+      tasksPanel.close(false); // the Tasks panel goes with the panel
       for (const w of [...windows]) w.close(); // big windows go with the panel
       panel.dispatchEvent(new CustomEvent("invasor:dismiss")); // e.g. cancel an open ui.confirm
       tabs.hidden();
@@ -586,6 +598,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       destroyed = true;
       panel.dispatchEvent(new CustomEvent("invasor:dismiss")); // a pending ui.confirm/choose resolves
       for (const w of [...windows]) w.close();
+      tasksPanel.destroy();
       if (qam && lastShown) api.call("core", "set_qam_shown", { shown: false }).catch(() => {});
       window.clearInterval(availTimer);
       window.removeEventListener("focus", checkGame);
