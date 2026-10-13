@@ -564,6 +564,10 @@ class ModuleManager:
         worker.join(UNINSTALL_TIMEOUT)
         if worker.is_alive():
             log.error("module %s: uninstall() still running after %ss, uninstalled anyway", mid, UNINSTALL_TIMEOUT)
+        # Its context is retired like an unloaded module's: a thread it left running can't start tasks or write
+        # data any more, and the tasks it left open end here (this context isn't in _contexts: _forget_context never sees it).
+        context._dead = True
+        self.tasks.close_owner(mid, "module uninstalled")
 
     def rescan(self):
         """Read the module folders again (⚙ Settings › Rescan modules): every module is

@@ -56,11 +56,13 @@ export function marker(summary: TasksSummary): "failed" | "running" | "" {
   return summary.unseenFailed > 0 ? "failed" : summary.active > 0 ? "running" : "";
 }
 
-/** "just now", "30 s ago", "3 min ago", "2 h ago", "4 d ago" (`then` and `now` in seconds). */
+/**
+ * "just now", "3 min ago", "2 h ago", "4 d ago" (`then` and `now` in seconds). No seconds: the panel
+ * refreshes it every 30 s, which couldn't keep them right.
+ */
 export function relativeTime(then: number, now: number): string {
   const s = Math.floor(now - then);
-  if (!(s >= 10)) return "just now"; // also a clock a little behind, or a number that isn't one
-  if (s < 60) return `${s} s ago`;
+  if (!(s >= 60)) return "just now"; // also a clock a little behind, or a number that isn't one
   if (s < 3600) return `${Math.floor(s / 60)} min ago`;
   if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
   return `${Math.floor(s / 86400)} d ago`;
@@ -71,6 +73,8 @@ export interface RenderOptions {
   now: number;
   /** The name to show for a task's owner (a module id, or "core"). */
   nameOf(owner: string): string;
+  /** The user asked to forget the tasks that ended (the "Clear recent" button). */
+  onClear?(): void;
 }
 
 interface Row {
@@ -92,6 +96,9 @@ interface Group {
 interface View {
   empty: HTMLElement;
   groups: { active: Group; recent: Group };
+  /** Forgets the ones that ended; shown only when there are some. */
+  clear: HTMLButtonElement;
+  onClear: (() => void) | undefined;
   rows: Map<number, Row>;
 }
 
@@ -109,8 +116,14 @@ function build(content: HTMLElement): View {
   const empty = el("p", "tasks-empty", "No tasks yet");
   const group = (title: string): Group => ({ title: el("h3", "tasks-group", title), list: el("div", "tasks-list") });
   const groups = { active: group("Running"), recent: group("Recent") };
-  content.append(empty, groups.active.title, groups.active.list, groups.recent.title, groups.recent.list);
-  return { empty, groups, rows: new Map() };
+  const clear = document.createElement("button");
+  clear.className = "tasks-clear";
+  clear.textContent = "Clear recent";
+  clear.hidden = true;
+  const view: View = { empty, groups, clear, onClear: undefined, rows: new Map() };
+  clear.addEventListener("click", () => view.onClear?.());
+  content.append(empty, groups.active.title, groups.active.list, groups.recent.title, groups.recent.list, clear);
+  return view;
 }
 
 function newRow(): Row {
@@ -187,4 +200,6 @@ export function renderTasks(content: HTMLElement, snapshot: TasksSnapshot, optio
     }
   }
   view.empty.hidden = live.size > 0;
+  view.onClear = options.onClear;
+  view.clear.hidden = !snapshot.recent.length;
 }

@@ -397,6 +397,54 @@ class Modules(unittest.TestCase):
             self.manager.remove("rotten", purge=True)
         self.assertNotIn("rotten", self.manager.manifests)
 
+    def test_a_task_uninstall_leaves_open_ends_with_the_module(self):
+        self.user_module("cleaner", (
+            "def uninstall(c, purge):\n"
+            "    t = c.task('Cleaning up')\n"
+            "    t.update(0.5, 'half')\n"  # never ended
+        ))
+        self.manager.add("cleaner")
+        self.manager.remove("cleaner", purge=True)
+        snap = self.manager.tasks.snapshot()
+        self.assertEqual(snap["active"], [])
+        self.assertEqual((snap["recent"][0]["label"], snap["recent"][0]["state"], snap["recent"][0]["text"]),
+                         ("Cleaning up", "failed", "module uninstalled"))
+
+    def test_a_task_that_uninstall_ends_itself_stays_done(self):
+        self.user_module("tidy", (
+            "def uninstall(c, purge):\n"
+            "    with c.task('Tidying') as t:\n"
+            "        t.update(0.5)\n"
+        ))
+        self.manager.add("tidy")
+        self.manager.remove("tidy", purge=True)
+        self.assertEqual([t["state"] for t in self.manager.tasks.snapshot()["recent"]], ["done"])
+
+    def test_the_context_of_uninstall_is_retired_when_it_ends(self):
+        import time
+        patch(self, "invasor.modules.UNINSTALL_TIMEOUT", 0.2)
+        d = self.user_module("slow", (
+            "import pathlib, time\n"
+            "here = pathlib.Path(__file__).parent\n"
+            "def uninstall(c, purge):\n"
+            "    time.sleep(0.6)\n"  # still running when the core gives up on it
+            "    try:\n"
+            "        c.task('too late')\n"
+            "        out = 'allowed'\n"
+            "    except c.Unavailable:\n"
+            "        out = 'refused'\n"
+            "    (here.parent / 'result').write_text(out)\n"
+        ))
+        result = d.parent / "result"
+        self.manager.add("slow")
+        with self.assertLogs("invasor.modules", "ERROR"):
+            self.manager.remove("slow", purge=True)
+        deadline = time.monotonic() + 3
+        while not result.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertEqual(result.read_text(), "refused")  # the thread it left running can't start tasks any more
+        self.assertEqual(self.manager.tasks.snapshot()["active"], [])
+
     def test_uninstalling_invasor_runs_every_modules_uninstall(self):
         import logging
         from invasor.__main__ import uninstall_modules

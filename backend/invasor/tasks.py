@@ -145,6 +145,15 @@ class TaskRegistry:
                 "recent": [t._view() for t in self._recent],
             }
 
+    def clear_recent(self):
+        """Forget the tasks that ended (never the ones still running). How many were forgotten."""
+        with self._lock:
+            count = len(self._recent)
+            self._recent.clear()
+        if count:
+            self._changed()
+        return count
+
     def close_owner(self, owner, text):
         """Fail what `owner` left running (its module was unloaded)."""
         with self._lock:

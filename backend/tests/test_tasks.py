@@ -154,6 +154,26 @@ class Registry(unittest.TestCase):
         self.registry.start("m", "x").update(0.5)
         self.assertEqual(len(seen), 2)
 
+    def test_clearing_forgets_what_ended_and_keeps_what_runs(self):
+        running = self.registry.start("m", "still going")
+        self.registry.start("m", "a").done()
+        self.registry.start("m", "b").fail("no")
+        self.assertEqual(self.registry.clear_recent(), 2)
+        snap = self.registry.snapshot()
+        self.assertEqual(snap["recent"], [])
+        self.assertEqual([t["label"] for t in snap["active"]], ["still going"])
+        running.done()
+        self.assertEqual(len(self.registry.snapshot()["recent"]), 1)  # it still ends normally
+
+    def test_clearing_tells_the_watchers_once_and_only_if_it_did_something(self):
+        heard = []
+        self.registry.start("m", "a").done()
+        self.registry.watch(lambda: heard.append(1))
+        self.registry.clear_recent()
+        self.assertEqual(len(heard), 1)
+        self.assertEqual(self.registry.clear_recent(), 0)  # nothing left
+        self.assertEqual(len(heard), 1)
+
     def test_many_threads_at_once(self):
         registry = TaskRegistry(max_active=100, max_recent=1000)
 

@@ -105,6 +105,18 @@ class Prefs(unittest.TestCase):
         self.assertEqual((done["state"], done["text"], done["fraction"]), ("failed", "no update", 0.5))
         self.assertEqual(api["tasks"]()["active"], [])
 
+    def test_tasks_clear_forgets_what_ended_and_answers_with_the_list(self):
+        manager = ModuleManager(self.cfg, GameContext())
+        api = core.make_methods(manager, GameContext(), self.watcher, self.cfg)
+        running = manager.tasks.start("core", "Still going")
+        manager.tasks.start("rakun", "Old").done()
+        self.assertEqual(len(api["tasks"]()["recent"]), 1)
+        answer = api["tasks_clear"]()
+        self.assertEqual(answer["recent"], [])
+        self.assertEqual([t["label"] for t in answer["active"]], ["Still going"])
+        self.assertEqual(api["tasks"](), answer)
+        running.done()
+
     def test_panel_side(self):
         self.assertEqual(self.api["set_pref"]("panel_side", "left")["panel_side"], "left")
         self.assertEqual(json.loads(self.config_file.read_text())["panel_side"], "left")

@@ -5,13 +5,13 @@ import { createCoverPanel, toastHostOf, topLayerOf } from "../src/ui/cover-panel
 import { WINDOW_CLOSE_EVENT, type GamepadNav } from "../src/ui/gamepad-nav";
 import { settle } from "./dom";
 
-function setup(onOpen?: (content: HTMLElement) => void | Promise<void>) {
+function setup(onOpen?: (content: HTMLElement) => void | Promise<void>, onClose?: () => void) {
   const calls: string[] = [];
   const stage = document.body.appendChild(document.createElement("div"));
   const panel = stage.appendChild(document.createElement("div"));
   panel.className = "panel";
   const nav = { reset: () => calls.push("reset"), ensureFocus: () => calls.push("ensure") } as unknown as GamepadNav;
-  const cover = createCoverPanel({ stage, panel, nav, kind: "demo", title: "Demo", backHint: "Select back", onOpen });
+  const cover = createCoverPanel({ stage, panel, nav, kind: "demo", title: "Demo", backHint: "Select back", onOpen, onClose });
   const el = stage.querySelector<HTMLElement>('.cover-panel[data-kind="demo"]')!;
   return { calls, stage, panel, cover, el };
 }
@@ -166,4 +166,31 @@ test("a big window is above a panel that covers; the last window is the top one"
   assert.equal(toastHostOf(stage, panelToast), second.toast);
   second.box.parentElement!.remove();
   assert.equal(topLayerOf(stage, panel), first.box);
+});
+
+test("onClose is called when it closes, however it closes, and never when it was already closed", () => {
+  let closed = 0;
+  const { cover, el } = setup(undefined, () => void closed++);
+  cover.close();
+  assert.equal(closed, 0); // not open
+  cover.open();
+  cover.close();
+  assert.equal(closed, 1);
+  cover.open();
+  cover.close(false); // with the Invasor panel closing
+  assert.equal(closed, 2);
+  cover.open();
+  el.dispatchEvent(new CustomEvent(WINDOW_CLOSE_EVENT)); // B
+  assert.equal(closed, 3);
+});
+
+test("destroying it while open calls onClose; destroying it closed does not", () => {
+  let closed = 0;
+  const first = setup(undefined, () => void closed++);
+  first.cover.destroy();
+  assert.equal(closed, 0);
+  const second = setup(undefined, () => void closed++);
+  second.cover.open();
+  second.cover.destroy();
+  assert.equal(closed, 1);
 });

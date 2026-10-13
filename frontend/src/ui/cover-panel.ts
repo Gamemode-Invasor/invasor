@@ -34,9 +34,11 @@ export interface CoverDeps {
    * pad's ring is put on the first control once that is done.
    */
   onOpen?(content: HTMLElement): void | Promise<void>;
+  /** Closed (by B, its button, or because the Invasor panel closed) or destroyed while open: stop whatever onOpen started. */
+  onClose?(): void;
 }
 
-export function createCoverPanel({ stage, panel, nav, kind, title, backHint, onOpen }: CoverDeps): CoverPanel {
+export function createCoverPanel({ stage, panel, nav, kind, title, backHint, onOpen, onClose }: CoverDeps): CoverPanel {
   const el = document.createElement("div");
   el.className = "cover-panel";
   el.dataset.kind = kind;
@@ -86,6 +88,7 @@ export function createCoverPanel({ stage, panel, nav, kind, title, backHint, onO
     opening++;
     el.hidden = true;
     panel.classList.remove("covered");
+    onClose?.();
     if (!restoreFocus) return;
     if (opener?.isConnected) stage.dispatchEvent(new CustomEvent("invasor:refocus", { detail: opener }));
     nav.ensureFocus();
@@ -101,6 +104,7 @@ export function createCoverPanel({ stage, panel, nav, kind, title, backHint, onO
     isOpen,
     content,
     destroy() {
+      if (isOpen()) onClose?.();
       panel.classList.remove("covered");
       el.remove();
     },

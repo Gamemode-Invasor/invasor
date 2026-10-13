@@ -1,8 +1,14 @@
 import "./dom";
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { afterEach, mock, test } from "node:test";
 import { WINDOW_CLOSE_EVENT, type GamepadNav } from "../src/ui/gamepad-nav";
-import { createTasksPanel } from "../src/ui/tasks-panel";
+import { REFRESH_MS, createTasksPanel } from "../src/ui/tasks-panel";
+
+// An open panel keeps its 30 s timer: every test ends by destroying what it made, or the run never ends.
+const made: { destroy(): void }[] = [];
+afterEach(() => {
+  for (const p of made.splice(0)) p.destroy();
+});
 
 function setup(onOpen?: () => void) {
   const calls: string[] = [];
@@ -11,6 +17,7 @@ function setup(onOpen?: () => void) {
   panel.className = "panel";
   const nav = { reset: () => calls.push("reset"), ensureFocus: () => calls.push("ensure") } as unknown as GamepadNav;
   const tasks = createTasksPanel({ stage, panel, nav, nameOf: (owner) => owner.toUpperCase(), onOpen });
+  made.push(tasks);
   const el = stage.querySelector<HTMLElement>(".cover-panel")!;
   return { calls, stage, panel, tasks, el };
 }
@@ -127,4 +134,51 @@ test("destroy removes it and uncovers the panel", () => {
   tasks.destroy();
   assert.equal(stage.querySelector(".cover-panel"), null);
   assert.equal(panel.classList.contains("covered"), false);
+});
+
+test("while it's open the ages are redrawn every 30 s, with nothing else changing", () => {
+  mock.timers.enable({ apis: ["setInterval", "Date"], now: 1_000_000 });
+  try {
+    const { tasks } = setup();
+    tasks.update({ active: [], recent: [{ id: 1, module: "rakun", label: "Done", state: "done", fraction: 1, text: "", started: 990, updated: 1000, finished: 1000 }] });
+    tasks.open();
+    assert.equal(tasks.content.querySelector(".task-when")!.textContent, "just now");
+    mock.timers.tick(REFRESH_MS * 3); // 90 s later
+    assert.equal(tasks.content.querySelector(".task-when")!.textContent, "1 min ago");
+    mock.timers.tick(REFRESH_MS * 10);
+    assert.equal(tasks.content.querySelector(".task-when")!.textContent, "6 min ago");
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("the timer exists only while the panel is open", () => {
+  mock.timers.enable({ apis: ["setInterval", "Date"], now: 1_000_000 });
+  try {
+    const { tasks } = setup();
+    tasks.update({ active: [], recent: [{ id: 1, module: "m", label: "Done", state: "done", fraction: 1, text: "", started: 990, updated: 1000, finished: 1000 }] });
+    tasks.open();
+    tasks.close();
+    mock.timers.tick(REFRESH_MS * 4);
+    assert.equal(tasks.content.querySelector(".task-when")!.textContent, "just now"); // not redrawn while closed
+    tasks.open(); // opening draws at once, with the time it is now
+    assert.equal(tasks.content.querySelector(".task-when")!.textContent, "2 min ago");
+    tasks.destroy();
+    mock.timers.tick(REFRESH_MS * 4); // nothing left to fire (would throw on a removed panel's content otherwise)
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("the Clear recent button reaches whoever made the panel", () => {
+  let cleared = 0;
+  const stage = document.body.appendChild(document.createElement("div"));
+  const panel = stage.appendChild(document.createElement("div"));
+  const nav = { reset() {}, ensureFocus() {} } as unknown as GamepadNav;
+  const tasks = createTasksPanel({ stage, panel, nav, nameOf: (o) => o, onClear: () => void cleared++ });
+  made.push(tasks);
+  tasks.update({ active: [], recent: [{ id: 1, module: "m", label: "Done", state: "done", fraction: 1, text: "", started: 1, updated: 1, finished: 1 }] });
+  tasks.open();
+  tasks.content.querySelector<HTMLButtonElement>(".tasks-clear")!.click();
+  assert.equal(cleared, 1);
 });

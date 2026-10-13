@@ -171,6 +171,14 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       applyTasks(latestTasks); // what's on screen now counts as seen
       void refreshTasks(); // and make sure it's the latest
     },
+    onClear: () => {
+      // The backend forgets the ones that ended and says how the list is now; the other window hears it from the push.
+      pushes++;
+      api.call("core", "tasks_clear").then((v) => {
+        const snapshot = parseSnapshot(v);
+        if (snapshot && !destroyed) applyTasks(snapshot);
+      }).catch(() => toast("Couldn't clear the list", "error"));
+    },
   });
   const tasksBtn = $(".tasks-btn");
   tasksBtn.addEventListener("click", () => tasksPanel.toggle());

@@ -16,8 +16,8 @@ const shown = (e: Element | null) => !!e && !(e as HTMLElement).hidden;
 
 test("relativeTime", () => {
   assert.equal(relativeTime(100, 100), "just now");
-  assert.equal(relativeTime(100, 109.9), "just now");
-  assert.equal(relativeTime(100, 130), "30 s ago");
+  assert.equal(relativeTime(100, 159.9), "just now"); // no seconds: the panel redraws every 30 s
+  assert.equal(relativeTime(100, 160), "1 min ago");
   assert.equal(relativeTime(100, 100 + 180), "3 min ago");
   assert.equal(relativeTime(100, 100 + 7300), "2 h ago");
   assert.equal(relativeTime(100, 100 + 4 * 86400), "4 d ago");
@@ -153,4 +153,33 @@ test("a fraction outside 0..1 is cut to the bar", () => {
   assert.equal(rows(c)[0].querySelector<HTMLElement>(".task-fill")!.style.width, "100%");
   draw(c, snap([task({ fraction: -2 })]));
   assert.equal(rows(c)[0].querySelector<HTMLElement>(".task-fill")!.style.width, "0%");
+});
+
+test("Clear recent: hidden with nothing to clear, shown with something, and a click asks for it", () => {
+  const c = content();
+  let cleared = 0;
+  const withClear = (snapshot: TasksSnapshot) => renderTasks(c, snapshot, { ...options, onClear: () => void cleared++ });
+  withClear(snap([task()]));
+  const button = c.querySelector<HTMLButtonElement>(".tasks-clear")!;
+  assert.equal(button.hidden, true); // something is running but nothing ended
+  withClear(snap([], [task({ id: 2, state: "done", fraction: 1, finished: 150 })]));
+  assert.equal(button.hidden, false);
+  assert.equal(button.textContent, "Clear recent");
+  button.click();
+  assert.equal(cleared, 1);
+  withClear(snap());
+  assert.equal(button.hidden, true);
+  assert.equal(c.querySelector(".tasks-clear"), button); // always the same button
+});
+
+test("Clear recent is after the last row of Recent, so the pad reaches it at the end of the list", () => {
+  const c = content();
+  draw(c, snap([], [task({ id: 2, state: "done", finished: 150 })]));
+  assert.equal(c.lastElementChild, c.querySelector(".tasks-clear"));
+});
+
+test("a click with no handler does nothing", () => {
+  const c = content();
+  draw(c, snap([], [task({ id: 2, state: "done", finished: 150 })]));
+  c.querySelector<HTMLButtonElement>(".tasks-clear")!.click();
 });

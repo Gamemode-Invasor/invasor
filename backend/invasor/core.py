@@ -330,6 +330,11 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
         updated, finished}. Cheap: the panel may ask for it often."""
         return manager.tasks.snapshot()
 
+    def tasks_clear():
+        """Forget the tasks that ended (the ones still running stay). Answers what core.tasks() would."""
+        manager.tasks.clear_recent()
+        return manager.tasks.snapshot()
+
     def pads():
         return [{"device": dev, "name": name, "kind": kind} for dev, name, kind in gamepad.pads()]
 
@@ -341,6 +346,7 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
         "set_qam_shown": set_qam_shown,
         "pads": pads,
         "tasks": tasks,
+        "tasks_clear": tasks_clear,
         "update_status": update_status,
         "update_check": update_check,
         "update_apply": update_apply,

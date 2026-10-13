@@ -286,7 +286,7 @@ Steam still draws its usual toast; only the sound changes.
 - **After unload.** Once a module is unloaded (disabled, uninstalled, replaced, or its `setup` failed or timed
   out) its `ctx` is retired: `ctx.settings.set`, `ctx.data` and `ctx.game_data` stores raise `Unavailable`
   instead of saving, `ctx.task()` raises `Unavailable` (and the tasks it left open end as failed), and `ctx.settings.on_change` ignores new callbacks (logged). A thread left running by an old
-  instance can't bring back files that were purged, or callbacks the core already forgot.
+  instance can't bring back files that were purged, or callbacks the core already forgot. The `ctx` of `uninstall()` is retired the same way once it ends (or runs out of its 10 seconds), and a task it left open ends as failed.
 - **Tools.** Only the Python standard library is available. Don't `pip install` anything: the service must
   keep working after system updates.
 

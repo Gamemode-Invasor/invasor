@@ -17,7 +17,10 @@ const A = 1;
 const START = 14;
 
 let nav: GamepadNav | null = null;
+let tasksPanel: TasksPanel | null = null;
 afterEach(() => {
+  tasksPanel?.destroy(); // an open Tasks panel has a timer running
+  tasksPanel = null;
   nav?.destroy();
   nav = null;
   document.body.innerHTML = "";
@@ -36,7 +39,7 @@ function setup() {
     onSelect: () => (log.push("select"), tasks.toggle()),
     onStart: () => log.push("start"),
   });
-  tasks = createTasksPanel({ stage, panel, nav, nameOf: (owner) => owner });
+  tasks = tasksPanel = createTasksPanel({ stage, panel, nav, nameOf: (owner) => owner });
   const press = (button: number, extra: Record<string, unknown> = {}) => {
     const e = new CustomEvent("vgp_onbuttondown", { detail: { button, ...extra }, bubbles: true, cancelable: true });
     window.dispatchEvent(e);

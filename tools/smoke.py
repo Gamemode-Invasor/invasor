@@ -934,7 +934,19 @@ class Smoke:
         await self.press("SELECT", wait=0.5)
         t = await self.tasks_state()
         self.check("tasks: looking at it clears the dot", t["handle"] == "" and t["button"] == "", t)
-        await self.press("SELECT", wait=0.4)
+        # Clear recent: the ones that ended are in the list (Demo's two tasks); A on the button forgets them.
+        await self.press("SELECT", wait=0.5)
+        t = await self.tasks_state()
+        self.check("tasks: the finished ones are listed under Recent", len(t["rows"]) >= 2 and all(r["state"] != "running" for r in t["rows"]), t)
+        st = await self.state()
+        self.check("tasks: the ring is on Clear recent (the only control of the panel)", st["label"] == "Clear recent", st)
+        await self.press("A", wait=1.0)
+        t = await self.tasks_state()
+        st, body = await self.api("tasks")
+        listing = body.get("result") if st == 200 and isinstance(body, dict) else None
+        self.check("tasks: Clear recent empties the list, in the panel and in the backend",
+                   not t["rows"] and listing is not None and not listing["recent"] and not listing["active"], (t, listing))
+        self.check("tasks: and the Tasks panel is still the one in front", t["open"] and t["covered"], t)
         await self.js(f"{SR}.querySelector('.close').click()")
         t = await self.tasks_state()
         self.check("tasks: closing Invasor closes Tasks too", not t["open"] and not t["covered"], t)
