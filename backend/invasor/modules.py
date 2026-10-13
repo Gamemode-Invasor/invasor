@@ -374,7 +374,7 @@ class ModuleManager:
             if context._dead:  # unloaded while this was waiting to start
                 return
             try:
-                cb(payload)
+                cb(dict(payload))  # its own copy: one module can't change what the others get
             except MODULE_ERRORS:
                 log.exception("module %s: %s callback failed", mid, name)
 
@@ -385,7 +385,7 @@ class ModuleManager:
                 return
             events = context.events
             events._threads = [t for t in events._threads if t.is_alive()] + [worker]
-        worker.start()
+            worker.start()  # under the lock: _forget_context must never join a thread that hasn't started
 
     def _clear_listeners(self, mid):
         if mid in self.settings:

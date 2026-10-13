@@ -39,9 +39,15 @@ def _fraction(value):
     """None (unknown progress) or a number from 0 to 1 (anything outside is cut to it)."""
     if value is None:
         return None
-    if isinstance(value, bool) or not isinstance(value, Real) or not math.isfinite(value):
+    if isinstance(value, bool) or not isinstance(value, Real):
         raise InvalidArgument("fraction must be None or a number from 0 to 1")
-    return min(1.0, max(0.0, float(value)))
+    try:
+        number = float(value)
+    except OverflowError:  # an int too big for a float: past the edge it is cut to
+        return 1.0 if value > 0 else 0.0
+    if not math.isfinite(number):
+        raise InvalidArgument("fraction must be None or a number from 0 to 1")
+    return min(1.0, max(0.0, number))
 
 
 class Task:
