@@ -342,10 +342,10 @@ class Market:
         if not hmac.compare_digest(h.hexdigest(), words[0].lower()):
             raise InvalidArgument("the module's checksum doesn't match: not installing it")
 
-    def download(self, repo):
+    def download(self, repo, task=None):
         """Download and verify the catalog's zip of `repo`. Returns (path relative to home, the work
         folder to delete afterwards, the module id). The repository must be in the catalog: nothing the client sends
-        becomes a URL."""
+        becomes a URL. `task` (tasks.Task), if given, shows how far it got."""
         entry = self._catalog()[2].get(repo) if isinstance(repo, str) else None
         if entry is None:
             raise InvalidArgument(f"{repo!r} isn't in the market")
@@ -362,10 +362,14 @@ class Market:
         try:
             zip_path = work / f"{entry['id']}-{entry['version']}.zip"
             try:
-                self._download(entry["zip"], zip_path, install.MAX_ZIP_BYTES)
+                # The progress goes only where there is a task to show it (and fakes in tests don't take it).
+                progress = {"progress": task.progress(0, 0.8, f"Downloading {entry['name']}")} if task else {}
+                self._download(entry["zip"], zip_path, install.MAX_ZIP_BYTES, **progress)
                 self._download(entry["sha256"], work / "sha256", 1024)
             except Exception as e:
                 raise Unavailable(f"couldn't download {entry['name']}: {e}") from None
+            if task:
+                task.update(0.8, f"Verifying {entry['name']}")
             self._verify(zip_path, (work / "sha256").read_text(errors="replace"))
             try:
                 relative = zip_path.resolve().relative_to(install.HOME.resolve())

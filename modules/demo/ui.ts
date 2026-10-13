@@ -52,10 +52,12 @@ async function showStats(ctx: ModuleCtx) {
   try {
     const s = await ctx.call<{
       uptime: number; files: number; visits: number; upgraded_from: string | null; steam_starts: number; last_steam_start: string | null;
+      last_game_event: string | null;
     }>("stats");
     const upgraded = s.upgraded_from ? ` · Upgraded from ${s.upgraded_from}` : "";
     const starts = ` · Steam starts seen: ${s.steam_starts}${s.last_steam_start ? ` (last at ${s.last_steam_start})` : ""}`;
-    if (statsEl) statsEl.textContent = `Backend thread: up ${s.uptime} s · Python files: ${s.files} · Backend tab visits: ${s.visits}${starts}${upgraded}`;
+    const game = s.last_game_event ? ` · Last game event: ${s.last_game_event}` : "";
+    if (statsEl) statsEl.textContent = `Backend thread: up ${s.uptime} s · Python files: ${s.files} · Backend tab visits: ${s.visits}${starts}${game}${upgraded}`;
   } catch (e) {
     if (statsEl) statsEl.textContent = `Backend unavailable: ${(e as Error).message}`;
   }
@@ -358,6 +360,16 @@ export default defineModule({
                 await ctx.call("notify", { title: "Demo", body: `Sound: ${sound}`, sound });
                 return "Notification sent";
               })),
+          ]),
+          ui.section("Background tasks (core.tasks(), also in the log)", [
+            callButton(ctx, "Run a 5 s task", async () => {
+              await ctx.call("slow_task", { seconds: 5 });
+              return "Task done";
+            }),
+            callButton(ctx, "Run a task that fails", async () => {
+              await ctx.call("slow_task", { seconds: 2, fail: true });
+              return "Task done";
+            }),
           ]),
           ui.section("Calls", [
             callButton(ctx, "Who am I", async () => JSON.stringify(await ctx.call("whoami"))),

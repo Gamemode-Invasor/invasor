@@ -1,9 +1,11 @@
 import json
 import logging
+import time
 import unittest
 
 from invasor.context import GameContext
 from invasor.modules import ModuleManager
+from invasor.schema import Unavailable
 
 from .helpers import patch, temp_dir
 
@@ -395,6 +397,54 @@ class Modules(unittest.TestCase):
             self.manager.remove("rotten", purge=True)
         self.assertNotIn("rotten", self.manager.manifests)
 
+    def test_a_task_uninstall_leaves_open_ends_with_the_module(self):
+        self.user_module("cleaner", (
+            "def uninstall(c, purge):\n"
+            "    t = c.task('Cleaning up')\n"
+            "    t.update(0.5, 'half')\n"  # never ended
+        ))
+        self.manager.add("cleaner")
+        self.manager.remove("cleaner", purge=True)
+        snap = self.manager.tasks.snapshot()
+        self.assertEqual(snap["active"], [])
+        self.assertEqual((snap["recent"][0]["label"], snap["recent"][0]["state"], snap["recent"][0]["text"]),
+                         ("Cleaning up", "failed", "module uninstalled"))
+
+    def test_a_task_that_uninstall_ends_itself_stays_done(self):
+        self.user_module("tidy", (
+            "def uninstall(c, purge):\n"
+            "    with c.task('Tidying') as t:\n"
+            "        t.update(0.5)\n"
+        ))
+        self.manager.add("tidy")
+        self.manager.remove("tidy", purge=True)
+        self.assertEqual([t["state"] for t in self.manager.tasks.snapshot()["recent"]], ["done"])
+
+    def test_the_context_of_uninstall_is_retired_when_it_ends(self):
+        import time
+        patch(self, "invasor.modules.UNINSTALL_TIMEOUT", 0.2)
+        d = self.user_module("slow", (
+            "import pathlib, time\n"
+            "here = pathlib.Path(__file__).parent\n"
+            "def uninstall(c, purge):\n"
+            "    time.sleep(0.6)\n"  # still running when the core gives up on it
+            "    try:\n"
+            "        c.task('too late')\n"
+            "        out = 'allowed'\n"
+            "    except c.Unavailable:\n"
+            "        out = 'refused'\n"
+            "    (here.parent / 'result').write_text(out)\n"
+        ))
+        result = d.parent / "result"
+        self.manager.add("slow")
+        with self.assertLogs("invasor.modules", "ERROR"):
+            self.manager.remove("slow", purge=True)
+        deadline = time.monotonic() + 3
+        while not result.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertEqual(result.read_text(), "refused")  # the thread it left running can't start tasks any more
+        self.assertEqual(self.manager.tasks.snapshot()["active"], [])
+
     def test_uninstalling_invasor_runs_every_modules_uninstall(self):
         import logging
         from invasor.__main__ import uninstall_modules
@@ -431,7 +481,7 @@ class Modules(unittest.TestCase):
         import threading, time
         deadline = time.monotonic() + 2
         # "steam-started" (the manager's own thread) and the "steam-start-<id>" callbacks it starts.
-        while any(t.name.startswith("steam-start") for t in threading.enumerate()) and time.monotonic() < deadline:
+        while any(t.name.startswith(("steam-start", "event-")) for t in threading.enumerate()) and time.monotonic() < deadline:
             time.sleep(0.01)
 
     def test_on_steam_start_runs_on_every_new_steam(self):
@@ -459,6 +509,155 @@ class Modules(unittest.TestCase):
         self.manager.set_enabled("late", True)
         self.settle()
         self.assertEqual(starts(), 2)
+
+    def events_module(self, mid, body):
+        """A user module whose setup(c) runs `body`; `log(text)` appends a line to its 'seen' file."""
+        d = self.user_module(mid, (
+            "import pathlib, json\n"
+            "here = pathlib.Path(__file__).parent\n"
+            "def log(x):\n"
+            "    with open(here / 'seen', 'a') as f:\n"
+            "        f.write(json.dumps(x) + '\\n')\n"
+            "def setup(c):\n" + "".join(f"    {line}\n" for line in body.splitlines())
+        ))
+        self.manager.add(mid)
+
+        def seen():
+            f = d / "seen"
+            return [json.loads(line) for line in f.read_text().splitlines()] if f.exists() else []
+        return seen
+
+    GAME = {"appid": "2100", "name": "Dark Messiah", "shortcut": False}
+
+    def test_events_hand_the_payload_to_the_callback(self):
+        seen = self.events_module("watch", "c.events.on('game_started', lambda p: log(['started', p]))\n"
+                                           "c.events.on('game_stopped', lambda p: log(['stopped', p]))")
+        self.manager.emit("game_started", self.GAME)
+        self.manager.emit("game_stopped", self.GAME)
+        self.settle()
+        self.assertCountEqual(seen(), [["started", self.GAME], ["stopped", self.GAME]])
+
+    def test_steam_start_event_carries_the_instance(self):
+        seen = self.events_module("watch", "c.events.on('steam_start', lambda p: log(p))")
+        with self.assertLogs("invasor.modules", "INFO"):
+            self.manager.steam_started("aaa")
+            self.settle()
+        self.assertEqual(seen(), [{"instance": "aaa"}])
+
+    def test_game_events_are_not_replayed_to_a_late_subscriber(self):
+        self.manager.steam_started("aaa")
+        self.manager.emit("game_started", self.GAME)
+        seen = self.events_module("late", "c.events.on('game_started', lambda p: log(p))\n"
+                                          "c.events.on('steam_start', lambda p: log('steam'))")
+        self.settle()
+        self.assertEqual(seen(), ["steam"])  # only steam_start is sticky
+
+    def test_off_stops_the_callback(self):
+        seen = self.events_module("quiet", (
+            "def cb(p):\n    log(p)\n"
+            "c.events.on('game_started', cb)\n"
+            "c.events.on('game_stopped', cb)\n"
+            "c.events.off('game_started', cb)\n"
+            "c.events.off('game_started', cb)"))  # twice: harmless
+        self.manager.emit("game_started", self.GAME)
+        self.manager.emit("game_stopped", self.GAME)
+        self.settle()
+        self.assertEqual(seen(), [self.GAME])  # only the game_stopped one
+
+    def test_an_unknown_event_name_is_refused(self):
+        seen = self.events_module("typo", (
+            "for name in ('game_start', 'rakun.install_done'):\n"
+            "    try:\n        c.events.on(name, print)\n"
+            "    except c.InvalidArgument as e:\n        log(str(e))"))
+        self.assertEqual(len(seen()), 2)
+        self.assertIn("game_started", seen()[0])
+
+    def test_events_follow_the_module_lifecycle(self):
+        seen = self.events_module("life", "c.events.on('game_started', lambda p: log(p))")
+        self.manager.set_enabled("life", False)
+        self.manager.emit("game_started", self.GAME)
+        self.settle()
+        self.assertEqual(seen(), [])  # disabled: forgotten
+        self.manager.set_enabled("life", True)
+        self.manager.emit("game_started", self.GAME)
+        self.settle()
+        self.assertEqual(seen(), [self.GAME])  # enabled again: registered afresh
+
+    def test_a_failing_event_callback_is_logged_and_the_others_still_run(self):
+        seen = self.events_module("bad", "c.events.on('game_stopped', lambda p: 1 / 0)\n"
+                                         "c.events.on('game_stopped', lambda p: log(p))")
+        with self.assertLogs("invasor.modules", "ERROR"):
+            self.manager.emit("game_stopped", self.GAME)
+            self.settle()
+        self.assertEqual(seen(), [self.GAME])
+        self.assertIn("bad", self.manager.registry)
+
+    def test_on_steam_start_still_works_but_warns_once(self):
+        d = self.user_module("old", (
+            "import pathlib\n"
+            "here = pathlib.Path(__file__).parent\n"
+            "def setup(c):\n"
+            "    c.on_steam_start(lambda: (here / 'ran').write_text('x'))\n"
+            "    c.on_steam_start(lambda: None)\n"))
+        with self.assertLogs("invasor.mod.old", "WARNING") as logs:
+            self.manager.add("old")
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("ctx.events.on('steam_start'", logs.output[0])
+        with self.assertLogs("invasor.modules", "INFO"):
+            self.manager.steam_started("aaa")
+            self.settle()
+        self.assertTrue((d / "ran").exists())
+
+    def test_a_module_can_run_a_task_and_the_core_lists_it(self):
+        self.user_module("worker", (
+            "import threading\n"
+            "gate, release = threading.Event(), threading.Event()\n"
+            "def work(c):\n"
+            "    with c.task('Crunching') as t:\n"
+            "        t.update(0.5, 'half')\n"
+            "        gate.set()\n"
+            "        release.wait(5)\n"
+            "def setup(c):\n"
+            "    threading.Thread(target=work, args=(c,), daemon=True).start()\n"))
+        self.manager.add("worker")
+        mod = self.manager._loaded["worker"]
+        self.assertTrue(mod.gate.wait(2))
+        active = self.manager.tasks.snapshot()["active"]
+        self.assertEqual([(t["module"], t["label"], t["fraction"], t["text"]) for t in active], [("worker", "Crunching", 0.5, "half")])
+        mod.release.set()
+        deadline = time.monotonic() + 2
+        while self.manager.tasks.snapshot()["active"] and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual([t["state"] for t in self.manager.tasks.snapshot()["recent"]], ["done"])
+
+    def test_unloading_a_module_fails_its_open_tasks_and_it_cannot_start_more(self):
+        self.user_module("leaky", (
+            "def setup(c):\n"
+            "    global CTX\n"
+            "    CTX = c\n"
+            "    c.task('never ends')\n"))
+        self.manager.add("leaky")
+        mod = self.manager._loaded["leaky"]
+        self.assertEqual([t["label"] for t in self.manager.tasks.snapshot()["active"]], ["never ends"])
+        self.manager.set_enabled("leaky", False)
+        snap = self.manager.tasks.snapshot()
+        self.assertEqual(snap["active"], [])
+        self.assertEqual((snap["recent"][0]["state"], snap["recent"][0]["text"]), ("failed", "module unloaded"))
+        with self.assertRaises(Unavailable):
+            mod.CTX.task("too late")
+
+    def test_a_module_whose_setup_failed_leaves_no_task_behind(self):
+        self.user_module("broken", "def setup(c):\n    c.task('half done')\n    raise RuntimeError('no')\n")
+        with self.assertLogs("invasor.modules", "ERROR"):
+            self.manager.add("broken")
+        self.assertEqual(self.manager.tasks.snapshot()["active"], [])
+        self.assertEqual(self.manager.tasks.snapshot()["recent"][0]["text"], "module unloaded")
+
+    def test_a_module_hears_the_task_event(self):
+        seen = self.events_module("watch", "c.events.on('task', lambda p: log([p['module'], p['label'], p['state']]))")
+        self.manager.tasks.start("core", "Updating").done()
+        self.settle()
+        self.assertCountEqual(seen(), [["core", "Updating", "running"], ["core", "Updating", "done"]])
 
     def test_a_failing_steam_start_callback_is_logged(self):
         self.user_module("bad", "def setup(c):\n    c.on_steam_start(lambda: 1 / 0)\n")
@@ -663,7 +862,7 @@ class Modules(unittest.TestCase):
 
     def test_a_steam_start_callback_that_never_ends_does_not_block_unload(self):
         import threading, time
-        patch(self, "invasor.modules.STEAM_START_JOIN", 0.2)
+        patch(self, "invasor.modules.EVENT_JOIN", 0.2)
         gate = threading.Event()
         self.addCleanup(gate.set)
         self.user_module("hang", "import threading\ndef setup(c):\n    c.on_steam_start(lambda: threading.Event().wait(5))\n")

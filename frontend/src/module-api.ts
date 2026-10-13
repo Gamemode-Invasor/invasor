@@ -186,6 +186,7 @@ export interface ModuleDef {
   onShow?(ctx: ModuleCtx): void;
   /** The module's tab stopped being visible: pause timers, polling… */
   onHide?(): void;
+  /** The game state changed (running, selected or highlighted). Checked every 3 s while the panel is open. */
   onGameChange?(game: GameState, ctx: ModuleCtx): void;
   /**
    * Quick Access only: return false to hide this module's tab there (the library always shows it).
@@ -216,7 +217,7 @@ export interface ModuleDef {
  *   });
  */
 export interface InvasorButtonDetail {
-  /** "A" | "B" | "X" | "Y" | "UP" | "DOWN" | "LEFT" | "RIGHT" | "L1" | "R1" | "L2" | "R2",
+  /** "A" | "B" | "X" | "Y" | "UP" | "DOWN" | "LEFT" | "RIGHT" | "L1" | "R1" | "L2" | "R2" | "SELECT" | "START",
    *  or "BTN_<code>" if not mapped yet. L1/R1 and L2/R2 switch tabs unless a control takes them. */
   button: string;
   /** Steam's raw button number. */

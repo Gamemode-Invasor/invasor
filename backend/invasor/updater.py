@@ -76,20 +76,29 @@ def fetch_json(url):
     return json.loads(data)
 
 
-def download(url, dest, limit):
-    """Save url (https only) at dest, giving up past `limit` bytes."""
+def download(url, dest, limit, progress=None):
+    """Save url (https only) at dest, giving up past `limit` bytes. `progress(done, total)`,
+    if given, hears how many bytes are in so far (total is None when the server doesn't say)."""
     if not url.startswith("https://"):
         raise ValueError(f"not an https URL: {url}")
     size = 0
     with _opener().open(_request(url), timeout=TIMEOUT) as r:
         if not r.geturl().startswith("https://"):  # a redirect may leave https
             raise ValueError(f"redirected to a non-https URL: {r.geturl()}")
+        total = None
+        if progress:
+            try:
+                total = int(r.headers.get("Content-Length") or 0) or None
+            except ValueError:
+                pass
         with open(dest, "wb") as f:
             while chunk := r.read(1 << 16):
                 size += len(chunk)
                 if size > limit:
                     raise ValueError("download too large")
                 f.write(chunk)
+                if progress:
+                    progress(size, total)
 
 
 def run_detached(unit, argv, what="update"):
@@ -220,9 +229,10 @@ class Updater:
             return urls[name], urls[name + ".sha256"]
         return None
 
-    def apply(self):
+    def apply(self, task=None):
         """Download, verify and unpack the new version, and hand over to the installer.
-        Returns once it's started: the service is restarted by it a moment later."""
+        Returns once it's started: the service is restarted by it a moment later.
+        `task` (tasks.Task), if given, shows how far it got."""
         res, package = self._check()
         if not res["checked"] or not res["available"]:
             raise InvalidArgument("there's no update to install")
@@ -232,17 +242,24 @@ class Updater:
         try:
             tarball = work / f"invasor-{version}.tar.gz"
             try:
-                self._download(pkg_url, tarball, MAX_PACKAGE)
+                # The progress goes only where there is a task to show it (and fakes in tests don't take it).
+                self._download(pkg_url, tarball, MAX_PACKAGE, **({"progress": task.progress(0, 0.8, "Downloading")} if task else {}))
                 self._download(sha_url, work / "sha256", 1024)
             except Exception as e:
                 raise Unavailable(f"couldn't download the update: {e}") from None
+            if task:
+                task.update(0.8, "Verifying")
             self._verify(tarball, (work / "sha256").read_text(errors="replace"))
+            if task:
+                task.update(0.9, "Unpacking")
             try:
                 root = safe_extract(tarball, work, f"invasor-{version}")
             except (ValueError, tarfile.TarError, OSError) as e:
                 raise InvalidArgument(f"the update package is invalid: {e}") from None
             self._check_contents(root, version)
             log.info("updating %s -> %s", self.current, version)
+            if task:
+                task.update(0.95, "Starting the installer")
             self._start(root, work)
         except BaseException:
             shutil.rmtree(work, ignore_errors=True)

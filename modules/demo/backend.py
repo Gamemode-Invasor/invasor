@@ -8,7 +8,8 @@
 - Steam: notify (with an icon, a timeout and a sound) / notify_async, steam_call / steam_call_async, always with a plan B;
 - clean errors: InvalidArgument (400) and Unavailable (503);
 - plain and `async def` methods, a background thread stopped in teardown();
-- on_steam_start: counts the Steam starts it has seen;
+- ctx.events: counts the Steam starts it has seen and notes the last game started, stopped or selected;
+- ctx.task: a long operation that reports its progress (slow_task), seen from anywhere in core.tasks();
 - upgrade() when a new version loads, uninstall() undoing what it left outside its folder;
 - a helper file imported as `from . import helpers`.
 """
@@ -26,6 +27,7 @@ ICON = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC
 ctx = None
 _stop = None
 _uptime = 0  # seconds since setup, counted by the background thread
+_events_lock = threading.Lock()  # callbacks run in threads of their own: one counter, one writer
 
 
 def profile_path(context=None):
@@ -57,7 +59,9 @@ def setup(context):
     ctx.settings.on_change(on_change)
     _stop = threading.Event()
     threading.Thread(target=_tick, args=(_stop,), name="demo-tick", daemon=True).start()
-    ctx.on_steam_start(steam_started)  # also runs now if Steam is already up
+    ctx.events.on("steam_start", steam_started)  # also runs now if Steam is already up
+    for name in ("game_started", "game_stopped", "game_selected"):
+        ctx.events.on(name, lambda game, name=name: game_event(name, game))
     ctx.log.info("demo module loaded")
 
 
@@ -73,11 +77,19 @@ def _tick(stop):
         _uptime += 1
 
 
-def steam_started():
+def steam_started(payload=None):
     """A new Steam instance (started or restarted). Runs in its own thread: it may block."""
-    starts = ctx.data.load().get("steam_starts", 0) + 1
-    ctx.data.update(steam_starts=starts, last_steam_start=time.strftime("%H:%M:%S"))
+    with _events_lock:
+        starts = ctx.data.load().get("steam_starts", 0) + 1
+        ctx.data.update(steam_starts=starts, last_steam_start=time.strftime("%H:%M:%S"))
     ctx.log.info("Steam start #%d seen", starts)
+
+
+def game_event(name, game):
+    """A game started, stopped or had its page opened; `game` is {"appid", "name", "shortcut"}."""
+    what = f"{name.split('_', 1)[1]} {game.get('name') or game['appid']}"
+    ctx.data.update(last_game_event=f"{what} at {time.strftime('%H:%M:%S')}")
+    ctx.log.info("game event: %s", what)
 
 
 def on_change(key, value):
@@ -115,6 +127,20 @@ def notify(title="Demo", body="", sound=""):
 async def notify_async(title="Demo", body="", sound=""):
     await ctx.notify_async(title, body, ICON, sound=sound)
     return {"ok": True}
+
+
+def slow_task(seconds=5, fail=False):
+    """A long operation others can watch: it advances once a second and can end failing.
+    `with ctx.task(...)` ends it by itself (done, or failed if an error leaves the block)."""
+    if not isinstance(seconds, int) or isinstance(seconds, bool) or not 1 <= seconds <= 30:
+        raise ctx.InvalidArgument("seconds must be a whole number from 1 to 30")
+    with ctx.task("Demo: slow task") as task:
+        for i in range(seconds):
+            task.update(i / seconds, f"Step {i + 1} of {seconds}")
+            time.sleep(1)
+        if fail:
+            raise ctx.Unavailable("Demo failed this task on purpose (Unavailable: 503)")
+    return {"seconds": seconds}
 
 
 def _system(info):
@@ -160,7 +186,8 @@ def stats():
     data = ctx.data.load()
     # ctx.path: the module's own folder (here, to say how many Python files it ships).
     return {"uptime": _uptime, "files": len(list(Path(ctx.path).glob("*.py"))), "visits": data.get("visits", 0), "upgraded_from": data.get("upgraded_from"),
-            "steam_starts": data.get("steam_starts", 0), "last_steam_start": data.get("last_steam_start")}
+            "steam_starts": data.get("steam_starts", 0), "last_steam_start": data.get("last_steam_start"),
+            "last_game_event": data.get("last_game_event")}
 
 
 def profile_get():
@@ -200,6 +227,7 @@ METHODS = {
     "fail": fail,
     "visit": visit,
     "stats": stats,
+    "slow_task": slow_task,
     "profile_get": profile_get,
     "profile_set": profile_set,
 }

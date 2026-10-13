@@ -6,10 +6,12 @@
   --accent-fg: #fff;
 }
 .handle,
-.panel {
+.panel,
+.cover-panel {
   pointer-events: auto;
 }
-.panel {
+.panel,
+.cover-panel {
   position: fixed;
   top: 8px;
   right: 8px;
@@ -29,11 +31,184 @@
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
   font: 15px/1.4 system-ui, sans-serif;
 }
-.panel[hidden] {
+.panel[hidden],
+.cover-panel[hidden] {
   display: none;
 }
-.panel > * {
+.panel > *,
+.cover-panel > * {
   flex: none;
+}
+.cover-panel {
+  /* Always the whole height, however little the Invasor panel under it has to show. */
+  height: calc(100vh - 16px);
+}
+.cover-panel > .content-wrap {
+  flex: 1 1 auto;
+}
+/* The Tasks panel is on top of it, in the same place: the pad and touch only reach the one in front. */
+.panel.covered {
+  visibility: hidden;
+}
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tasks-btn,
+.settings-btn {
+  font-size: 13px;
+  padding: 4px 10px;
+}
+.no-modules {
+  margin: 0;
+  padding: 16px;
+  color: #8b94a7;
+  font-size: 14px;
+}
+.no-modules[hidden] {
+  display: none;
+}
+/* ---- tasks (tasks-view.ts) ---- */
+.tasks-group {
+  margin: 12px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #8b94a7;
+}
+.task-row {
+  padding: 8px 0;
+  border-bottom: 1px solid #2f3746;
+}
+.task-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.task-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.task-owner {
+  flex: none;
+  font-size: 12px;
+  color: #8b94a7;
+}
+.task-state {
+  flex: none;
+  font-weight: 700;
+}
+.task-row[data-state="done"] .task-state {
+  color: #7fd18b;
+}
+.task-row[data-state="failed"] .task-state,
+.task-row[data-state="failed"] .task-text {
+  color: #f08a8a;
+}
+.task-bar {
+  position: relative;
+  height: 6px;
+  margin: 6px 0 4px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: #2a3240;
+}
+.task-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.4s ease;
+}
+.task-row[data-state="done"] .task-fill {
+  background: #7fd18b;
+}
+.task-row[data-state="failed"] .task-fill {
+  background: #f08a8a;
+}
+/* Can't tell how far it is: a block that slides along the bar. */
+.task-bar[data-indeterminate] .task-fill {
+  width: 35% !important;
+  transition: none;
+  animation: task-slide 1.4s ease-in-out infinite;
+}
+@keyframes task-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(290%);
+  }
+}
+.task-text,
+.task-when {
+  font-size: 13px;
+  color: #aab2c3;
+  overflow-wrap: anywhere;
+}
+.task-when {
+  font-size: 12px;
+  color: #8b94a7;
+}
+.task-text[hidden],
+.task-when[hidden],
+.tasks-group[hidden],
+.tasks-list[hidden],
+.tasks-empty[hidden] {
+  display: none;
+}
+/* The dot on the handle and on the panel's Tasks button: something is running (pulses) or failed (red, still). */
+.handle,
+.tasks-btn {
+  position: relative;
+}
+.handle[data-tasks]::after,
+.tasks-btn[data-tasks]::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  width: 9px;
+  height: 9px;
+  box-sizing: border-box;
+  border: 1.5px solid #1b2029;
+  border-radius: 50%;
+  background: #fff;
+  pointer-events: none;
+}
+.handle[data-tasks="running"]::after,
+.tasks-btn[data-tasks="running"]::after {
+  background: #7fd18b;
+  animation: tasks-pulse 1.6s ease-in-out infinite;
+}
+.handle[data-tasks="failed"]::after,
+.tasks-btn[data-tasks="failed"]::after {
+  background: #f06a6a;
+}
+@keyframes tasks-pulse {
+  50% {
+    transform: scale(1.35);
+    opacity: 0.55;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .handle[data-tasks="running"]::after,
+  .tasks-btn[data-tasks="running"]::after,
+  .task-bar[data-indeterminate] .task-fill {
+    animation: none;
+  }
+  .task-fill {
+    transition: none;
+  }
+}
+.tasks-empty {
+  margin: 0;
+  padding: 8px 0;
+  color: #8b94a7;
+  font-size: 14px;
 }
 header {
   display: flex;
@@ -104,7 +279,8 @@ button:focus-visible {
   left: 0;
   border-radius: 0 8px 8px 0;
 }
-:host(.side-left) .panel {
+:host(.side-left) .panel,
+:host(.side-left) .cover-panel {
   right: auto;
   left: 8px;
 }

@@ -4,7 +4,7 @@ import { JSDOM } from "jsdom";
 
 const dom = new JSDOM("<!doctype html><html><body></body></html>", { pretendToBeVisual: true });
 const g = globalThis as unknown as Record<string, unknown>;
-for (const key of ["window", "document", "HTMLElement", "Element", "Node", "CustomEvent", "Event", "KeyboardEvent", "MutationObserver"]) {
+for (const key of ["window", "document", "HTMLElement", "HTMLDetailsElement", "Element", "Node", "CustomEvent", "Event", "KeyboardEvent", "MutationObserver"]) {
   g[key] = (dom.window as unknown as Record<string, unknown>)[key];
 }
 

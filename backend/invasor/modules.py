@@ -23,6 +23,7 @@ import threading
 from . import __version__, config, schema, tomlio
 from .schema import Unavailable
 from .storage import JsonStore
+from .tasks import TaskRegistry
 
 log = logging.getLogger("invasor.modules")
 
@@ -40,8 +41,10 @@ TEARDOWN_TIMEOUT = 10
 # How long importing a module, its upgrade() and its setup() may take together before it
 # is considered failed (and torn down) instead of holding the service up.
 SETUP_TIMEOUT = 20
-# How long unloading a module waits for on_steam_start callbacks that are still running.
-STEAM_START_JOIN = 3
+# How long unloading a module waits for event callbacks that are still running.
+EVENT_JOIN = 3
+# What ctx.events can subscribe to. Names with a dot are reserved for module-to-module events.
+CORE_EVENTS = ("steam_start", "game_started", "game_stopped", "game_selected", "task")
 
 
 class Settings:
@@ -141,6 +144,46 @@ class Form:
         return {k: f["default"] for k, f in self.fields.items()}
 
 
+class Events:
+    """ctx.events: a module's subscriptions to the core's events (CORE_EVENTS). A callback
+    gets the event's payload (a dict), runs in its own thread, so it may block, and an
+    exception is logged. Subscribe in `setup`: it's all forgotten when the module is disabled."""
+
+    def __init__(self, context):
+        self._context = context
+        self._listeners = {}  # event name -> [callback]
+        self._threads = []  # running callbacks, waited for when the module is unloaded
+        # Set by the manager once the module is loaded: (cb) -> None, runs a steam_start
+        # callback now if Steam is up.
+        self._steam_start_now = None
+
+    @staticmethod
+    def _check(name):
+        if name not in CORE_EVENTS:
+            raise schema.InvalidArgument(f"unknown event {name!r} (events: {', '.join(CORE_EVENTS)})")
+
+    def on(self, name, cb):
+        """cb(payload) every time the event happens. `steam_start` also runs once soon
+        after you register if Steam is already running; the game events don't."""
+        self._check(name)
+        if not callable(cb):
+            raise TypeError("events.on needs a function")
+        if self._context._terminal:
+            self._context.log.warning("events.on(%r) in uninstall() is ignored: the module is going away", name)
+            return
+        self._listeners.setdefault(name, []).append(cb)
+        if name == "steam_start" and self._steam_start_now is not None:
+            self._steam_start_now(cb)
+
+    def off(self, name, cb):
+        """Stop calling cb for this event (nothing happens if it wasn't registered)."""
+        self._check(name)
+        try:
+            self._listeners.get(name, []).remove(cb)
+        except ValueError:
+            pass
+
+
 class ModuleContext:
     """What a module's backend gets in setup(ctx)."""
 
@@ -153,7 +196,7 @@ class ModuleContext:
     # Read/write TOML config files without losing anything (see tomlio.py).
     toml = tomlio
 
-    def __init__(self, module_id, path, game, settings, steam=None, forms=None):
+    def __init__(self, module_id, path, game, settings, steam=None, forms=None, tasks=None):
         self.id = module_id
         self.forms = forms or {}  # {name: Form} from module.json "forms"
         self.path = path
@@ -165,26 +208,22 @@ class ModuleContext:
         # Free-form storage for whatever isn't a user setting (caches, state…).
         self.data = JsonStore(DATA_DIR / module_id / "data.json", self._is_alive)
         self._steam = steam
-        self._steam_start_cbs = []
-        self._steam_start_threads = []
-        # Set by the manager once the module is loaded: (cb) -> None, runs cb now if Steam is up.
-        self._steam_start_now = None
+        self._tasks = tasks
+        self.events = Events(self)
+        self._warned_steam_start = False
 
     def _is_alive(self):
         return not self._dead
 
     def on_steam_start(self, cb):
-        """cb() every time a new Steam instance is seen (Steam started or restarted), and
-        once soon after registering if Steam is already running. It runs in its own thread
-        and may block; an exception is logged."""
+        """Deprecated: use ctx.events.on("steam_start", cb). Same behaviour, but cb()
+        takes no argument."""
         if not callable(cb):
             raise TypeError("on_steam_start needs a function")
-        if self._terminal:
-            self.log.warning("on_steam_start() in uninstall() is ignored: the module is going away")
-            return
-        self._steam_start_cbs.append(cb)
-        if self._steam_start_now is not None:
-            self._steam_start_now(cb)
+        if not self._warned_steam_start:
+            self._warned_steam_start = True
+            self.log.warning("on_steam_start() is deprecated: use ctx.events.on('steam_start', cb)")
+        self.events.on("steam_start", lambda payload: cb())
 
     def steam_call(self, path, *args, timeout=15):
         """SteamClient.<path>(*args), evaluated in Steam's SharedJSContext. For plain
@@ -214,6 +253,21 @@ class ModuleContext:
         if self._steam is None:
             raise Unavailable("SteamClient bridge not configured")
         return await self._steam.notify(title, body, icon, timeout, sound)
+
+    def task(self, label):
+        """A long operation that others can watch: `with ctx.task("Downloading X") as t:` then
+        `t.update(fraction, "text")` (fraction from 0 to 1, or None if unknown); leaving the block
+        ends it (an exception marks it failed and goes on). Also `t.done(text)` / `t.fail(text)`,
+        and `async with`. Raises Unavailable once the module is unloaded or with too many tasks running."""
+        if self._dead:
+            raise Unavailable("this module was unloaded: it can't start tasks anymore")
+        if self._tasks is None:
+            raise Unavailable("tasks aren't available here")
+        task = self._tasks.start(self.id, label)
+        if self._dead:  # unloaded while it started: nobody is left to end it
+            task.fail("module unloaded")
+            raise Unavailable("this module was unloaded: it can't start tasks anymore")
+        return task
 
     def game_data(self, appid):
         """Free-form storage for this module and one game."""
@@ -284,43 +338,53 @@ class ModuleManager:
         self.settings = {}  # id -> Settings
         self.registry = {}  # id -> METHODS, shared live with the API server
         self._loaded = {}  # id -> the imported backend module (for teardown)
-        self._contexts = {}  # id -> ModuleContext of a loaded module (its on_steam_start callbacks)
+        self._contexts = {}  # id -> ModuleContext of a loaded module (its event callbacks)
         self.steam_instance = None  # CEF browser id of the running Steam, once seen
+        self.tasks = TaskRegistry(on_event=self.emit)  # ctx.task() and the core's own long operations
         # API methods run in worker threads and the injector in the event loop. _ops
         # serializes the changes to the module set (load, unload, Rescan…) and is held
         # while a module's code runs; nothing that must answer quickly (listing(), the
-        # injector) takes it. _lock only guards the short bookkeeping of Steam start state.
+        # injector) takes it. _lock only guards the short bookkeeping of events and Steam start state.
         self._ops = threading.RLock()
         self._lock = threading.RLock()
 
     def steam_started(self, instance):
-        """A new Steam instance (from the injector): every loaded module's on_steam_start
+        """A new Steam instance (from the injector): every loaded module's steam_start
         callbacks run. Called from the event loop, which must never wait for the lock (a
         module may be loading in a worker thread), so the work happens in a thread."""
         def run():
             with self._lock:
                 log.info("Steam started (%s)", instance)
                 self.steam_instance = instance
-                for mid, context in list(self._contexts.items()):
-                    for cb in list(context._steam_start_cbs):
-                        self._run_steam_start(mid, context, cb)
+                self.emit("steam_start", {"instance": instance})
 
         threading.Thread(target=run, name="steam-started", daemon=True).start()
 
-    def _run_steam_start(self, mid, context, cb):
+    def emit(self, name, payload):
+        """A core event (CORE_EVENTS): every loaded module's callbacks for it start, each
+        in its own thread. Never waits for a callback, and holds _lock only for the short
+        bookkeeping, so the event loop may call it (GameContext does)."""
+        with self._lock:
+            for mid, context in list(self._contexts.items()):
+                for cb in list(context.events._listeners.get(name, ())):
+                    self._run_event(mid, context, name, cb, payload)
+
+    def _run_event(self, mid, context, name, cb, payload):
         def run():
             if context._dead:  # unloaded while this was waiting to start
                 return
             try:
-                cb()
+                cb(payload)
             except MODULE_ERRORS:
-                log.exception("module %s: on_steam_start callback failed", mid)
+                log.exception("module %s: %s callback failed", mid, name)
 
-        worker = threading.Thread(target=run, name=f"steam-start-{mid}", daemon=True)
+        thread_name = f"steam-start-{mid}" if name == "steam_start" else f"event-{name}-{mid}"
+        worker = threading.Thread(target=run, name=thread_name, daemon=True)
         with self._lock:  # _forget_context reads this list under the lock
             if context._dead:
                 return
-            context._steam_start_threads = [t for t in context._steam_start_threads if t.is_alive()] + [worker]
+            events = context.events
+            events._threads = [t for t in events._threads if t.is_alive()] + [worker]
         worker.start()
 
     def _clear_listeners(self, mid):
@@ -329,21 +393,24 @@ class ModuleManager:
 
     def _forget_context(self, mid):
         """The module's code stops being ours: no callback starts from now on, and the
-        ones already running get STEAM_START_JOIN seconds to finish, so that nothing of
+        ones already running get EVENT_JOIN seconds to finish, so that nothing of
         the old instance writes after teardown, a purge or the next setup()."""
         with self._lock:
             context = self._contexts.pop(mid, None)
-            if context is None:
-                return
-            context._dead = True
-            context._steam_start_now = None
-            context._steam_start_cbs.clear()
-            running = list(context._steam_start_threads)
+            if context is not None:
+                context._dead = True
+                context.events._steam_start_now = None
+                context.events._listeners.clear()
+                running = list(context.events._threads)
+        # Also for a module whose setup() failed (never adopted): what it left running ends here.
+        self.tasks.close_owner(mid, "module unloaded")
+        if context is None:
+            return
         for worker in running:
             if worker is not threading.current_thread():
-                worker.join(STEAM_START_JOIN)
+                worker.join(EVENT_JOIN)
                 if worker.is_alive():
-                    log.warning("module %s: an on_steam_start callback is still running after unload", mid)
+                    log.warning("module %s: an event callback is still running after unload", mid)
 
     def discover(self):
         with self._ops:
@@ -497,6 +564,10 @@ class ModuleManager:
         worker.join(UNINSTALL_TIMEOUT)
         if worker.is_alive():
             log.error("module %s: uninstall() still running after %ss, uninstalled anyway", mid, UNINSTALL_TIMEOUT)
+        # Its context is retired like an unloaded module's: a thread it left running can't start tasks or write
+        # data any more, and the tasks it left open end here (this context isn't in _contexts: _forget_context never sees it).
+        context._dead = True
+        self.tasks.close_owner(mid, "module uninstalled")
 
     def rescan(self):
         """Read the module folders again (⚙ Settings › Rescan modules): every module is
@@ -519,7 +590,7 @@ class ModuleManager:
     def _context(self, mid):
         manifest = self.manifests[mid]
         forms = {name: Form(fields) for name, fields in manifest["form_fields"].items()}
-        return ModuleContext(mid, manifest["dir"], self.game, self.settings[mid], self.steam, forms)
+        return ModuleContext(mid, manifest["dir"], self.game, self.settings[mid], self.steam, forms, self.tasks)
 
     def _import(self, mid):
         """Import a module's backend.py as a package (without running setup()). Returns
@@ -612,12 +683,12 @@ class ModuleManager:
         later ones as soon as they're registered."""
         def now(cb):
             if self.steam_instance is not None:
-                self._run_steam_start(mid, context, cb)
+                self._run_event(mid, context, "steam_start", cb, {"instance": self.steam_instance})
 
         with self._lock:
             self._contexts[mid] = context
-            context._steam_start_now = now
-            for cb in list(context._steam_start_cbs):
+            context.events._steam_start_now = now
+            for cb in list(context.events._listeners.get("steam_start", ())):
                 now(cb)
 
     def unload(self, mid):
