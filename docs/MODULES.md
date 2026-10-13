@@ -197,15 +197,48 @@ METHODS = {"apply": apply}   # what the UI can call: ctx.call("apply")
 | `data` | Free-form JSON store for whatever isn't a setting: `load()`, `save(dict)`, `update(**kw)`. |
 | `forms` | `{name: form}` from `module.json` `forms`: `coerce(key, value)`, `clean(data)`, `defaults()`. |
 | `toml` | Other programs' TOML config files. `load(path)` returns `(data, mtime)`, or `({}, None)` if the file doesn't exist. `save(path, data, mtime)` writes the file, refusing with `Unavailable` if another program saved it after that `mtime`. It keeps every key and the order, checks the result by reading it back, writes atomically and keeps the original as `*.invasor-backup` the first time. `save(…, validate=fn)` calls `fn(temp_path)` on the new file before it replaces the original (e.g. the program's own config validator); raising there refuses the change and leaves the original untouched. Needs Python 3.11 or newer. |
-| `on_steam_start(cb)` | `cb()` every time Steam starts or restarts (a new Steam process, including switching between Desktop and Game Mode), and once soon after you register it if Steam is already running, so it also covers Invasor starting and the module being enabled. It runs in its own thread and may block (scans, file writes…); an exception is logged. Register it in `setup`: it's forgotten when the module is disabled. |
+| `events.on(name, cb)`, `events.off(name, cb)` | `cb(payload)` every time the event happens; `payload` is a dict. It runs in its own thread and may block (scans, file writes…); an exception is logged. Register in `setup`: everything is forgotten when the module is disabled. An unknown name is `InvalidArgument` (names with a dot are reserved). The events: `steam_start`, `{"instance"}`: Steam starts or restarts (a new Steam process, including switching between Desktop and Game Mode), and once soon after you register it if Steam is already running, so it also covers Invasor starting and the module being enabled; `game_started` and `game_stopped`, `{"appid", "name", "shortcut"}`: a game starts or stops (for `game_stopped`, the game that stopped); `game_selected`, same payload: the page of a game is opened in the library (it's `game.selected`; going back to the library sends nothing); `task`, the task as `core.tasks()` shows it (see `task` below): a task starts, ends or fails (not on every `update`). The tile under the cursor (*highlighted*) has no event: read it in `ui.ts`: `ctx.game().highlighted`, and `onGameChange` fires when it changes (checked every 3 seconds while the panel is open). Games are looked at every 3 seconds: a game that starts and stops within one look sends nothing, two changes in one look arrive as two events with no order guaranteed between their callbacks, and a game already running when Invasor starts sends `game_started` right away. |
+| `task(label)` | A long operation that others can watch: it shows in the Tasks panel (Select in the Invasor panel), and a dot on the "I" handle tells there is one: `with ctx.task("Downloading X") as t:` and `t.update(fraction, "text")` as it goes. `fraction` is a number from 0 to 1, or `None` if you can't tell (no bar); `update` replaces both values, so give both each time. Leaving the block ends it as done; an error leaving it ends it as failed (with the error's text) and goes on. Or end it yourself with `t.done(text)` / `t.fail(text)`; after that, calls do nothing. The label is cut to 64 characters and the texts to 256. The same object works with `async with` and in `async def` methods: its methods are quick and never block. At most 32 tasks run at once (`Unavailable` beyond that), and a task you left open is marked failed when the module is unloaded. Nothing is stored: the list is in memory and the last 20 that ended are kept. |
+| `on_steam_start(cb)` | **Deprecated**: use `events.on("steam_start", cb)`. The same, but `cb()` takes no argument; it logs a warning once. |
 | `game.info(appid)`, `game.shortcut_exe(appid)` | Name and kind of any app; the executable a non-Steam shortcut launches (`shortcuts.vdf`). |
 | `game_data(appid)` | The same kind of store, per game. |
-| `game.selected`, `game.running` | `{"appid", "name", "shortcut"}`, or `None`. The highlighted game isn't here: it's read from Steam's page only when the UI asks, so it's available in `ctx.game()` in `ui.ts`. |
+| `game.selected`, `game.running` | `{"appid", "name", "shortcut"}`, or `None`. The highlighted game isn't here: it's read from Steam's page only when the UI asks, so it's available in `ctx.game()` in `ui.ts` (and `onGameChange` covers it). |
 | `log` | This module's logger (it writes to `journalctl --user -u invasor`). |
 | `id`, `path` | The module id and its folder. |
-| `notify(title, body="", icon="")` | A notification shown as Steam shows an achievement. Title up to 64 characters, body up to 256 (plain text); `icon` is an `https://` URL or an embedded `data:image/png|jpeg|gif|webp;base64,…` (up to 512 KB). From `async def` methods: `await notify_async(…)`. Raises `InvalidArgument` for bad input and `Unavailable` when Steam can't show it. Steam's own achievement toast setting applies. |
+| `notify(title, body="", icon="", timeout=15, sound="")` | A notification shown as Steam shows an achievement. Title up to 64 characters, body up to 256 (plain text); `icon` is an `https://` URL or an embedded `data:image/png|jpeg|gif|webp;base64,…` (up to 512 KB); `timeout` is how many seconds to wait for Steam; pass `sound` by keyword (`sound="trophy"`). `sound` picks one of Steam's own notification sounds by name: `trophy`, `message`, `toast`, `chat`, `mention`, `friend`, `online`, `ingame`, or `none` for silence; omitted, Steam decides (the achievement sound). Any other name is `InvalidArgument`. From `async def` methods: `await notify_async(…)`. Raises `InvalidArgument` for bad input and `Unavailable` when Steam can't show it. Steam's own achievement toast setting applies. |
 | `steam_call(path, *args)` | `SteamClient.<path>(*args)` (Steam's JS API), evaluated in Steam's `SharedJSContext`. Use it from plain methods; from `async def` methods use `await steam_call_async(path, *args)`. It raises `Unavailable` whenever Steam or that function isn't there, so always have a plan B. |
 | `InvalidArgument`, `Unavailable` | Errors to raise for a clean answer, with one log line and no traceback: `raise ctx.InvalidArgument("…")` gives 400 (the caller's mistake), and `raise ctx.Unavailable("…")` gives 503 (no network, a Steam function missing…). The UI receives the message. |
+
+**Notification sounds** (`sound` in `notify` / `notify_async`):
+
+Without `sound`, Steam decides (the achievement sound its toast always has). With it, Invasor
+asks Steam to play one of **Steam's own** sounds for that notification; there are no custom sounds.
+Steam still draws its usual toast; only the sound changes.
+
+| `sound` | Steam's sound | Game Mode (Big Picture) | Desktop client |
+|---|---|---|---|
+| *(omitted)* | Steam decides | achievement sound | `desktop_toast_default` |
+| `trophy` | achievement | `deck_ui_achievement_toast` | `desktop_toast_default` |
+| `toast` | generic toast | `deck_ui_toast` | `desktop_toast_default` (the same as `trophy`) |
+| `message` | message toast | `deck_ui_message_toast` | silent |
+| `chat` | chat message | `steam_chatroom_notification` | silent |
+| `mention` | chat mention | `steam_at_mention` | silent |
+| `friend` | friend message | `ui_steam_message_old_smooth` | silent |
+| `online` | friend online | `ui_steam_smoother_friend_online` | silent |
+| `ingame` | friend in game | `ui_steam_smoother_friend_join` | silent |
+| `none` | no sound | silent | silent |
+
+- **Steam picks the file by interface.** The names are Steam's own sound numbers; Steam maps each to a
+  file depending on whether it is in Game Mode or the desktop client, and on the desktop most of them have
+  none. So the choice is only fully audible in Game Mode; a module that needs to be heard on the desktop
+  should use `trophy`/`toast` or leave `sound` out.
+- **Steam's settings still apply.** Nothing plays if the user turned off Steam's UI sounds or "play a
+  sound on toast", or if Steam's own toast setting hides the notification. `none` is always silent.
+- **One at a time.** Steam shows toasts one after another, and plays a sound when each one appears, so a
+  burst of notifications is heard in order.
+- **A name that isn't in the table** is `InvalidArgument` (HTTP 400), and the answer lists the valid names.
+- If Steam changes and the sound can't be set, the notification still shows with Steam's own sound
+  (see `docs/API-Steam.md`).
 
 **Rules:**
 
@@ -221,8 +254,8 @@ METHODS = {"apply": apply}   # what the UI can call: ctx.call("apply")
     (and `upgrade`, and importing `backend.py`) always runs in a worker thread, never in the event loop, so
     `ctx.steam_call()` and `ctx.notify()` work there; together they get 20 seconds, after that the module
     fails to load (it's torn down and the log says so).
-  - `on_steam_start` callbacks get a thread of their own each time, so they may block. If Steam restarts
-    while one is still running, another one starts: guard it with a lock if that matters. When the module
+  - Event callbacks (`ctx.events`) get a thread of their own each time, so they may block. If Steam restarts
+    (or a game starts again) while one is still running, another one starts: guard it with a lock if that matters. When the module
     is unloaded no new callback starts, and one still running is waited for up to 3 seconds before the
     module's files or data are removed.
   - For background work, start your own thread (daemon) in `setup` and stop it in `teardown`. `teardown`
@@ -248,6 +281,12 @@ METHODS = {"apply": apply}   # what the UI can call: ctx.call("apply")
   10 seconds; an error, `exit()` or running out of time is logged and the module is uninstalled anyway. From a
   terminal (`tools/install_module.py --uninstall`, uninstalling Invasor) the service is stopped and `steam_call`
   raises `Unavailable`, so it needs its plan B here too.
+  `ctx.events.on` does nothing there (it's logged): nothing is left to react to. Uninstalling also
+  removes the module from the user's order and from the disabled list, so a reinstall starts enabled and last.
+- **After unload.** Once a module is unloaded (disabled, uninstalled, replaced, or its `setup` failed or timed
+  out) its `ctx` is retired: `ctx.settings.set`, `ctx.data` and `ctx.game_data` stores raise `Unavailable`
+  instead of saving, `ctx.task()` raises `Unavailable` (and the tasks it left open end as failed), and `ctx.settings.on_change` ignores new callbacks (logged). A thread left running by an old
+  instance can't bring back files that were purged, or callbacks the core already forgot. The `ctx` of `uninstall()` is retired the same way once it ends (or runs out of its 10 seconds), and a task it left open ends as failed.
 - **Tools.** Only the Python standard library is available. Don't `pip install` anything: the service must
   keep working after system updates.
 
@@ -264,7 +303,7 @@ export default defineModule({
   // …or sub-tabs (L2/R2): tabs: [{ label, render(el, ctx), onShow?(ctx), onHide?() }],
   // tabsAlign: "start" | "center" | "end" | "justify",
   onShow(ctx) {}, onHide() {},          // the tab became visible / hidden
-  onGameChange(game, ctx) {},           // selected/running game changed
+  onGameChange(game, ctx) {},           // the game state changed (running, selected or highlighted)
   showInQam(ctx) { return true; },      // Quick Access only: false hides this tab there (may be async)
   destroy() {},                         // module disabled or overlay torn down
 });
@@ -329,7 +368,9 @@ export default defineModule({
   | Y | The control's special value |
 
   For a control of your own, set `data-nav` and a `data-hint`, and listen to `invasor:button` on it, calling
-  `preventDefault()` for what you handle.
+  `preventDefault()` for what you handle. `detail.button` is `"A"`, `"B"`, `"X"`, `"Y"`, `"UP"`, `"DOWN"`, `"LEFT"`, `"RIGHT"`,
+  `"L1"`, `"R1"`, `"L2"`, `"R2"`, `"SELECT"` and `"START"` (the core uses them to show the Tasks and Settings panels; take them first with `preventDefault()` if your control needs them)
+  or `"BTN_<n>"`.
 - **Imports.** Import only from `"invasor"`. Everything in `module-api.ts` is the contract; the rest of the
   core can change.
 
@@ -375,8 +416,9 @@ A module doesn't have to live inside Invasor. Keep it in its own repository, nex
   their own they look for `../invasor` next to the repository. See `patito/tests/test_backend.py` in the invasor-patito repository.
 - **Check and pack:** `python3 ~/Projects/invasor/tools/pack_module.py <id>`. It typechecks and builds `ui.ts`,
   runs `check_module.py` (tests included) and writes `<id>-<version>.zip` with only what the console needs:
-  `module.json`, the Python files, `dist/ui.js`, README and LICENSE (the one at the root of your repository, if the
-  module folder has none). Never the tests.
+  `module.json`, the Python files (also those of sub-packages, never `tests/`), `dist/ui.js`, README and LICENSE (the one at the root of your repository, if the
+  module folder has none), the files under `bin/` (programs the module runs) and under `assets/` (images and other data it ships).
+  Never the tests. The installer doesn't keep the executable bit: `chmod` a program in `bin/` before running it.
 - **Install:**
   - **On the console:** ⚙ Settings › Install module, then choose the zip, or open the Market (Library only) to install
     from the organisation's repositories.

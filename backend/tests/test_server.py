@@ -30,7 +30,11 @@ class Server(unittest.IsolatedAsyncioTestCase):
         def picky(value):
             raise InvalidArgument(f"bad value {value!r}")
 
+        def interrupted():
+            raise KeyboardInterrupt()
+
         features = {"mod": {
+            "interrupted": interrupted,
             "picky": picky, "quits": quits, "offline": offline,
             "echo": lambda **kw: kw, "slow": slow, "boom": lambda: 1 / 0,
             "blocking": blocking, "two": two, "object": lambda: object(),
@@ -100,6 +104,47 @@ class Server(unittest.IsolatedAsyncioTestCase):
     async def test_exit_in_a_method_doesnt_stop_the_server(self):
         with self.assertLogs("invasor.server", "ERROR"):
             self.assertEqual((await self.request("POST", "/api/mod/quits", {}))[0], 500)
+        self.assertEqual((await self.request("GET", "/health", token=None))[0], 200)
+
+    async def test_any_exception_of_a_method_is_a_500_with_an_answer(self):
+        with self.assertLogs("invasor.server", "ERROR"):
+            self.assertEqual((await self.request("POST", "/api/mod/interrupted", {}))[0], 500)
+
+    async def test_a_cancelled_request_still_closes_its_socket(self):
+        closed = []
+
+        class Writer:
+            def write(self, data):
+                pass
+
+            async def drain(self):
+                pass
+
+            def close(self):
+                closed.append(True)
+
+        api = ApiServer(self.cfg, {})
+
+        async def never(reader):
+            await asyncio.sleep(10)
+
+        api._handle = never
+        task = asyncio.create_task(api._client(None, Writer()))
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertEqual(closed, [True])
+
+    async def test_a_giant_header_line_is_refused_and_the_server_goes_on(self):
+        reader, writer = await asyncio.open_connection("127.0.0.1", self.port)
+        writer.write(b"POST /api/mod/echo HTTP/1.1\r\nX-Big: " + b"a" * (1 << 20) + b"\r\n\r\n")
+        try:
+            raw = await asyncio.wait_for(reader.read(), 5)
+            self.assertIn(b" 400 ", raw.split(b"\r\n")[0])
+        except ConnectionError:
+            pass  # the server closed with the rest unread: the answer may be lost with it
+        writer.close()
         self.assertEqual((await self.request("GET", "/health", token=None))[0], 200)
 
     async def test_non_json_result_is_a_clean_500(self):

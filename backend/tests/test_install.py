@@ -1,5 +1,6 @@
 import json
 import stat
+import sys
 import unittest
 import zipfile
 from unittest import mock
@@ -35,6 +36,15 @@ class Zips(unittest.TestCase):
         files = {"hello/module.json": MANIFEST, "hello/backend.py": backend, "hello/helpers.py": "X = 1\n", **extra}
         return self.zip(name, files)
 
+    def test_degenerate_entries_are_refused_not_a_crash(self):
+        for bad in (".", "", "hello/../module.json"):
+            if not bad and sys.version_info < (3, 10):
+                continue  # zipfile before 3.10 can't even write an entry with an empty name
+            with self.subTest(entry=bad):
+                path = self.zip("odd.zip", {"hello/module.json": MANIFEST, bad: "x"})
+                with self.assertRaises(InvalidArgument):
+                    install.inspect(path, {"core"})
+
     def test_browse_lists_folders_and_zips_inside_home_only(self):
         self.good()
         (self.home / "Downloads" / "notes.txt").write_text("x")
@@ -53,6 +63,33 @@ class Zips(unittest.TestCase):
         (self.home / ".config").mkdir()
         (self.home / ".config/user-dirs.dirs").write_text('XDG_DOWNLOAD_DIR="$HOME/Descargas"\n')
         self.assertEqual(install.browse()["path"], "Descargas")
+
+    def test_a_downloads_folder_outside_home_falls_back_to_home(self):
+        elsewhere = temp_dir(self)
+        (self.home / ".config").mkdir()
+        (self.home / ".config/user-dirs.dirs").write_text(f'XDG_DOWNLOAD_DIR="{elsewhere}"\n')
+        self.assertEqual(install.browse()["path"], "")
+
+    def test_installs_of_the_same_module_never_overlap(self):
+        import threading, time
+        path = self.good()
+        inside, overlap = [], []
+
+        def slow_before(mid):
+            inside.append(1)
+            if len(inside) > 1:
+                overlap.append(1)
+            time.sleep(0.2)
+            inside.pop()
+
+        install.install(path, {"core"})
+        threads = [threading.Thread(target=install.install, args=(path, {"core"}, True, slow_before)) for _ in range(3)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(10)
+        self.assertEqual(overlap, [])
+        self.assertTrue((self.user / "hello").is_dir())
 
     def test_inspect_and_install_and_replace(self):
         path = self.good()

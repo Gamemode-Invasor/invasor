@@ -12,6 +12,11 @@ import { panelOnLeft, type Side } from "./side";
 import { renderSettings, type ModuleInfo } from "./settings";
 import { tabRowHTML } from "./tabbar";
 import { createTabHost, type TabSpec } from "./tabhost";
+import { topLayerOf, toastHostOf } from "./cover-panel";
+import { createSettingsPanel } from "./settings-panel";
+import { createTasksPanel } from "./tasks-panel";
+import { EMPTY_TASKS, marker, parseSnapshot, summarize, type TasksSnapshot } from "./tasks-view";
+import { NO_ROOM, esc, safe } from "./util";
 import { openBigWindow } from "./window";
 
 // The overlay lives in its own shadow root: Steam's CSS can't restyle it and ours
@@ -21,13 +26,15 @@ import { openBigWindow } from "./window";
 // optional sub-tabs inside a module (L2/R2), all handled by the tab host (tabhost.ts).
 
 export interface Overlay {
-  toggle(): void;
+  toggle(): boolean;
   setOpen(open: boolean): void;
   isOpen(): boolean;
   /** False in Quick Access while no game runs: no "I" there, and nothing opens. */
   isAvailable(): boolean;
   /** Hide this window's "I" because another window shows its own. */
   setHandleHidden(hidden: boolean): void;
+  /** The backend says the tasks changed (it pushes this to every window; nothing is polled). */
+  setTasks(snapshot: unknown): void;
   destroy(): void;
 }
 
@@ -56,15 +63,9 @@ const QAM_FALLBACK_W = 348;
 // elsewhere (in Quick Access the visible column is narrower anyway).
 const PANEL_SHARE: Record<string, number> = { main: 0.4 };
 const PANEL_SHARE_DEFAULT = 1 / 3;
-const SETTINGS_ID = "__settings";
 // A big window needs at least this share of the screen on screen (not the 348px
 // Quick Access column during a game).
 const WINDOW_MIN_SHARE = 0.6;
-const NO_ROOM_MESSAGE = "The expanded view is only available from the Library (Steam button → Library)";
-
-function esc(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-}
 
 export function createOverlay(api: Api, version: string, role: string, kit: KitRegistry): Overlay {
   const host = document.createElement("div");
@@ -80,13 +81,18 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     <div class="panel" hidden>
       <header>
         <span>Invasor <small>${esc(version)}</small></span>
-        <button class="close" aria-label="Close">✕</button>
+        <span class="head-actions">
+          <button class="tasks-btn" aria-label="Open the tasks panel">Tasks</button>
+          <button class="settings-btn" aria-label="Open settings">⚙</button>
+          <button class="close" aria-label="Close">✕</button>
+        </span>
       </header>
       <div class="game"></div>
       ${tabRowHTML("main", "L1", "R1")}
       ${tabRowHTML("sub", "L2", "R2", true)}
       <div class="content-wrap">
         <section class="content"></section>
+        <p class="no-modules" hidden>No modules enabled. Start opens Settings.</p>
         <div class="scrollbar"><div class="thumb"></div></div>
       </div>
       <div class="toast" hidden></div>
@@ -106,11 +112,8 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   // Touch/mouse entry point, so the overlay is reachable without a keyboard.
   const handle = $<HTMLButtonElement>(".handle");
   handle.addEventListener("click", () => toggle());
-  // ui.confirm draws over the top layer: the last open big window, else the panel.
-  setTopLayer(() => {
-    const boxes = stage.querySelectorAll<HTMLElement>(".iwin .iwin-box");
-    return boxes.length ? boxes[boxes.length - 1] : panel;
-  });
+  // ui.confirm draws over the top layer: the last open big window, else the panel that covers, else the panel.
+  setTopLayer(() => topLayerOf(stage, panel));
 
   // Quick Access offers the panel only while a game runs (the library always does).
   const qam = role === "quickaccess";
@@ -131,11 +134,13 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   function setAvailable(yes: boolean) {
     available = yes;
     showHandle();
+    if (!yes && !panel.hidden) toggle(false); // the game ended: Quick Access has nothing to show
   }
   setAvailable(available);
 
   let game: GameState = { selected: null, running: null, highlighted: null };
   let gameKey = "";
+  let destroyed = false; // set by destroy(): answers still on their way must not drive the hooks
   let pollTimer: number | undefined;
   const toastTimers = new Map<HTMLElement, number>(); // one per toast element: the panel's and each window's
   let modules = new Map<string, LiveModule>();
@@ -147,8 +152,75 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   const nav = attachGamepadNav(stage, panel, () => toggle(false), {
     onTab: (dir) => tabs.step(dir),
     onSubTab: (dir) => tabs.stepSub(dir),
-    extraHint: () => (tabs.hasSub() ? "L1/R1 module · L2/R2 section" : tabs.count() > 1 ? "L1/R1 module" : ""),
+    extraHint: () => {
+      const tabHint = tabs.hasSub() ? "L1/R1 module · L2/R2 section" : tabs.count() > 1 ? "L1/R1 module" : "";
+      return [tabHint, "Select tasks", "Start settings"].filter(Boolean).join(" · ");
+    },
+    // One panel at a time: the buttons obey the one in front (Select acts only from the Invasor panel
+    // or Tasks, Start only from the Invasor panel or Settings).
+    onSelect: () => void (settingsPanel.isOpen() || tasksPanel.toggle()),
+    onStart: () => void (tasksPanel.isOpen() || settingsPanel.toggle()),
   });
+  // Covers the panel on Select (or its "Tasks" button) and gives the pad back on Select or B.
+  const tasksPanel = createTasksPanel({
+    stage,
+    panel,
+    nav,
+    nameOf: (owner) => (owner === "core" ? "Invasor" : moduleNames.get(owner) ?? owner),
+    onOpen: () => {
+      applyTasks(latestTasks); // what's on screen now counts as seen
+      void refreshTasks(); // and make sure it's the latest
+    },
+    onClear: () => {
+      // The backend forgets the ones that ended and says how the list is now; the other window hears it from the push.
+      pushes++;
+      api.call("core", "tasks_clear").then((v) => {
+        const snapshot = parseSnapshot(v);
+        if (snapshot && !destroyed) applyTasks(snapshot);
+      }).catch(() => toast("Couldn't clear the list", "error"));
+    },
+  });
+  const tasksBtn = $(".tasks-btn");
+  tasksBtn.addEventListener("click", () => tasksPanel.toggle());
+  $(".settings-btn").addEventListener("click", () => settingsPanel.toggle());
+
+  // ---------- tasks ----------
+  // The backend pushes the tasks to every window whenever one changes (setTasks), so nothing is
+  // polled. We ask once ourselves (a task may be running from before we were injected), when the
+  // panel opens and when the window is seen again: that catches anything a push missed.
+  const moduleNames = new Map<string, string>(); // id -> name, for the owner of a task
+  let latestTasks: TasksSnapshot = EMPTY_TASKS;
+  const seenFailed = new Set<number>(); // failed tasks the user has had the chance to see
+  let pushes = 0; // counts pushes, so an answer to an older question never overwrites a newer push
+
+  function applyTasks(snapshot: TasksSnapshot) {
+    latestTasks = snapshot;
+    const recent = new Set(snapshot.recent.map((t) => t.id));
+    for (const id of seenFailed) if (!recent.has(id)) seenFailed.delete(id); // gone from the list: nothing to remember
+    if (tasksPanel.isOpen()) for (const t of snapshot.recent) if (t.state === "failed") seenFailed.add(t.id);
+    const mark = marker(summarize(snapshot, seenFailed));
+    for (const node of [handle, tasksBtn]) {
+      if (mark) node.dataset.tasks = mark;
+      else delete node.dataset.tasks;
+    }
+    tasksPanel.update(snapshot);
+  }
+
+  async function refreshTasks() {
+    const asked = pushes;
+    try {
+      const snapshot = parseSnapshot(await api.call("core", "tasks"));
+      if (snapshot && !destroyed && asked === pushes) applyTasks(snapshot);
+    } catch {
+      // The backend isn't answering: keep what we have; the status line says so when the panel is open.
+    }
+  }
+  const onSeenAgain = () => {
+    if (!document.hidden) void refreshTasks();
+  };
+  document.addEventListener("visibilitychange", onSeenAgain);
+  window.addEventListener("focus", onSeenAgain);
+  void refreshTasks();
 
   const tabs = createTabHost({
     content: $<HTMLElement>(".content"),
@@ -162,7 +234,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   // A module UI registering after the tabs were built (it was injected late): the next
   // open reads the module list again anyway; if the panel is open, now.
   kit.onRegister(() => {
-    if (!panel.hidden) void rebuildTabs();
+    if (!panel.hidden) rebuildTabs().catch((e) => console.error("[invasor] rebuild failed", e));
   });
 
   // ---------- side ----------
@@ -205,14 +277,16 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
 
   // ---------- toast ----------
   function toast(message: string, kind: "ok" | "error" = "ok") {
-    // Shown on the top layer: a big window has its own toast area (the panel's is under it).
-    const wins = stage.querySelectorAll<HTMLElement>(".iwin .toast");
-    const el = wins.length ? wins[wins.length - 1] : toastEl;
+    // Shown on the top layer: a big window, or a panel that covers this one, has its own toast area (the panel's is under it).
+    const el = toastHostOf(stage, toastEl);
     el.textContent = message;
     el.className = `toast ${kind}`;
     el.hidden = false;
     window.clearTimeout(toastTimers.get(el));
-    toastTimers.set(el, window.setTimeout(() => (el.hidden = true), TOAST_MS));
+    toastTimers.set(el, window.setTimeout(() => {
+      el.hidden = true;
+      toastTimers.delete(el);
+    }, TOAST_MS));
   }
 
   // ---------- module plumbing ----------
@@ -239,7 +313,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       canOpenWindow,
       openWindow(spec) {
         if (!canOpenWindow()) {
-          toast(NO_ROOM_MESSAGE, "error");
+          toast(NO_ROOM, "error");
           return null;
         }
         const handle = openBigWindow({ ...spec, onClose: () => (windows.delete(handle), spec.onClose?.()) }, { stage, nav, ctx });
@@ -268,14 +342,6 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   function canOpenWindow(): boolean {
     const visibleW = parseFloat(host.style.getPropertyValue("--visible-w")) || window.innerWidth;
     return visibleW >= screen.width * WINDOW_MIN_SHARE && window.innerHeight >= screen.height * WINDOW_MIN_SHARE;
-  }
-
-  function safe(what: string, fn: () => void) {
-    try {
-      fn();
-    } catch (e) {
-      console.error(`[invasor] ${what} failed`, e);
-    }
   }
 
   /** What a module's tab shows: its definition, or why it can't be shown. Null: no tab. */
@@ -327,11 +393,11 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   const settingsCtx = () =>
     (coreCtx ??= makeCtx({ id: "core", name: "Invasor", tab: "Invasor", description: "", author: "", order: 0, enabled: true, loaded: true, error: null, source: "core", ui: false, ui_built: false, settings: [], forms: {} }));
 
-  // Created once: passing the same spec again keeps the tab's content (see tabhost.ts).
-  const settingsSpec: TabSpec = {
-    id: SETTINGS_ID,
-    label: "⚙ Settings",
-    name: "Settings",
+  // Covers the panel on Start (or its ⚙ button); built the first time it opens and then kept.
+  const settingsPanel = createSettingsPanel({
+    stage,
+    panel,
+    nav,
     render: (el) =>
       renderSettings(el, {
         api,
@@ -343,7 +409,11 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
         onHandleIcon: applyHandleIcon,
         openWindow: (spec) => settingsCtx().openWindow(spec),
       }),
-  };
+  });
+
+  // With no module tabs the panel says so instead of showing nothing (not before the first list arrives).
+  const noModules = $(".no-modules");
+  const showNoModules = () => void (noModules.hidden = tabs.count() > 0);
 
   function destroyModule(m: LiveModule) {
     spaceListeners.delete(m.id);
@@ -352,7 +422,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
 
   /**
    * (Re)create the tabs from the backend's module list. Unchanged tabs keep their state.
-   * False if the list couldn't be fetched: what's there stays (⚙ Settings at least).
+   * False if the list couldn't be fetched: what's there stays.
    * Overlapping calls: the one asked last wins, whichever answer arrives last.
    */
   let rebuildSeq = 0;
@@ -363,21 +433,26 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       list = await api.call<ModuleInfo[]>("core", "modules");
     } catch {
       toast("Couldn't load the module list", "error");
-      if (!tabs.count()) await tabs.set([settingsSpec]);
+      showNoModules();
       return false;
     }
-    if (seq !== rebuildSeq) return true; // a newer rebuild took over while we waited
+    if (seq !== rebuildSeq || destroyed) return true; // a newer rebuild took over while we waited
     const before = modules;
     modules = new Map();
+    moduleNames.clear();
+    for (const m of list) moduleNames.set(m.id, m.name);
     for (const m of list) {
       if (qam && m.no_qam) continue; // the module asked not to be shown in Quick Access
       const live = moduleTab(m, before.get(m.id));
       if (live) modules.set(m.id, live);
     }
     tabs.hidden(); // onHide before any module is destroyed
-    for (const [id, m] of before) if (modules.get(id) !== m) destroyModule(m);
+    const gone = [...before].filter(([id, m]) => modules.get(id) !== m).map(([, m]) => m);
     tabsDirty = true;
+    // Their tabs go first, then their code: in Quick Access applyTabs() waits (showInQam), and
+    // until the tabs are replaced a destroyed module's tab would still take presses.
     await applyTabs();
+    for (const m of gone) destroyModule(m);
     return true;
   }
 
@@ -394,7 +469,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     const hidden = qam
       ? await hiddenInQam(all.filter((m) => m.def?.showInQam).map((m) => ({ id: m.id, fn: () => m.def!.showInQam!(m.ctx!) })))
       : new Set<string>();
-    if (seq !== tabSeq) return false; // a newer call took over while we waited
+    if (seq !== tabSeq || destroyed) return false; // a newer call took over while we waited
     // Read now, not before the wait: the user may have stepped to another tab meanwhile.
     const keep = tabs.activeId();
     const visible = all.filter((m) => !hidden.has(m.id));
@@ -402,7 +477,8 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     if (!tabsDirty && key === shownKey) return false;
     tabsDirty = false;
     shownKey = key;
-    await tabs.set([...visible.map((m) => m.spec), settingsSpec], keep);
+    await tabs.set(visible.map((m) => m.spec), keep);
+    showNoModules();
     return true;
   }
 
@@ -422,6 +498,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   async function refreshGame() {
     try {
       const next = await api.call<GameState>("core", "game");
+      if (destroyed) return;
       if (qam) setAvailable(next.running !== null);
       const key = JSON.stringify(next);
       if (key === gameKey) return;
@@ -527,18 +604,23 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   }
 
   // ---------- open / close ----------
-  function toggle(force?: boolean) {
+  /** True if it opened or closed the panel (false: nothing to do, e.g. no game in Quick Access). */
+  function toggle(force?: boolean): boolean {
     const open = force === undefined ? panel.hidden : force;
-    if (open === !panel.hidden) return;
-    if (open && !available) return;
+    if (open === !panel.hidden) return false;
+    if (open && !available) return false;
     panel.hidden = !open;
     window.clearInterval(pollTimer);
     window.clearInterval(fitTimer);
     if (!open) {
+      tasksPanel.close(false); // the panels that cover this one go with it
+      settingsPanel.close(false);
       for (const w of [...windows]) w.close(); // big windows go with the panel
       panel.dispatchEvent(new CustomEvent("invasor:dismiss")); // e.g. cancel an open ui.confirm
       tabs.hidden();
-      return;
+      // The highlighted tile of an imageGrid keeps its ring while the panel is closed: stop its video.
+      for (const v of panel.querySelectorAll("video")) v.pause();
+      return true;
     }
     fitToScreen();
     fitTimer = window.setInterval(fitToScreen, FIT_MS);
@@ -565,10 +647,12 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     // A backend that isn't reachable yet just leaves what's there; the next open tries again.
     void refreshGame().then(async () => {
       await rebuildTabs();
+      if (destroyed) return;
       tabs.shown(); // a no-op if the tab already got its onShow
       nav.reset();
-    });
+    }).catch((e) => console.error("[invasor] opening the panel failed", e));
     pollTimer = window.setInterval(refreshGame, GAME_POLL_MS);
+    return true;
   }
 
   return {
@@ -580,8 +664,20 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       handleHidden = hidden;
       showHandle();
     },
+    setTasks(value) {
+      const snapshot = parseSnapshot(value);
+      if (!snapshot || destroyed) return;
+      pushes++;
+      applyTasks(snapshot);
+    },
     destroy() {
+      destroyed = true;
+      panel.dispatchEvent(new CustomEvent("invasor:dismiss")); // a pending ui.confirm/choose resolves
       for (const w of [...windows]) w.close();
+      tasksPanel.destroy();
+      settingsPanel.destroy();
+      document.removeEventListener("visibilitychange", onSeenAgain);
+      window.removeEventListener("focus", onSeenAgain);
       if (qam && lastShown) api.call("core", "set_qam_shown", { shown: false }).catch(() => {});
       window.clearInterval(availTimer);
       window.removeEventListener("focus", checkGame);

@@ -2,6 +2,7 @@ import copy
 import hashlib
 import io
 import json
+import shutil
 import time
 import unittest
 from unittest import mock
@@ -11,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 from invasor import config, install, market
 from invasor.schema import InvalidArgument, Unavailable
 
-from .helpers import patch, temp_dir
+from .helpers import patch, temp_dir, http_error
 
 CONF = """# comment
 invasor
@@ -57,7 +58,7 @@ class Net:
         return res
 
     def not_found(self):
-        return urllib.error.HTTPError("u", 404, "Not Found", {}, io.BytesIO())
+        return http_error("u", 404, "Not Found", {})
 
 
 class Parse(unittest.TestCase):
@@ -149,6 +150,19 @@ class Catalog(unittest.TestCase):
         self.net.answers[market.CATALOG_URL] = OSError("offline")
         with self.assertRaises(Unavailable):
             self.market().list()
+
+    def test_a_dead_network_costs_one_attempt_until_refreshed(self):
+        self.net.answers[market.CATALOG_URL] = OSError("offline")
+        m = self.market()
+        with self.assertRaises(Unavailable):
+            m.list()
+        asked = len(self.net.asked)
+        with self.assertRaises(Unavailable):
+            m.list()
+        self.assertEqual(len(self.net.asked), asked)  # not asked again
+        with self.assertRaises(Unavailable):
+            m.list(refresh=True)  # an explicit retry does ask
+        self.assertGreater(len(self.net.asked), asked)
 
     def test_cached_until_refreshed_and_per_channel(self):
         m = self.market()
@@ -276,11 +290,55 @@ class FileOrLive(unittest.TestCase):
 
     def test_a_missing_stale_or_broken_file_falls_back_to_github(self):
         old = (datetime.now(timezone.utc) - timedelta(days=9)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        for answer in (urllib.error.HTTPError("u", 404, "Not Found", {}, io.BytesIO()), OSError("offline"), "nope", market_file(generated=old)):
+        for answer in (http_error("u", 404, "Not Found", {}), OSError("offline"), "nope", market_file(generated=old)):
             with self.subTest(answer=str(answer)[:30]):
                 self.net.answers[market.FILE_URL] = answer
                 res = self.market().list()
                 self.assertEqual((res["source"], res["generated"], [c["id"] for c in res["modules"]]), ("live", None, ["patito"]))
+
+    def test_a_cache_outside_home_downloads_inside_it(self):
+        home = temp_dir(self)
+        patch(self, "invasor.install.HOME", home)
+        patch(self, "invasor.config.CACHE_DIR", temp_dir(self) / "other-disk" / "invasor")
+        self.net.answers[market.FILE_URL] = market_file()
+        data = b"PK"
+        sha = hashlib.sha256(data).hexdigest()
+
+        def fetch_file(url, dest, limit):
+            dest.write_bytes(data if url.endswith(".zip") else sha.encode())
+
+        m = market.Market(fetch=self.net.get, fetch_text=self.net.get, fetch_file=fetch_file)
+        path, work, mid = m.download("invasor-patito")
+        self.assertTrue((home / path).is_file())
+        shutil.rmtree(work)
+
+    def test_a_task_gets_the_download_progress_and_the_steps(self):
+        from invasor.tasks import TaskRegistry
+        home = temp_dir(self)
+        patch(self, "invasor.install.HOME", home)
+        patch(self, "invasor.config.CACHE_DIR", home / ".cache" / "invasor")
+        self.net.answers[market.FILE_URL] = market_file()
+        data = b"PK"
+        sha = hashlib.sha256(data).hexdigest()
+        registry = TaskRegistry()
+        seen = []
+
+        def fetch_file(url, dest, limit, progress=None):
+            if url.endswith(".zip"):
+                dest.write_bytes(data)
+                progress(1, 2)
+                seen.append(dict(registry.snapshot()["active"][0]))
+            else:
+                self.assertIsNone(progress)
+                dest.write_text(sha)
+
+        m = market.Market(fetch=self.net.get, fetch_text=self.net.get, fetch_file=fetch_file)
+        task = registry.start("core", "Installing")
+        path, work, mid = m.download("invasor-patito", task)
+        self.assertEqual((seen[0]["fraction"], seen[0]["text"]), (0.4, "Downloading Patito"))
+        last = registry.snapshot()["active"][0]
+        self.assertEqual((last["fraction"], last["text"]), (0.8, "Verifying Patito"))
+        shutil.rmtree(work)
 
     def test_a_card_from_the_file_downloads_like_any_other(self):
         home = temp_dir(self)
@@ -303,7 +361,7 @@ class FileOrLive(unittest.TestCase):
 
 
 def limited(minutes=4, remaining="0"):
-    return urllib.error.HTTPError("u", 403, "rate limit exceeded", {"X-RateLimit-Remaining": remaining, "X-RateLimit-Reset": str(int(time.time()) + minutes * 60)}, None)
+    return http_error("u", 403, "rate limit exceeded", {"X-RateLimit-Remaining": remaining, "X-RateLimit-Reset": str(int(time.time()) + minutes * 60)})
 
 
 class RateLimit(unittest.TestCase):
@@ -323,10 +381,10 @@ class RateLimit(unittest.TestCase):
     def test_the_wait_is_in_minutes_and_only_for_the_limit(self):
         self.assertEqual(market.rate_limit_wait(limited(4)), 4)
         self.assertEqual(market.rate_limit_wait(limited(0)), 1)
-        for e in (limited(4, remaining="12"), urllib.error.HTTPError("u", 404, "x", {}, io.BytesIO()), urllib.error.HTTPError("u", 403, "x", {}, io.BytesIO()),
-                  urllib.error.HTTPError("u", 500, "x", {"X-RateLimit-Remaining": "0"}, io.BytesIO())):
+        for e in (limited(4, remaining="12"), http_error("u", 404, "x", {}), http_error("u", 403, "x", {}),
+                  http_error("u", 500, "x", {"X-RateLimit-Remaining": "0"})):
             self.assertIsNone(market.rate_limit_wait(e))
-        e = urllib.error.HTTPError("u", 429, "x", {"Retry-After": "90"}, io.BytesIO())
+        e = http_error("u", 429, "x", {"Retry-After": "90"})
         self.assertEqual(market.rate_limit_wait(e), 2)
 
     def test_some_modules_read_one_note_for_the_rest(self):
@@ -358,7 +416,7 @@ class RateLimit(unittest.TestCase):
             self.assertEqual(len(self.net.asked), asked)  # complete now: cached for the long time
 
     def test_any_other_403_stays_as_it_was(self):
-        self.net.answers[api("invasor-pescao") + "/latest"] = urllib.error.HTTPError("u", 403, "Forbidden", {}, io.BytesIO())
+        self.net.answers[api("invasor-pescao") + "/latest"] = http_error("u", 403, "Forbidden", {})
         self.assertIn("invasor-pescao: GitHub answered 403", self.market().list()["notes"])
 
 

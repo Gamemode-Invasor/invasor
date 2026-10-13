@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import json
 import unittest
 from datetime import datetime, timezone
@@ -68,6 +69,12 @@ class Build(unittest.TestCase):
 
 
 class Main(unittest.TestCase):
+    def setUp(self):
+        for stream in ("stdout", "stderr"):  # gen_market reports on them: not for the test run's output
+            p = mock.patch(f"sys.{stream}", io.StringIO())
+            p.start()
+            self.addCleanup(p.stop)
+
     def run_main(self, table, conf="invasor\ninvasor-a\n"):
         d = temp_dir(self)
         (d / "repos.conf").write_text(conf)

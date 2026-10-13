@@ -153,10 +153,14 @@ class ComboWatcher:
             # Never let one odd device (or sysfs file) end this thread: the combo would be
             # gone until the service restarts.
             try:
+                present = set()
                 for dev, name, kind in pads():
+                    present.add(dev)
                     if dev not in readers or not readers[dev].is_alive():
                         readers[dev] = threading.Thread(target=self._read, args=(dev, name, kind), daemon=True)
                         readers[dev].start()
+                for dev in [d for d in readers if d not in present and not readers[d].is_alive()]:
+                    del readers[dev]  # unplugged for good: don't keep its dead thread
             except Exception:
                 log.exception("gamepad scan failed")
             time.sleep(RESCAN_SECONDS)

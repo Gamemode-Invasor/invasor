@@ -71,6 +71,17 @@ class Toml(unittest.TestCase):
             tomlio.save(self.path, data, mtime)
         self.assertEqual(self.path.read_text(), LSFG)
 
+    def test_a_change_during_validation_is_refused_too(self):
+        self.path.write_text(LSFG)
+        data, mtime = tomlio.load(self.path)
+
+        def other_program_saves(tmp):
+            os.utime(self.path, ns=(mtime + 10**9, mtime + 10**9))
+
+        with self.assertRaises(Unavailable):
+            tomlio.save(self.path, data, mtime, validate=other_program_saves)
+        self.assertEqual(self.path.read_text(), LSFG)
+
     def test_values_and_strings(self):
         data = {"version": 2, "s": 'quote " back \\ tab\t nl\n ñ', "f": 0.1, "whole": 1.0, "e": 1e-05,
                 "l": [], "ls": ["a", "b c"], "t": {"x": True, "sub": {"y": 1}}, "weird key": 1}

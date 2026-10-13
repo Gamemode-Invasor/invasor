@@ -76,17 +76,29 @@ def fetch_json(url):
     return json.loads(data)
 
 
-def download(url, dest, limit):
-    """Save url (https only) at dest, giving up past `limit` bytes."""
+def download(url, dest, limit, progress=None):
+    """Save url (https only) at dest, giving up past `limit` bytes. `progress(done, total)`,
+    if given, hears how many bytes are in so far (total is None when the server doesn't say)."""
     if not url.startswith("https://"):
         raise ValueError(f"not an https URL: {url}")
     size = 0
-    with _opener().open(_request(url), timeout=TIMEOUT) as r, open(dest, "wb") as f:
-        while chunk := r.read(1 << 16):
-            size += len(chunk)
-            if size > limit:
-                raise ValueError("download too large")
-            f.write(chunk)
+    with _opener().open(_request(url), timeout=TIMEOUT) as r:
+        if not r.geturl().startswith("https://"):  # a redirect may leave https
+            raise ValueError(f"redirected to a non-https URL: {r.geturl()}")
+        total = None
+        if progress:
+            try:
+                total = int(r.headers.get("Content-Length") or 0) or None
+            except ValueError:
+                pass
+        with open(dest, "wb") as f:
+            while chunk := r.read(1 << 16):
+                size += len(chunk)
+                if size > limit:
+                    raise ValueError("download too large")
+                f.write(chunk)
+                if progress:
+                    progress(size, total)
 
 
 def run_detached(unit, argv, what="update"):
@@ -125,7 +137,9 @@ def safe_extract(archive, dest, root_name):
             m.mode = 0o755 if (m.isdir() or m.mode & 0o100) else 0o644
             m.uid = m.gid = 0
             m.uname = m.gname = ""
-        tar.extractall(dest, members)
+        # Python 3.12+ (and the security releases of 3.9-3.11) have extraction filters: use the strictest.
+        extra = {"filter": "data"} if hasattr(tarfile, "data_filter") else {}
+        tar.extractall(dest, members, **extra)
     return Path(dest) / root_name
 
 
@@ -135,7 +149,6 @@ class Updater:
         self._channel = channel  # "stable" or "beta", asked at each check: it can change while running
         self._fetch, self._download, self._start = fetch, fetch_file, start
         self.last = None  # the latest check()'s answer, for the panel to show on opening
-        self._package = None  # (package URL, sha256 URL) of that check's release
 
     def _unknown(self, why):
         log.info("couldn't check for updates: %s", why)
@@ -145,24 +158,29 @@ class Updater:
     def check(self):
         """{current, latest, available, downgrade, checked, notes}. Offline, no release yet, a release
         without a package…: checked is False (nothing to report, nothing wrong)."""
+        return self._check()[0]
+
+    def _check(self):
+        """check()'s answer and the package it found: (package URL, sha256 URL) or None. Handed
+        back, not kept in self: the panel's and the probe's checks may run at the same time."""
         beta = self._channel() == "beta"
         try:
             release = self._fetch(RELEASES_URL if beta else RELEASE_URL)
         except urllib.error.HTTPError as e:
-            return self._unknown(f"GitHub answered {e.code}")
+            return self._unknown(f"GitHub answered {e.code}"), None
         except Exception as e:
-            return self._unknown(e)
+            return self._unknown(e), None
         if beta:
             release = self._newest(release)
         if not isinstance(release, dict) or release.get("draft") or (release.get("prerelease") and not beta):
-            return self._unknown("no usable release")
+            return self._unknown("no usable release"), None
         tag = release.get("tag_name")
         latest = parse_version(tag)
         mine = parse_version(self.current)
         if latest is None or mine is None:
-            return self._unknown(f"unreadable version ({tag!r} / {self.current!r})")
+            return self._unknown(f"unreadable version ({tag!r} / {self.current!r})"), None
         if latest[3] == 0 and not beta:  # a release candidate nobody marked as a pre-release
-            return self._unknown(f"{tag} is a pre-release")
+            return self._unknown(f"{tag} is a pre-release"), None
         version = tag[1:] if tag.startswith("v") else tag
         package = self._find_package(release, version)
         # A machine on a release candidate that follows the stable channel is offered the stable
@@ -170,7 +188,7 @@ class Updater:
         down = not beta and mine[3] == 0 and latest < mine
         available = latest > mine or down
         if available and package is None:
-            return self._unknown(f"release {version} has no package")
+            return self._unknown(f"release {version} has no package"), None
         notes = release.get("body")
         self.last = {
             "current": self.current,
@@ -180,8 +198,7 @@ class Updater:
             "checked": True,
             "notes": self._summary(notes),
         }
-        self._package = package
-        return self.last
+        return self.last, package
 
     @staticmethod
     def _newest(releases):
@@ -212,29 +229,37 @@ class Updater:
             return urls[name], urls[name + ".sha256"]
         return None
 
-    def apply(self):
+    def apply(self, task=None):
         """Download, verify and unpack the new version, and hand over to the installer.
-        Returns once it's started: the service is restarted by it a moment later."""
-        res = self.check()
+        Returns once it's started: the service is restarted by it a moment later.
+        `task` (tasks.Task), if given, shows how far it got."""
+        res, package = self._check()
         if not res["checked"] or not res["available"]:
             raise InvalidArgument("there's no update to install")
-        version, (pkg_url, sha_url) = res["latest"], self._package
+        version, (pkg_url, sha_url) = res["latest"], package
         config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
         work = Path(tempfile.mkdtemp(prefix="update-", dir=config.CACHE_DIR))
         try:
             tarball = work / f"invasor-{version}.tar.gz"
             try:
-                self._download(pkg_url, tarball, MAX_PACKAGE)
+                # The progress goes only where there is a task to show it (and fakes in tests don't take it).
+                self._download(pkg_url, tarball, MAX_PACKAGE, **({"progress": task.progress(0, 0.8, "Downloading")} if task else {}))
                 self._download(sha_url, work / "sha256", 1024)
             except Exception as e:
                 raise Unavailable(f"couldn't download the update: {e}") from None
+            if task:
+                task.update(0.8, "Verifying")
             self._verify(tarball, (work / "sha256").read_text(errors="replace"))
+            if task:
+                task.update(0.9, "Unpacking")
             try:
                 root = safe_extract(tarball, work, f"invasor-{version}")
             except (ValueError, tarfile.TarError, OSError) as e:
                 raise InvalidArgument(f"the update package is invalid: {e}") from None
             self._check_contents(root, version)
             log.info("updating %s -> %s", self.current, version)
+            if task:
+                task.update(0.95, "Starting the installer")
             self._start(root, work)
         except BaseException:
             shutil.rmtree(work, ignore_errors=True)

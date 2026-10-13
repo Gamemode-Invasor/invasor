@@ -113,6 +113,7 @@ class Market:
         self._core = core_version
         self._fetch, self._text, self._download = fetch, fetch_text, fetch_file
         self._lock = threading.Lock()
+        self._failed = None  # (channel, when, error) of the last catalog that couldn't be loaded
         self._cache = None  # (when, channel, {repo: entry}, [notes], {source, generated})
 
     # ---------- the catalog ----------
@@ -286,7 +287,15 @@ class Market:
         with self._lock:
             channel = "beta" if self._channel() == "beta" else "stable"
             if refresh or self._cache is None or self._cache[1] != channel or time.monotonic() - self._cache[0] > CACHE_SECONDS:
-                self._cache = self._load()
+                failed = self._failed
+                if failed and not refresh and failed[0] == channel and time.monotonic() - failed[1] < RATE_RETRY:
+                    raise failed[2]  # a dead network costs one attempt, not one per call
+                try:
+                    self._cache = self._load()
+                except Unavailable as e:
+                    self._failed = (channel, time.monotonic(), e)
+                    raise
+                self._failed = None
             return self._cache
 
     @staticmethod
@@ -333,25 +342,34 @@ class Market:
         if not hmac.compare_digest(h.hexdigest(), words[0].lower()):
             raise InvalidArgument("the module's checksum doesn't match: not installing it")
 
-    def download(self, repo):
+    def download(self, repo, task=None):
         """Download and verify the catalog's zip of `repo`. Returns (path relative to home, the work
         folder to delete afterwards, the module id). The repository must be in the catalog: nothing the client sends
-        becomes a URL."""
+        becomes a URL. `task` (tasks.Task), if given, shows how far it got."""
         entry = self._catalog()[2].get(repo) if isinstance(repo, str) else None
         if entry is None:
             raise InvalidArgument(f"{repo!r} isn't in the market")
         problem = schema.core_problem(entry, self._core)
         if problem:
             raise InvalidArgument(f"{entry['name']} {problem}")
-        config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        work = Path(tempfile.mkdtemp(prefix="market-", dir=config.CACHE_DIR))
+        # install() only takes zips inside the home folder: with XDG_CACHE_HOME elsewhere
+        # (another disk), the download goes to ~/.cache/invasor instead.
+        cache = config.CACHE_DIR
+        if install.HOME.resolve() not in cache.resolve().parents:
+            cache = install.HOME / ".cache" / "invasor"
+        cache.mkdir(parents=True, exist_ok=True)
+        work = Path(tempfile.mkdtemp(prefix="market-", dir=cache))
         try:
             zip_path = work / f"{entry['id']}-{entry['version']}.zip"
             try:
-                self._download(entry["zip"], zip_path, install.MAX_ZIP_BYTES)
+                # The progress goes only where there is a task to show it (and fakes in tests don't take it).
+                progress = {"progress": task.progress(0, 0.8, f"Downloading {entry['name']}")} if task else {}
+                self._download(entry["zip"], zip_path, install.MAX_ZIP_BYTES, **progress)
                 self._download(entry["sha256"], work / "sha256", 1024)
             except Exception as e:
                 raise Unavailable(f"couldn't download {entry['name']}: {e}") from None
+            if task:
+                task.update(0.8, f"Verifying {entry['name']}")
             self._verify(zip_path, (work / "sha256").read_text(errors="replace"))
             try:
                 relative = zip_path.resolve().relative_to(install.HOME.resolve())

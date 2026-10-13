@@ -7,6 +7,7 @@ import tempfile
 import time
 import tomllib
 import unittest
+from unittest import mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parents[1]
@@ -17,6 +18,7 @@ sys.path.insert(0, str(Path(os.environ.get("INVASOR_CORE") or HERE.parents[1]) /
 from invasor import schema, tomlio  # noqa: E402
 from invasor.modules import Form, Settings  # noqa: E402
 from invasor.storage import JsonStore  # noqa: E402
+from invasor.tasks import TaskRegistry  # noqa: E402
 
 import helpers  # noqa: E402
 
@@ -45,6 +47,7 @@ class FakeCtx:
     Unavailable = schema.Unavailable
     toml = tomlio
     id = "demo"
+    path = HERE
 
     def __init__(self, folder):
         manifest = schema.parse_manifest(json.loads((HERE / "module.json").read_text()), "demo")
@@ -56,16 +59,31 @@ class FakeCtx:
         self.data = JsonStore(folder / "data.json")
         self._folder = folder
         self.notified = []
-        self.steam_start_cbs = []
+        self.events = FakeEvents()
+        self.registry = TaskRegistry()
 
     def game_data(self, appid):
         return JsonStore(self._folder / "games" / f"{appid}.json")
 
-    def notify(self, title, body="", icon=""):
+    def notify(self, title, body="", icon="", timeout=15, sound=""):
         self.notified.append((title, body))
+        self.last_notify = {"timeout": timeout, "sound": sound}
 
-    def on_steam_start(self, cb):
-        self.steam_start_cbs.append(cb)
+
+    def task(self, label):
+        return self.registry.start("demo", label)
+
+
+class FakeEvents:
+    def __init__(self):
+        self.listeners = {}
+
+    def on(self, name, cb):
+        self.listeners.setdefault(name, []).append(cb)
+
+    def emit(self, name, payload):
+        for cb in self.listeners.get(name, []):
+            cb(payload)
 
 
 class Helpers(unittest.TestCase):
@@ -120,13 +138,46 @@ class Backend(unittest.TestCase):
             self.b.fail("unavailable")
 
     def test_steam_starts_are_counted(self):
-        self.assertEqual(self.ctx.steam_start_cbs, [self.b.steam_started])
+        self.assertEqual(self.ctx.events.listeners["steam_start"], [self.b.steam_started])
         self.assertEqual(self.b.stats()["steam_starts"], 0)
-        self.b.steam_started()
-        self.b.steam_started()
+        self.ctx.events.emit("steam_start", {"instance": "a"})
+        self.ctx.events.emit("steam_start", {"instance": "b"})
         stats = self.b.stats()
         self.assertEqual(stats["steam_starts"], 2)
         self.assertRegex(stats["last_steam_start"], r"^\d\d:\d\d:\d\d$")
+
+    def test_slow_task_reports_its_steps_and_ends(self):
+        self.b.time = mock.Mock()  # no real seconds in a test
+        self.assertEqual(self.b.slow_task(3), {"seconds": 3})
+        done = self.ctx.registry.snapshot()["recent"][0]
+        self.assertEqual((done["module"], done["state"], done["text"]), ("demo", "done", ""))
+        self.assertEqual(self.b.time.sleep.call_count, 3)
+
+    def test_slow_task_can_fail_on_purpose_and_checks_its_argument(self):
+        self.b.time = mock.Mock()
+        with self.assertRaises(schema.Unavailable):
+            self.b.slow_task(2, fail=True)
+        failed = self.ctx.registry.snapshot()["recent"][0]
+        self.assertEqual(failed["state"], "failed")
+        self.assertEqual(failed["fraction"], 0.5)  # where it got to
+        for bad in (0, 31, "5", True, 2.5):
+            with self.subTest(seconds=bad), self.assertRaises(schema.InvalidArgument):
+                self.b.slow_task(bad)
+
+    def test_game_events_are_noted(self):
+        self.assertIsNone(self.b.stats()["last_game_event"])
+        self.ctx.events.emit("game_started", {"appid": "1", "name": "Test Game", "shortcut": False})
+        self.assertRegex(self.b.stats()["last_game_event"], r"^started Test Game at \d\d:\d\d:\d\d$")
+        self.ctx.events.emit("game_stopped", {"appid": "1", "name": None, "shortcut": False})
+        self.assertRegex(self.b.stats()["last_game_event"], r"^stopped 1 at ")
+        self.ctx.events.emit("game_selected", {"appid": "2", "name": "Other", "shortcut": True})
+        self.assertRegex(self.b.stats()["last_game_event"], r"^selected Other at ")
+
+    def test_notify_passes_timeout_and_sound_and_ctx_path_is_used(self):
+        self.b.notify("T", "B", sound="trophy")
+        self.assertEqual(self.ctx.last_notify, {"timeout": 10, "sound": "trophy"})
+        self.assertEqual(self.b.whoami()["folder"], HERE.name)  # whatever the folder is called (the smoke runs a renamed copy)
+        self.assertGreaterEqual(self.b.stats()["files"], 2)  # backend.py and helpers.py
 
     def test_upgrade_is_remembered(self):
         self.assertIsNone(self.b.whoami()["upgraded_from"])

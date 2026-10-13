@@ -54,6 +54,7 @@ export function trackHighlight(ownHost: Element): { get(): TileInfo | null; dest
   let last: TileInfo | null = null;
   const update = (target: EventTarget | null) => {
     if (!(target instanceof Element) || target === ownHost || ownHost.contains(target)) return;
+    if (target === document.body) return; // Steam's focus fell to nowhere: keep the last tile
     last = tileInfo(target); // a non-game element (menu, tab…) clears it
   };
   const onFocus = (e: FocusEvent) => update(e.target);

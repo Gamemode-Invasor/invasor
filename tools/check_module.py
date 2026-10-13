@@ -66,10 +66,10 @@ def check(d: Path):
             methods = getattr(module, "METHODS", {})
             if not isinstance(methods, dict) or not all(isinstance(k, str) and callable(v) for k, v in methods.items()):
                 errors.append("backend.py: METHODS must be a dict of {name: function}")
-            for hook in ("setup", "teardown"):
+            for hook in ("setup", "teardown", "upgrade", "uninstall"):
                 if hasattr(module, hook) and not callable(getattr(module, hook)):
                     errors.append(f"backend.py: {hook} must be a function")
-        except Exception as e:  # noqa: BLE001 - report anything the import raises
+        except BaseException as e:  # noqa: BLE001 - anything the import raises, exit() included
             errors.append(f"backend.py doesn't import: {type(e).__name__}: {e}")
 
     if (d / "tests").is_dir():

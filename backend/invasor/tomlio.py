@@ -153,9 +153,19 @@ def save(path, data, expected_mtime=None, backup=True, validate=None):
             shutil.copymode(path, tmp)
         if validate is not None:
             validate(Path(tmp))
+        if expected_mtime is not None:  # once more, now that the slow part (validate) is over
+            try:
+                now = path.stat().st_mtime_ns
+            except FileNotFoundError:
+                now = None
+            if now != current:
+                raise Unavailable(f"{path.name} was changed by another program: reload and try again")
         os.replace(tmp, path)
         fsync_dir(path.parent)
     except BaseException:
-        os.unlink(tmp)
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass  # already renamed: don't hide the real error
         raise
     return path.stat().st_mtime_ns

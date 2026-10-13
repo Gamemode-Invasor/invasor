@@ -8,11 +8,13 @@ declare global {
     __INVASOR_CFG?: InvasorCfg;
     __invasor?: {
       version: string;
-      toggle(): void;
+      toggle(): boolean;
       setOpen(open: boolean): void;
       state(): { role: string; open: boolean; focused: boolean; available: boolean };
       /** Hide this window's "I" while another window shows its own (set by the backend). */
       setHandleHidden(hidden: boolean): void;
+      /** The tasks changed (pushed by the backend; see overlay.ts). */
+      tasks(snapshot: unknown): void;
       /** The game tile highlighted in this window's library, if any (asked by the backend). */
       highlighted(): TileInfo | null;
       destroy(): void;
@@ -75,8 +77,7 @@ function start(cfg: InvasorCfg, kit: KitRegistry) {
   // Keyboard toggle; the gamepad combo (L3+R3) is detected by the backend.
   const onKey = (e: KeyboardEvent) => {
     if (e.key === "F10") {
-      e.preventDefault();
-      overlay.toggle();
+      if (overlay.toggle()) e.preventDefault(); // F10 stays Steam's when there's nothing to toggle
     }
   };
   window.addEventListener("keydown", onKey, true);
@@ -88,6 +89,7 @@ function start(cfg: InvasorCfg, kit: KitRegistry) {
     setOpen: (open: boolean) => overlay.setOpen(open),
     state: () => ({ role: cfg.role, open: overlay.isOpen(), focused: document.hasFocus(), available: overlay.isAvailable() }),
     setHandleHidden: (hidden: boolean) => overlay.setHandleHidden(hidden),
+    tasks: (snapshot: unknown) => overlay.setTasks(snapshot),
     highlighted: () => highlight.get(),
     destroy() {
       window.removeEventListener("keydown", onKey, true);

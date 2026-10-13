@@ -12,6 +12,11 @@ def parse(settings):
 
 
 class Snap(unittest.TestCase):
+    def test_absurd_ranges_are_a_manifest_error_not_a_crash(self):
+        for lo, hi, step in ((-1e308, 1e308, 1e-310), (0, 1, 1e-300), (0, 1e308, 1e-9)):
+            with self.assertRaises(schema.SchemaError):
+                parse([field(type="slider", min=lo, max=hi, step=step, default=0)])
+
     def test_float_steps_have_no_noise(self):
         self.assertEqual(schema.snap(0.1 + 0.2, 0, 1, 0.1), 0.3)
         self.assertEqual(schema.snap(0.75, 0, 1, 0.25), 0.75)

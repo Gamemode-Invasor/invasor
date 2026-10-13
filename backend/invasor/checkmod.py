@@ -20,7 +20,7 @@ def check(d):
     methods = getattr(module, "METHODS", {})
     if not isinstance(methods, dict) or not all(isinstance(k, str) and callable(v) for k, v in methods.items()):
         return "METHODS must be a dict of {name: function}"
-    for hook in ("setup", "teardown"):
+    for hook in ("setup", "teardown", "upgrade", "uninstall"):
         if hasattr(module, hook) and not callable(getattr(module, hook)):
             return f"{hook} must be a function"
     return None

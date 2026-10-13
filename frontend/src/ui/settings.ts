@@ -220,14 +220,17 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
     await deps.onModulesChanged();
     rerender();
   }
+  let browseSeq = 0; // the folder asked last wins, not the answer that arrives last
   async function browse(path?: string) {
+    const seq = ++browseSeq;
     let listing: { path: string; parent: string | null; entries: { name: string; kind: "dir" | "zip"; size: number | null }[] };
     try {
       listing = await api.call("core", "module_browse", path === undefined ? {} : { path });
     } catch (e) {
-      picker.replaceChildren(ui.info(`Can't browse: ${(e as Error).message}`));
+      if (seq === browseSeq) picker.replaceChildren(ui.info(`Can't browse: ${(e as Error).message}`));
       return;
     }
+    if (seq !== browseSeq) return;
     const here = (name: string) => (listing.path ? `${listing.path}/${name}` : name);
     const rows: HTMLElement[] = [ui.info(`~/${listing.path}`)];
     if (listing.parent !== null) rows.push(ui.button({ label: "⬑ Up", onClick: () => void browse(listing.parent!) }));
@@ -475,13 +478,16 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
 
   // --- About
   const about = document.createElement("div");
+  let aboutSeq = 0;
   const refreshAbout = async () => {
+    const seq = ++aboutSeq;
     about.innerHTML = "";
     try {
       const [info, pads] = await Promise.all([
         api.call<{ version: string; python: string }>("core", "info"),
         api.call<Pad[]>("core", "pads"),
       ]);
+      if (seq !== aboutSeq) return;
       about.append(
         ui.info(`Invasor ${deps.version} · backend ${info.version} · Python ${info.python}`),
         ui.info(steamAvailable() ? "SteamClient: available" : "SteamClient: unavailable"),
@@ -489,7 +495,7 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
         ...pads.map((p) => ui.info(`  · ${p.name} (${p.kind === "deck" ? "Steam Deck protocol" : "evdev"})`)),
       );
     } catch (e) {
-      about.append(ui.info(`Backend unavailable: ${(e as Error).message}`));
+      if (seq === aboutSeq) about.append(ui.info(`Backend unavailable: ${(e as Error).message}`));
     }
   };
   await refreshAbout();

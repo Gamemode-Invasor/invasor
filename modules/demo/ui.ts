@@ -16,6 +16,8 @@ import { CLIP } from "./clip";
 // sub-tabs (L2/R2) with onShow/onHide, the control API (set, setDisabled, setLabel),
 // the confirm and choose dialogs, toasts, calls to the backend (notifications, Steam, clean
 // errors), Steam's JS API from here, a custom control, images, videos and big windows.
+// A module has either `render` (one page) or `tabs` (sub-tabs, as here): _example shows `tabs`
+// and says how to write the single page.
 // Demo keeps no_qam off: it must show in Quick Access too (the "no room" case). Its showInQam
 // hook lets you hide it there from a setting, to try the hook.
 
@@ -49,11 +51,13 @@ function showSpace(canOpen: boolean) {
 async function showStats(ctx: ModuleCtx) {
   try {
     const s = await ctx.call<{
-      uptime: number; visits: number; upgraded_from: string | null; steam_starts: number; last_steam_start: string | null;
+      uptime: number; files: number; visits: number; upgraded_from: string | null; steam_starts: number; last_steam_start: string | null;
+      last_game_event: string | null;
     }>("stats");
     const upgraded = s.upgraded_from ? ` · Upgraded from ${s.upgraded_from}` : "";
     const starts = ` · Steam starts seen: ${s.steam_starts}${s.last_steam_start ? ` (last at ${s.last_steam_start})` : ""}`;
-    if (statsEl) statsEl.textContent = `Backend thread: up ${s.uptime} s · Backend tab visits: ${s.visits}${starts}${upgraded}`;
+    const game = s.last_game_event ? ` · Last game event: ${s.last_game_event}` : "";
+    if (statsEl) statsEl.textContent = `Backend thread: up ${s.uptime} s · Python files: ${s.files} · Backend tab visits: ${s.visits}${starts}${game}${upgraded}`;
   } catch (e) {
     if (statsEl) statsEl.textContent = `Backend unavailable: ${(e as Error).message}`;
   }
@@ -222,6 +226,8 @@ export default defineModule({
         // navHints: false: the hint bar shows each field's own hint alone, without the button help.
         // Controls can be driven from code: set() a value, setDisabled() with a reason.
         const volume = () => controlsForm?.controls.volume;
+        // A number that isn't a setting (ui.number); get() reads what it shows now.
+        const steps = ui.number({ label: "Standalone number", min: 0, max: 20, step: 1, value: 5, default: 5, hint: "not a setting" });
         el.append(
           form,
           ui.separator(),
@@ -245,6 +251,8 @@ export default defineModule({
               ctx.toast("Values reset");
             },
           }),
+          steps,
+          ui.button({ label: "Read the number", onClick: () => ctx.toast(`Standalone number: ${steps.get()}`) }),
           summaryEl,
         );
         await showSummary(ctx);
@@ -342,6 +350,27 @@ export default defineModule({
         const path = "System.GetSystemInfo";
         el.append(
           statsEl,
+          ui.section("Notification sounds (Steam's own)", [
+            callButton(ctx, "Default (Steam decides)", async () => {
+              await ctx.call("notify", { title: "Demo", body: "No sound sent" });
+              return "Notification sent";
+            }),
+            ...["trophy", "message", "toast", "chat", "mention", "friend", "online", "ingame", "none"].map((sound) =>
+              callButton(ctx, `Sound: ${sound}`, async () => {
+                await ctx.call("notify", { title: "Demo", body: `Sound: ${sound}`, sound });
+                return "Notification sent";
+              })),
+          ]),
+          ui.section("Background tasks (core.tasks(), also in the log)", [
+            callButton(ctx, "Run a 5 s task", async () => {
+              await ctx.call("slow_task", { seconds: 5 });
+              return "Task done";
+            }),
+            callButton(ctx, "Run a task that fails", async () => {
+              await ctx.call("slow_task", { seconds: 2, fail: true });
+              return "Task done";
+            }),
+          ]),
           ui.section("Calls", [
             callButton(ctx, "Who am I", async () => JSON.stringify(await ctx.call("whoami"))),
             callButton(ctx, "Notify", async () => {

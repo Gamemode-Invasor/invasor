@@ -23,8 +23,6 @@ export interface MarketCard {
 interface MarketList {
   modules: MarketCard[];
   notes: string[];
-  /** Where the list came from: the published catalog file, or GitHub asked directly. */
-  source?: "file" | "live";
   /** When the catalog file was made (null when GitHub was asked directly). */
   generated?: string | null;
 }
@@ -58,19 +56,22 @@ export async function renderMarket(el: HTMLElement, deps: MarketDeps) {
   const confirm = deps.confirm ?? ((question, o) => ui.confirm(question, o));
   let busy = false;
 
+  let loadSeq = 0; // the answer of the last load wins, not the last to arrive
   async function load(refresh = false) {
+    const seq = ++loadSeq;
     el.replaceChildren(ui.info("Looking for modules…"));
     let res: MarketList;
     try {
       res = await api.call("core", "market_list", { refresh });
     } catch (e) {
+      if (seq !== loadSeq) return;
       el.replaceChildren(
         ui.info(`Couldn't load the market: ${errorText(e)}`),
         ui.button({ label: "Try again", onClick: () => void load(true) }),
       );
       return;
     }
-    draw(res);
+    if (seq === loadSeq) draw(res);
   }
 
   async function install(card: MarketCard) {

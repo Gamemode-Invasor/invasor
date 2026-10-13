@@ -43,3 +43,40 @@ test("a windowButton not yet on the page keeps listening", () => {
   assert.equal(listeners.size, 1);
   assert.match(button.textContent ?? "", /🔒/); // and it repaints
 });
+
+test("a button whose async onClick rejects logs it, nothing is left unhandled", async () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (e: unknown) => void unhandled.push(e);
+  process.on("unhandledRejection", onUnhandled);
+  const real = console.error;
+  const logged: unknown[] = [];
+  console.error = (...a: unknown[]) => void logged.push(a);
+  try {
+    const b = ui.button({
+      label: "x",
+      onClick: async () => {
+        throw new Error("nope");
+      },
+    });
+    b.click();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+  } finally {
+    console.error = real;
+    process.off("unhandledRejection", onUnhandled);
+  }
+  assert.equal(logged.length, 1);
+  assert.deepEqual(unhandled, []);
+});
+
+test("a select in a cover panel closes its list when the cover is dismissed", () => {
+  const cover = document.body.appendChild(document.createElement("div"));
+  cover.className = "cover-panel";
+  const select = ui.select({ label: "S", value: 1, options: [{ label: "A", value: 1 }, { label: "B", value: 2 }] });
+  cover.append(select);
+  const list = select.querySelector<HTMLElement>(".select-list")!;
+  select.click();
+  assert.equal(list.hidden, false);
+  cover.dispatchEvent(new CustomEvent("invasor:dismiss"));
+  assert.equal(list.hidden, true);
+});

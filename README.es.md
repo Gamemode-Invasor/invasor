@@ -71,7 +71,7 @@ se pide confirmación. Si es la misma versión, no se ofrece nada.
 
 Log: `journalctl --user -u invasor -f`. Configuración opcional:
 `~/.config/invasor/config.json` (`open_combo`, `panel_side`, `targets`, `disabled_modules`, `removed_modules`, `dev_desktop`,
-`handle_icon`, `module_order`, `update_check`, `update_channel`; la mayoría también se cambian desde la pestaña **⚙ Settings**).
+`handle_icon`, `module_order`, `update_check`, `update_channel`; la mayoría también se cambian desde el panel **⚙ Settings**).
 
 ## Uso con el mando
 La pestaña de Invasor (de color, con el icono o con la letra "I") está siempre en la biblioteca. En el menú rápido (···) solo aparece con un
@@ -81,13 +81,15 @@ juego en marcha, y el panel de ahí omite los módulos que no pintan nada durant
 | Botón | Acción |
 |---|---|
 | L3 + R3 | Abrir / cerrar el panel (con un juego abierto: primero ···). Se puede cambiar en ⚙ Settings |
-| L1 / R1 | Pestaña anterior / siguiente: cada módulo es una pestaña, y ⚙ Settings la última |
+| L1 / R1 | Pestaña anterior / siguiente: cada módulo es una pestaña |
 | L2 / R2 | Subpestaña anterior / siguiente, si el módulo tiene |
 | Cruceta ↑↓ | Moverse (se salta lo plegado). Si hay mucho contenido, desplaza la vista por páginas |
 | Cruceta ←→ | Cambiar el valor del control |
 | A / B | Aceptar / cerrar (o cancelar, según el control) |
 | X | Plegar / desplegar la sección (desde su título o desde dentro) |
 | Y | Valor especial del control, p. ej. volver al valor por defecto |
+| Start | Mostrar / ocultar el panel ⚙ Settings (también con su botón ⚙ de la cabecera). Tapa el panel de Invasor como Tasks; B o Start vuelven |
+| Select | Mostrar / ocultar el panel Tasks (también con el botón **Tasks** de la cabecera del panel): lo que corre en segundo plano, con su progreso, y las últimas que terminaron. B también lo cierra, y un botón **Clear recent** olvida las que terminaron. Un punto en el asa «I» y en ese botón late mientras algo corre y se pone rojo si una tarea falló y aún no has mirado |
 
 El panel ocupa el 40 % del ancho de la pantalla en la biblioteca (en Quick Access, la columna visible). Solo se desplaza el contenido; las
 sombras arriba y abajo indican que hay más por ver.
@@ -100,7 +102,7 @@ Se leen tanto los mandos normales (evdev: DualSense, Xbox…) como los de protoc
 Steam Deck: una Steam Deck real, o handhelds como la Legion Go virtualizados por
 InputPlumber. Para ver qué botones detecta el servicio: `python3 tools/pad.py`.
 
-**Pestaña ⚙ Settings** (siempre presente, aunque no haya módulos): activar o
+**Panel ⚙ Settings** (el botón ⚙ de la cabecera del panel, o Start; también sin módulos): activar o
 desactivar módulos (Manage modules), instalar uno desde un zip o desde el Market (solo en la Biblioteca), atajo para abrir el panel, lado del panel (solo en la Biblioteca: Quick Access va siempre a la izquierda), el orden de las pestañas de los módulos (se agarra un módulo con A y se mueve con la cruceta), qué muestra la pestaña (el icono, la letra "I" o nada), color de acento (también de la pestaña), "Manage Invasor" (actualizaciones, reiniciar Invasor o Steam, ver el log, restablecer la configuración, desinstalar) y "About" (versión,
 estado y mandos detectados). La interfaz de invasor está en inglés; cada módulo
 elige su propio idioma.
@@ -110,8 +112,8 @@ Invasor trae solo `demo` (una demostración que también usa `tools/smoke.py`) y
 Los módulos de verdad viven en sus propios repositorios y se instalan como zip desde **⚙ Settings › Install
 module**:
 
-- [invasor-artwork](../invasor-artwork): arte de la comunidad de steamgriddb.com para tus juegos y accesos directos.
-- [invasor-patito](../invasor-patito): generación de fotogramas con lsfg-vk, configurada por juego.
+- [invasor-artwork](https://github.com/Gamemode-Invasor/invasor-artwork): arte de la comunidad de steamgriddb.com para tus juegos y accesos directos.
+- [invasor-patito](https://github.com/Gamemode-Invasor/invasor-patito): generación de fotogramas con lsfg-vk, configurada por juego.
 
 Los módulos instalados viven en `~/.local/share/invasor/user-modules/`. Actualizar Invasor nunca los toca.
 
@@ -152,16 +154,16 @@ python3 tools/check_module.py modules/<id>
 Aquí está todo lo que Invasor toma del cliente de Steam. Cada punto está marcado `STEAM TOUCHPOINT` en el
 código. Tras una actualización de Steam, `tools/smoke.py` los comprueba todos en un minuto.
 El detalle, cómo puede fallar cada uno y una comparativa con Decky Loader (en inglés): [docs/API-Steam.md](docs/API-Steam.md).
-Los módulos también pueden mostrar una notificación como las de los logros de Steam (`ctx.notify`).
+Los módulos también pueden mostrar una notificación como las de los logros de Steam (`ctx.notify`), reaccionar a los juegos y a Steam (`ctx.events`) e informar del progreso de operaciones largas (`ctx.task`, que se ve en el panel Tasks).
 
 | Punto | Para qué | Si Valve lo cambia |
 |---|---|---|
 | CEF DevTools en el puerto 8080 (`.cef-enable-remote-debugging`) | inyectar el overlay, como Decky | no se inyecta; el log dice que espera a CEF |
-| Id del navegador en `/json/version` de CEF | saber que Steam ha arrancado o reiniciado, para `ctx.on_steam_start` de los módulos | `on_steam_start` no se llama; nada más cambia |
+| Id del navegador en `/json/version` de CEF | saber que Steam ha arrancado o reiniciado, para el evento `steam_start` de los módulos (`ctx.events`, y el obsoleto `ctx.on_steam_start`) | el evento no se lanza; nada más cambia |
 | URL de las ventanas: `useragent=Valve%20Steam%20Gamepad`, título `QuickAccess_…` | en qué ventanas va el panel | ajustable sin tocar código con `targets` en `config.json` |
-| URL de `SharedJSContext` `/routes/library/app/<id>` | el juego seleccionado | no se muestra el seleccionado; el que está en marcha sí (viene de `/proc`) |
+| URL de `SharedJSContext` `/routes/library/app/<id>` | el juego seleccionado (y el evento `game_selected` de los módulos) | no se muestra el seleccionado ni se lanza el evento; el que está en marcha sí (viene de `/proc`) |
 | Portada bajo el cursor en la biblioteca: `document.activeElement` (`role="link"`), la URL de su imagen `/assets/<appid>/` o `/customimages/<appid>`, su nombre en `aria-labelledby` (buscado en `shortcuts.vdf`) | el juego señalado | `highlighted` vale null; en marcha y seleccionado no se ven afectados |
-| Eventos `vgp_onbuttondown` y sus números de botón | navegar el panel con el mando | el panel se abre (L3+R3) pero no se navega con el mando; el dedo y F10 siguen funcionando |
+| Eventos `vgp_onbuttondown` y sus números de botón (Select es 13, Start 14) | navegar el panel con el mando, y Select / Start para los paneles Tasks / Settings | el panel se abre (L3+R3) pero no se navega con el mando (Tasks y Settings se abren con los botones de su cabecera); el dedo y F10 siguen funcionando |
 | `window.screenX` / `innerWidth` de las ventanas de Steam | ajustar el panel en el menú rápido | usa el ancho aprendido (348 px) |
 | Clase CSS `.gpfocus` | devolver el foco tras escribir con teclado físico | no se devuelve el foco; nada más cambia |
 | `SteamClient` (opcional), en la ventana o en `SharedJSContext` | `ctx.steam.safeCall` / `ctx.steam_call` para módulos (p. ej. el refresco al momento de Artwork), y `User.StartRestart` para ⚙ Settings › Manage Invasor › Restart Steam | las llamadas fallan limpiamente (503) y los módulos tienen plan B (Artwork: el arte nuevo se ve tras reiniciar Steam) |

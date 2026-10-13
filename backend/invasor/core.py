@@ -43,10 +43,21 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
     def modules():
         return manager.listing()
 
+    def _flag(name, value):
+        """A true/false argument: bool("false") is True, so anything else is refused, not guessed."""
+        if not isinstance(value, bool):
+            raise InvalidArgument(f"{name} must be true or false")
+        return value
+
+    def _id(id):
+        if not isinstance(id, str):
+            raise InvalidArgument("id must be a string")
+        return id
+
     def set_enabled(id, enabled):
-        if id not in manager.manifests:
+        if _id(id) not in manager.manifests:
             raise InvalidArgument(f"unknown module {id!r}")
-        manager.set_enabled(id, bool(enabled))
+        manager.set_enabled(id, _flag("enabled", enabled))
         return manager.listing()
 
     def _settings(id):
@@ -82,11 +93,11 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
             raise InvalidArgument("args must be a list")
         return await steam.call(path, args or [])
 
-    async def notify(title, body="", icon=""):
+    async def notify(title, body="", icon="", sound=""):
         """A notification as Steam shows an achievement (see SteamBridge.notify)."""
         if steam is None:
             raise Unavailable("SteamClient bridge not configured")
-        return await steam.notify(title, body, icon)
+        return await steam.notify(title, body, icon, sound=sound)
 
     # ---------- ⚙ Settings › Manage Invasor ----------
 
@@ -154,6 +165,7 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
     async def module_install(path, replace=False):
         """Check, install and load a module from a zip, and inject its UI right away.
         Module code (teardown, import, setup) runs in a worker thread, never in the event loop."""
+        replace = _flag("replace", replace)
         replaced = []
 
         def before_replace(mid):
@@ -161,7 +173,7 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
             manager.unload(mid)
 
         try:
-            mid = await modpool.run(install.install, path, _reserved(), bool(replace), before_replace)
+            mid = await modpool.run(install.install, path, _reserved(), replace, before_replace)
         except BaseException:
             # Failed after the old version was unloaded: it's still in place, load it again.
             for old in replaced:
@@ -183,23 +195,26 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
 
     async def market_install(repo):
         """Download (sha256 checked) and install, or update, the market's module of a repository."""
-        path, work, mid = await asyncio.to_thread(market.download, repo)
-        try:
-            return await module_install(path, replace=any(m["id"] == mid for m in manager.listing()))
-        finally:
-            shutil.rmtree(work, ignore_errors=True)
+        with manager.tasks.start("core", "Installing a module from the Market") as task:
+            path, work, mid = await asyncio.to_thread(market.download, repo, task)
+            try:
+                task.update(0.9, "Installing")
+                return await module_install(path, replace=any(m["id"] == mid for m in manager.listing()))
+            finally:
+                shutil.rmtree(work, ignore_errors=True)
 
     def module_uninstall(id, purge=False):
         """Uninstall a module (its uninstall() runs first). With purge its settings and data
         go too; otherwise they stay in case it's installed again. One shipped with Invasor
         (demo) stays uninstalled across updates and can be restored (module_restore)."""
-        m = manager.manifests.get(id)
+        purge = _flag("purge", purge)
+        m = manager.manifests.get(_id(id))
         if m is None:
             raise InvalidArgument(f"{id!r} isn't an installed module")
         if m.get("source") == "core":
-            manager.remove_core(id, bool(purge))
+            manager.remove_core(id, purge)
         else:
-            manager.remove(id, bool(purge))
+            manager.remove(id, purge)
             install.uninstall(id)
         log.info("uninstalled module %s%s", id, " and its data" if purge else "")
         return True
@@ -306,7 +321,19 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
     def update_apply():
         """Download, verify and install the new version. The service restarts a moment
         after this returns; Steam is not restarted."""
-        return updater.apply()
+        with manager.tasks.start("core", "Updating Invasor") as task:
+            return updater.apply(task)
+
+    def tasks():
+        """What is running in the background and what ended lately: {active, recent}, each task
+        {id, module ("core" or a module id), label, state, fraction (0..1 or None), text, started,
+        updated, finished}. Cheap: the panel may ask for it often."""
+        return manager.tasks.snapshot()
+
+    def tasks_clear():
+        """Forget the tasks that ended (the ones still running stay). Answers what core.tasks() would."""
+        manager.tasks.clear_recent()
+        return manager.tasks.snapshot()
 
     def pads():
         return [{"device": dev, "name": name, "kind": kind} for dev, name, kind in gamepad.pads()]
@@ -318,6 +345,8 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
         "set_qam_width": set_qam_width,
         "set_qam_shown": set_qam_shown,
         "pads": pads,
+        "tasks": tasks,
+        "tasks_clear": tasks_clear,
         "update_status": update_status,
         "update_check": update_check,
         "update_apply": update_apply,

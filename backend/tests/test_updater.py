@@ -10,7 +10,7 @@ from unittest import mock
 from invasor import updater
 from invasor.schema import InvalidArgument, Unavailable
 
-from .helpers import patch, temp_dir
+from .helpers import patch, temp_dir, http_error
 
 BASE = updater.DOWNLOAD_PREFIX + "v0.2.0/"
 
@@ -92,7 +92,7 @@ class Check(unittest.TestCase):
                 self.assertEqual((res["available"], res["checked"]), (False, True))
 
     def test_no_release_offline_or_odd_answers_are_just_not_checked(self):
-        err = urllib.error.HTTPError(updater.RELEASE_URL, 404, "Not Found", {}, None)
+        err = http_error(updater.RELEASE_URL, 404, "Not Found", {})
         for answer in (err, OSError("offline"), ValueError("bad json"), [], release("v0.2.0", draft=True),
                        release("v0.2.0", prerelease=True), release("nightly"), release("v0.2.0", assets=False)):
             with self.subTest(answer=repr(answer)[:40]):
@@ -149,9 +149,9 @@ class BetaChannel(unittest.TestCase):
     def test_a_pre_release_machine_on_stable_is_offered_the_way_back(self):
         rels = [release("v0.1.3-rc1", prerelease=True), release("v0.1.2")]
         up = self.up(rels, current="0.1.3-rc1", channel="stable")
-        res = up.check()
+        res, package = up._check()
         self.assertEqual((res["checked"], res["available"], res["downgrade"], res["latest"]), (True, True, True, "0.1.2"))
-        self.assertEqual(up._package[0], updater.DOWNLOAD_PREFIX + "v0.1.2/invasor-0.1.2.tar.gz")
+        self.assertEqual(package[0], updater.DOWNLOAD_PREFIX + "v0.1.2/invasor-0.1.2.tar.gz")
 
     def test_the_beta_channel_never_goes_down(self):
         rels = [release("v0.1.3-rc1", prerelease=True), release("v0.1.2")]
@@ -198,8 +198,7 @@ class BetaChannel(unittest.TestCase):
 
     def test_the_package_is_found_by_the_pre_release_name(self):
         up = self.up([release("v0.1.3-rc1", prerelease=True)])
-        up.check()
-        self.assertEqual(up._package, (updater.DOWNLOAD_PREFIX + "v0.1.3-rc1/invasor-0.1.3-rc1.tar.gz",
+        self.assertEqual(up._check()[1], (updater.DOWNLOAD_PREFIX + "v0.1.3-rc1/invasor-0.1.3-rc1.tar.gz",
                                        updater.DOWNLOAD_PREFIX + "v0.1.3-rc1/invasor-0.1.3-rc1.tar.gz.sha256"))
 
 
@@ -232,6 +231,36 @@ class Apply(unittest.TestCase):
         self.assertEqual(root.name, "invasor-0.2.0")
         self.assertTrue((root / "invasor-installation.sh").is_file())
         self.assertEqual(work, root.parent)  # the installer's script removes it afterwards
+
+    def test_a_task_follows_the_update_and_gets_the_download_progress(self):
+        from invasor.tasks import TaskRegistry
+        registry = TaskRegistry()
+        seen, tar = [], package()
+
+        def download(url, dest, limit, progress=None):
+            if url.endswith(".sha256"):
+                self.assertIsNone(progress)  # only the package reports
+                dest.write_text(hashlib.sha256(tar).hexdigest() + "\n")
+            else:
+                dest.write_bytes(tar)
+                progress(1, 2)
+                seen.append(registry.snapshot()["active"][0]["fraction"])
+                progress(len(tar), len(tar))
+
+        up = updater.Updater("0.1.0", fetch=lambda url: release("v0.2.0"), fetch_file=download,
+                             start=lambda root, work: seen.append(registry.snapshot()["active"][0]["text"]))
+        task = registry.start("core", "Updating")
+        up.apply(task)
+        self.assertEqual(seen, [0.4, "Starting the installer"])
+        self.assertEqual(registry.snapshot()["active"][0]["fraction"], 0.95)
+
+    def test_without_a_task_the_download_is_asked_for_nothing_extra(self):
+        asked = []
+        up = self.up(package())
+        original = up._download
+        up._download = lambda *a, **k: (asked.append(k), original(*a, **k))
+        up.apply()
+        self.assertEqual(asked, [{}, {}])
 
     def test_nothing_to_install_when_up_to_date(self):
         with self.assertRaises(InvalidArgument):
@@ -346,3 +375,48 @@ class Background(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Downloads(unittest.TestCase):
+    def opener(self, final_url, data=b"abc"):
+        class Answer(io.BytesIO):
+            def geturl(self):
+                return final_url
+
+            def __enter__(self):
+                return self
+
+        self._answer = Answer(data)
+        fake = mock.Mock()
+        fake.open.return_value = self._answer
+        patch(self, "invasor.updater._opener", lambda: fake)
+
+    def test_a_download_that_stays_on_https_is_saved(self):
+        self.opener("https://objects.githubusercontent.com/x")
+        dest = temp_dir(self) / "f"
+        updater.download("https://github.com/x", dest, 100)
+        self.assertEqual(dest.read_bytes(), b"abc")
+
+    def test_the_progress_hears_the_bytes_and_the_announced_size(self):
+        self.opener("https://objects.githubusercontent.com/x")
+        updater_headers = {"Content-Length": "3"}
+        self._answer.headers = updater_headers
+        got = []
+        updater.download("https://github.com/x", temp_dir(self) / "f", 100, progress=lambda done, total: got.append((done, total)))
+        self.assertEqual(got, [(3, 3)])
+
+    def test_a_missing_or_wrong_length_means_unknown(self):
+        for headers in ({}, {"Content-Length": "soon"}, {"Content-Length": "0"}):
+            with self.subTest(headers=headers):
+                self.opener("https://objects.githubusercontent.com/x")
+                self._answer.headers = headers
+                got = []
+                updater.download("https://github.com/x", temp_dir(self) / "f", 100, progress=lambda done, total: got.append(total))
+                self.assertEqual(got, [None])
+
+    def test_a_redirect_out_of_https_is_refused(self):
+        self.opener("http://evil.example/x")
+        dest = temp_dir(self) / "f"
+        with self.assertRaisesRegex(ValueError, "non-https"):
+            updater.download("https://github.com/x", dest, 100)
+        self.assertFalse(dest.exists())

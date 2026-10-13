@@ -11,6 +11,7 @@ from .injector import Injector, remove_overlays
 from .modules import ModuleManager
 from .server import ApiServer
 from .steam import SteamBridge
+from .taskpush import TaskPusher
 
 
 async def main():
@@ -28,7 +29,11 @@ async def main():
     steam.loop = asyncio.get_running_loop()
     manager = ModuleManager(cfg, game, steam)
     await asyncio.to_thread(manager.discover)  # module code never runs in the event loop
+    game.on_event = manager.emit
     injector = Injector(cfg, manager.ui_scripts, on_steam_start=manager.steam_started)
+    # The windows hear of every change in the tasks (the panel, the handle's dot): no polling.
+    task_pusher = TaskPusher(manager.tasks.snapshot, lambda js: injector.evaluate_all(js), asyncio.get_running_loop())
+    manager.tasks.watch(task_pusher.notify)
     log = logging.getLogger("invasor")
 
     async def toggle_overlay():
@@ -83,6 +88,7 @@ async def main():
             log.error("%s stopped", t.get_name(), exc_info=t.exception())
         t.cancel()
     await asyncio.gather(*services, return_exceptions=True)
+    task_pusher.stop()
     manager.shutdown()
     log.info("invasor stopped")
     if not stop.is_set():

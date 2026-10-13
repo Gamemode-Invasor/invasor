@@ -11,6 +11,7 @@
 import type { ModuleCtx, SettingField, SettingValue, SettingsSchema, WindowSpec } from "../module-api";
 import { createKeyboard, type MiniKeyboard } from "./keyboard";
 import { keepVisible } from "./scroll";
+import { NO_ROOM, safe } from "./util";
 import { isVideo, optionIndex, snap, whenMet } from "./values";
 
 export interface Option<T> {
@@ -72,7 +73,6 @@ export type SettingsForm = HTMLElement & {
 // Tile height/width ratios of Steam's artwork kinds, and a sensible column count.
 const GRID_ASPECTS = { grid: 1.5, hero: 31 / 96, logo: 0.5, icon: 1 };
 const GRID_COLUMNS = { grid: 5, hero: 2, logo: 3, icon: 6 };
-const NO_ROOM = "The expanded view is only available from the Library (Steam button → Library)";
 // Buttons a disabled control swallows: the ones that change values or act.
 const VALUE_BUTTONS = new Set(["A", "Y", "LEFT", "RIGHT"]);
 
@@ -173,7 +173,7 @@ function boolControl(kind: "toggle" | "checkbox", o: Base<boolean>): Control<boo
   el.addEventListener("click", () => {
     value = !value;
     paint();
-    o.onChange?.(value);
+    safe("handler", () => o.onChange?.(value));
   });
   const c = asControl(el, () => value, (v) => ((value = !!v), paint()), setDisabled);
   if (o.disabled) c.setDisabled(true);
@@ -387,7 +387,7 @@ function textField(o: Base<string> & { placeholder?: string; maxLength?: number 
     input.autocomplete = "new-password";
   }
   if (o.maxLength && o.maxLength > 0) input.maxLength = o.maxLength;
-  input.value = (o.value ?? "").slice(0, o.maxLength || undefined);
+  input.value = (o.value ?? "").slice(0, o.maxLength && o.maxLength > 0 ? o.maxLength : undefined);
   input.placeholder = o.placeholder ?? "";
   body.appendChild(input);
   const showHide = {
@@ -432,7 +432,7 @@ function textField(o: Base<string> & { placeholder?: string; maxLength?: number 
     el.classList.add("editing");
     kbd = createKeyboard(input, () => {}, finish, secret ? showHide : undefined);
     el.appendChild(kbd.el);
-    dismissHost = el.closest(".iwin-box, .panel");
+    dismissHost = el.closest(".iwin-box, .panel, .cover-panel");
     dismissHost?.addEventListener("invasor:dismiss", finish);
     setHint("A type · X delete · Y shift · B done");
   };
@@ -460,7 +460,7 @@ function textField(o: Base<string> & { placeholder?: string; maxLength?: number 
     return false; // A -> core click -> open()
   });
   const set = (v: string) => {
-    input.value = (v ?? "").slice(0, o.maxLength || undefined);
+    input.value = (v ?? "").slice(0, o.maxLength && o.maxLength > 0 ? o.maxLength : undefined);
     committed = input.value;
   };
   const c = asControl(el, () => input.value, set, setDisabled);
@@ -577,7 +577,7 @@ export const ui = {
     const open = () => {
       hi = index;
       list.hidden = false;
-      dismissHost = el.closest(".iwin-box, .panel");
+      dismissHost = el.closest(".iwin-box, .panel, .cover-panel");
       dismissHost?.addEventListener("invasor:dismiss", onDismiss);
       el.dataset.hint = "↑↓ choose · A select · B cancel";
       paint();
@@ -648,7 +648,7 @@ export const ui = {
     el.dataset.hint = hint();
     el.textContent = o.label;
     const setDisabled = disableable(el, hint);
-    el.addEventListener("click", () => o.onClick());
+    el.addEventListener("click", () => safe("handler", () => o.onClick()));
     const c = Object.assign(el, { setLabel: (l: string) => void (el.textContent = l), setDisabled });
     if (o.disabled) c.setDisabled(true);
     return c;
@@ -851,7 +851,7 @@ export const ui = {
         e.stopPropagation();
         hi = i;
         paint();
-        o.onActivate?.(item.id);
+        safe("handler", () => o.onActivate?.(item.id));
       });
       grid.appendChild(tile);
       return tile;
@@ -900,7 +900,7 @@ export const ui = {
         hi = Math.min(tiles.length - 1, hi + columns);
         return paint(), true;
       }
-      if (b === "A" && o.onActivate) return o.onActivate(o.items[hi].id), true;
+      if (b === "A" && o.onActivate) return safe("handler", () => o.onActivate!(o.items[hi].id)), true;
       if (b === "Y" && o.onSelect) {
         selected = o.items[hi].id;
         paint();

@@ -5,6 +5,8 @@ from invasor import config, core
 from invasor.context import GameContext
 from invasor.gamepad import ComboWatcher
 from invasor.modules import ModuleManager
+from invasor.schema import InvalidArgument
+from invasor.tasks import TaskRegistry
 
 from .helpers import patch, temp_dir
 
@@ -76,6 +78,44 @@ class Prefs(unittest.TestCase):
 
     def test_update_status_is_empty_until_a_check(self):
         self.assertIsNone(self.api["update_status"]())
+
+    def test_an_update_is_a_task_that_ends_with_the_answer_or_the_error(self):
+        class FakeUpdater:
+            def __init__(self, fail=None):
+                self.fail, self.task = fail, None
+
+            def apply(self, task=None):
+                self.task = task
+                task.update(0.5, "halfway")
+                if self.fail:
+                    raise InvalidArgument(self.fail)
+                return {"version": "9.9.9"}
+
+        manager = ModuleManager(self.cfg, GameContext())
+        ok = FakeUpdater()
+        api = core.make_methods(manager, GameContext(), self.watcher, self.cfg, updater=ok)
+        self.assertEqual(api["update_apply"](), {"version": "9.9.9"})
+        self.assertEqual(ok.task.owner, "core")
+        done = api["tasks"]()["recent"][0]
+        self.assertEqual((done["module"], done["label"], done["state"], done["fraction"]), ("core", "Updating Invasor", "done", 1.0))
+        api = core.make_methods(manager, GameContext(), self.watcher, self.cfg, updater=FakeUpdater("no update"))
+        with self.assertRaises(InvalidArgument):
+            api["update_apply"]()
+        done = api["tasks"]()["recent"][0]
+        self.assertEqual((done["state"], done["text"], done["fraction"]), ("failed", "no update", 0.5))
+        self.assertEqual(api["tasks"]()["active"], [])
+
+    def test_tasks_clear_forgets_what_ended_and_answers_with_the_list(self):
+        manager = ModuleManager(self.cfg, GameContext())
+        api = core.make_methods(manager, GameContext(), self.watcher, self.cfg)
+        running = manager.tasks.start("core", "Still going")
+        manager.tasks.start("rakun", "Old").done()
+        self.assertEqual(len(api["tasks"]()["recent"]), 1)
+        answer = api["tasks_clear"]()
+        self.assertEqual(answer["recent"], [])
+        self.assertEqual([t["label"] for t in answer["active"]], ["Still going"])
+        self.assertEqual(api["tasks"](), answer)
+        running.done()
 
     def test_panel_side(self):
         self.assertEqual(self.api["set_pref"]("panel_side", "left")["panel_side"], "left")
@@ -224,6 +264,16 @@ class Prefs(unittest.TestCase):
         with self.assertRaises(InvalidArgument):
             self.api["set_qam_width"](True)
 
+    def test_arguments_of_the_wrong_type_are_refused_not_guessed(self):
+        """bool("false") is True: a typo must never purge data or enable a module."""
+        from invasor.schema import InvalidArgument
+        for call in (lambda: self.api["set_enabled"]("mod", "false"),
+                     lambda: self.api["set_enabled"]([], True),
+                     lambda: self.api["module_uninstall"]("mod", "no"),
+                     lambda: self.api["module_uninstall"]([])):
+            with self.assertRaises(InvalidArgument):
+                call()
+
     def test_pads_lists_devices(self):
         self.assertIsInstance(self.api["pads"](), list)
 
@@ -248,6 +298,14 @@ class Highlighted(unittest.IsolatedAsyncioTestCase):
         cfg = {"open_combo": ["L3", "R3"], "disabled_modules": []}
         self.api = core.make_methods(ModuleManager(cfg, GameContext()), GameContext(),
                                      ComboWatcher(cfg["open_combo"], lambda: None), cfg, FakeInjector())
+
+    def test_a_renamed_shortcut_shows_its_new_name(self):
+        names = {"3000000001": "Old"}
+        patch(self, "invasor.context._shortcut_names", lambda: names)
+        context = GameContext()
+        self.assertEqual(context._game("3000000001")["name"], "Old")
+        names["3000000001"] = "New"
+        self.assertEqual(context._game("3000000001")["name"], "New")
 
     async def highlighted(self, *tiles):
         self.tiles = list(tiles)
@@ -322,12 +380,13 @@ class MarketMethods(unittest.IsolatedAsyncioTestCase):
             def list(self, refresh=False):
                 return {"modules": [], "notes": [], "refresh": refresh}
 
-            def download(self, repo):
+            def download(self, repo, task=None):
                 calls.append(repo)
                 return "x/patito-0.2.1.zip", work, "patito"
 
         class Manager:
             manifests = {}
+            tasks = TaskRegistry()
 
             def listing(self):
                 return listing
@@ -351,6 +410,15 @@ class MarketMethods(unittest.IsolatedAsyncioTestCase):
                     await api["market_install"]("invasor-patito")
                 self.assertEqual(seen["replace"], replace)
                 self.assertFalse(work.exists())
+
+    async def test_a_market_install_is_a_task_that_ends_even_when_it_fails(self):
+        api, _, _ = self.make([])
+        patch(self, "invasor.modpool.run", lambda *a, **k: (_ for _ in ()).throw(InvalidArgument("not a module")))
+        with self.assertRaises(InvalidArgument):
+            await api["market_install"]("invasor-patito")
+        done = api["tasks"]()["recent"][0]
+        self.assertEqual((done["module"], done["state"], done["text"]), ("core", "failed", "not a module"))
+        self.assertEqual(api["tasks"]()["active"], [])
 
     async def test_list_passes_refresh_through(self):
         api, _, _ = self.make([])
