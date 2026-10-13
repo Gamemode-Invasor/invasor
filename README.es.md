@@ -157,9 +157,9 @@ Los módulos también pueden mostrar una notificación como las de los logros de
 | Punto | Para qué | Si Valve lo cambia |
 |---|---|---|
 | CEF DevTools en el puerto 8080 (`.cef-enable-remote-debugging`) | inyectar el overlay, como Decky | no se inyecta; el log dice que espera a CEF |
-| Id del navegador en `/json/version` de CEF | saber que Steam ha arrancado o reiniciado, para `ctx.on_steam_start` de los módulos | `on_steam_start` no se llama; nada más cambia |
+| Id del navegador en `/json/version` de CEF | saber que Steam ha arrancado o reiniciado, para el evento `steam_start` de los módulos (`ctx.events`, y el obsoleto `ctx.on_steam_start`) | el evento no se lanza; nada más cambia |
 | URL de las ventanas: `useragent=Valve%20Steam%20Gamepad`, título `QuickAccess_…` | en qué ventanas va el panel | ajustable sin tocar código con `targets` en `config.json` |
-| URL de `SharedJSContext` `/routes/library/app/<id>` | el juego seleccionado | no se muestra el seleccionado; el que está en marcha sí (viene de `/proc`) |
+| URL de `SharedJSContext` `/routes/library/app/<id>` | el juego seleccionado (y el evento `game_selected` de los módulos) | no se muestra el seleccionado ni se lanza el evento; el que está en marcha sí (viene de `/proc`) |
 | Portada bajo el cursor en la biblioteca: `document.activeElement` (`role="link"`), la URL de su imagen `/assets/<appid>/` o `/customimages/<appid>`, su nombre en `aria-labelledby` (buscado en `shortcuts.vdf`) | el juego señalado | `highlighted` vale null; en marcha y seleccionado no se ven afectados |
 | Eventos `vgp_onbuttondown` y sus números de botón | navegar el panel con el mando | el panel se abre (L3+R3) pero no se navega con el mando; el dedo y F10 siguen funcionando |
 | `window.screenX` / `innerWidth` de las ventanas de Steam | ajustar el panel en el menú rápido | usa el ancho aprendido (348 px) |

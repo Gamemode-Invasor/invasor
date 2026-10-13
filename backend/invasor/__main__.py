@@ -28,6 +28,7 @@ async def main():
     steam.loop = asyncio.get_running_loop()
     manager = ModuleManager(cfg, game, steam)
     await asyncio.to_thread(manager.discover)  # module code never runs in the event loop
+    game.on_event = manager.emit
     injector = Injector(cfg, manager.ui_scripts, on_steam_start=manager.steam_started)
     log = logging.getLogger("invasor")
 

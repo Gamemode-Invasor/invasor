@@ -154,9 +154,9 @@ Modules can also show a notification the way Steam shows an achievement (`ctx.no
 | Touchpoint | Used for | If Valve changes it |
 |---|---|---|
 | CEF DevTools on port 8080 (`.cef-enable-remote-debugging`) | injecting the overlay, as Decky does | nothing is injected; the log says it's waiting for CEF |
-| CEF's `/json/version` browser id | telling a Steam (re)start, for modules' `ctx.on_steam_start` | `on_steam_start` never runs; nothing else changes |
+| CEF's `/json/version` browser id | telling a Steam (re)start, for modules' `steam_start` event (`ctx.events`, and the deprecated `ctx.on_steam_start`) | the event never runs; nothing else changes |
 | Window URLs: `useragent=Valve%20Steam%20Gamepad`, title `QuickAccess_…` | which windows get the panel | adjustable without code via `targets` in `config.json` |
-| `SharedJSContext` URL `/routes/library/app/<id>` | the selected game | the selected game isn't shown; the running game still is (it comes from `/proc`) |
+| `SharedJSContext` URL `/routes/library/app/<id>` | the selected game (and modules' `game_selected` event) | the selected game isn't shown and the event never runs; the running game still is (it comes from `/proc`) |
 | Library tile under the cursor: `document.activeElement` (`role="link"`), its artwork URL `/assets/<appid>/` or `/customimages/<appid>`, its `aria-labelledby` name (matched against `shortcuts.vdf`) | the highlighted game | `highlighted` is null; running and selected are unaffected |
 | `vgp_onbuttondown` events and their button numbers | gamepad navigation in the panel | the panel opens (L3+R3) but isn't navigable with the pad; touch and F10 still work |
 | `window.screenX` / `innerWidth` of Steam's windows | fitting the panel in Quick Access | it falls back to the learned width (348px) |

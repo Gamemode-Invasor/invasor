@@ -197,10 +197,11 @@ METHODS = {"apply": apply}   # what the UI can call: ctx.call("apply")
 | `data` | Free-form JSON store for whatever isn't a setting: `load()`, `save(dict)`, `update(**kw)`. |
 | `forms` | `{name: form}` from `module.json` `forms`: `coerce(key, value)`, `clean(data)`, `defaults()`. |
 | `toml` | Other programs' TOML config files. `load(path)` returns `(data, mtime)`, or `({}, None)` if the file doesn't exist. `save(path, data, mtime)` writes the file, refusing with `Unavailable` if another program saved it after that `mtime`. It keeps every key and the order, checks the result by reading it back, writes atomically and keeps the original as `*.invasor-backup` the first time. `save(…, validate=fn)` calls `fn(temp_path)` on the new file before it replaces the original (e.g. the program's own config validator); raising there refuses the change and leaves the original untouched. Needs Python 3.11 or newer. |
-| `on_steam_start(cb)` | `cb()` every time Steam starts or restarts (a new Steam process, including switching between Desktop and Game Mode), and once soon after you register it if Steam is already running, so it also covers Invasor starting and the module being enabled. It runs in its own thread and may block (scans, file writes…); an exception is logged. Register it in `setup`: it's forgotten when the module is disabled. |
+| `events.on(name, cb)`, `events.off(name, cb)` | `cb(payload)` every time the event happens; `payload` is a dict. It runs in its own thread and may block (scans, file writes…); an exception is logged. Register in `setup`: everything is forgotten when the module is disabled. An unknown name is `InvalidArgument` (names with a dot are reserved). The events: `steam_start`, `{"instance"}`: Steam starts or restarts (a new Steam process, including switching between Desktop and Game Mode), and once soon after you register it if Steam is already running, so it also covers Invasor starting and the module being enabled; `game_started` and `game_stopped`, `{"appid", "name", "shortcut"}`: a game starts or stops (for `game_stopped`, the game that stopped); `game_selected`, same payload: the page of a game is opened in the library (it's `game.selected`; going back to the library sends nothing). The tile under the cursor (*highlighted*) has no event: read it in `ui.ts`: `ctx.game().highlighted`, and `onGameChange` fires when it changes (checked every 3 seconds while the panel is open). Games are looked at every 3 seconds: a game that starts and stops within one look sends nothing, two changes in one look arrive as two events with no order guaranteed between their callbacks, and a game already running when Invasor starts sends `game_started` right away. |
+| `on_steam_start(cb)` | **Deprecated**: use `events.on("steam_start", cb)`. The same, but `cb()` takes no argument; it logs a warning once. |
 | `game.info(appid)`, `game.shortcut_exe(appid)` | Name and kind of any app; the executable a non-Steam shortcut launches (`shortcuts.vdf`). |
 | `game_data(appid)` | The same kind of store, per game. |
-| `game.selected`, `game.running` | `{"appid", "name", "shortcut"}`, or `None`. The highlighted game isn't here: it's read from Steam's page only when the UI asks, so it's available in `ctx.game()` in `ui.ts`. |
+| `game.selected`, `game.running` | `{"appid", "name", "shortcut"}`, or `None`. The highlighted game isn't here: it's read from Steam's page only when the UI asks, so it's available in `ctx.game()` in `ui.ts` (and `onGameChange` covers it). |
 | `log` | This module's logger (it writes to `journalctl --user -u invasor`). |
 | `id`, `path` | The module id and its folder. |
 | `notify(title, body="", icon="", timeout=15, sound="")` | A notification shown as Steam shows an achievement. Title up to 64 characters, body up to 256 (plain text); `icon` is an `https://` URL or an embedded `data:image/png|jpeg|gif|webp;base64,…` (up to 512 KB); `timeout` is how many seconds to wait for Steam; pass `sound` by keyword (`sound="trophy"`). `sound` picks one of Steam's own notification sounds by name: `trophy`, `message`, `toast`, `chat`, `mention`, `friend`, `online`, `ingame`, or `none` for silence; omitted, Steam decides (the achievement sound). Any other name is `InvalidArgument`. From `async def` methods: `await notify_async(…)`. Raises `InvalidArgument` for bad input and `Unavailable` when Steam can't show it. Steam's own achievement toast setting applies. |
@@ -252,8 +253,8 @@ Steam still draws its usual toast; only the sound changes.
     (and `upgrade`, and importing `backend.py`) always runs in a worker thread, never in the event loop, so
     `ctx.steam_call()` and `ctx.notify()` work there; together they get 20 seconds, after that the module
     fails to load (it's torn down and the log says so).
-  - `on_steam_start` callbacks get a thread of their own each time, so they may block. If Steam restarts
-    while one is still running, another one starts: guard it with a lock if that matters. When the module
+  - Event callbacks (`ctx.events`) get a thread of their own each time, so they may block. If Steam restarts
+    (or a game starts again) while one is still running, another one starts: guard it with a lock if that matters. When the module
     is unloaded no new callback starts, and one still running is waited for up to 3 seconds before the
     module's files or data are removed.
   - For background work, start your own thread (daemon) in `setup` and stop it in `teardown`. `teardown`
@@ -279,7 +280,7 @@ Steam still draws its usual toast; only the sound changes.
   10 seconds; an error, `exit()` or running out of time is logged and the module is uninstalled anyway. From a
   terminal (`tools/install_module.py --uninstall`, uninstalling Invasor) the service is stopped and `steam_call`
   raises `Unavailable`, so it needs its plan B here too.
-  `ctx.on_steam_start` does nothing there (it's logged): nothing is left to react to. Uninstalling also
+  `ctx.events.on` does nothing there (it's logged): nothing is left to react to. Uninstalling also
   removes the module from the user's order and from the disabled list, so a reinstall starts enabled and last.
 - **After unload.** Once a module is unloaded (disabled, uninstalled, replaced, or its `setup` failed or timed
   out) its `ctx` is retired: `ctx.settings.set`, `ctx.data` and `ctx.game_data` stores raise `Unavailable`
@@ -301,7 +302,7 @@ export default defineModule({
   // …or sub-tabs (L2/R2): tabs: [{ label, render(el, ctx), onShow?(ctx), onHide?() }],
   // tabsAlign: "start" | "center" | "end" | "justify",
   onShow(ctx) {}, onHide() {},          // the tab became visible / hidden
-  onGameChange(game, ctx) {},           // selected/running game changed
+  onGameChange(game, ctx) {},           // the game state changed (running, selected or highlighted)
   showInQam(ctx) { return true; },      // Quick Access only: false hides this tab there (may be async)
   destroy() {},                         // module disabled or overlay torn down
 });

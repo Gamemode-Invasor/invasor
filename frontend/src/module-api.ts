@@ -186,6 +186,7 @@ export interface ModuleDef {
   onShow?(ctx: ModuleCtx): void;
   /** The module's tab stopped being visible: pause timers, polling… */
   onHide?(): void;
+  /** The game state changed (running, selected or highlighted). Checked every 3 s while the panel is open. */
   onGameChange?(game: GameState, ctx: ModuleCtx): void;
   /**
    * Quick Access only: return false to hide this module's tab there (the library always shows it).

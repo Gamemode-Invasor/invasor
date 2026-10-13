@@ -57,7 +57,7 @@ class FakeCtx:
         self.data = JsonStore(folder / "data.json")
         self._folder = folder
         self.notified = []
-        self.steam_start_cbs = []
+        self.events = FakeEvents()
 
     def game_data(self, appid):
         return JsonStore(self._folder / "games" / f"{appid}.json")
@@ -66,8 +66,17 @@ class FakeCtx:
         self.notified.append((title, body))
         self.last_notify = {"timeout": timeout, "sound": sound}
 
-    def on_steam_start(self, cb):
-        self.steam_start_cbs.append(cb)
+
+class FakeEvents:
+    def __init__(self):
+        self.listeners = {}
+
+    def on(self, name, cb):
+        self.listeners.setdefault(name, []).append(cb)
+
+    def emit(self, name, payload):
+        for cb in self.listeners.get(name, []):
+            cb(payload)
 
 
 class Helpers(unittest.TestCase):
@@ -122,13 +131,22 @@ class Backend(unittest.TestCase):
             self.b.fail("unavailable")
 
     def test_steam_starts_are_counted(self):
-        self.assertEqual(self.ctx.steam_start_cbs, [self.b.steam_started])
+        self.assertEqual(self.ctx.events.listeners["steam_start"], [self.b.steam_started])
         self.assertEqual(self.b.stats()["steam_starts"], 0)
-        self.b.steam_started()
-        self.b.steam_started()
+        self.ctx.events.emit("steam_start", {"instance": "a"})
+        self.ctx.events.emit("steam_start", {"instance": "b"})
         stats = self.b.stats()
         self.assertEqual(stats["steam_starts"], 2)
         self.assertRegex(stats["last_steam_start"], r"^\d\d:\d\d:\d\d$")
+
+    def test_game_events_are_noted(self):
+        self.assertIsNone(self.b.stats()["last_game_event"])
+        self.ctx.events.emit("game_started", {"appid": "1", "name": "Test Game", "shortcut": False})
+        self.assertRegex(self.b.stats()["last_game_event"], r"^started Test Game at \d\d:\d\d:\d\d$")
+        self.ctx.events.emit("game_stopped", {"appid": "1", "name": None, "shortcut": False})
+        self.assertRegex(self.b.stats()["last_game_event"], r"^stopped 1 at ")
+        self.ctx.events.emit("game_selected", {"appid": "2", "name": "Other", "shortcut": True})
+        self.assertRegex(self.b.stats()["last_game_event"], r"^selected Other at ")
 
     def test_notify_passes_timeout_and_sound_and_ctx_path_is_used(self):
         self.b.notify("T", "B", sound="trophy")

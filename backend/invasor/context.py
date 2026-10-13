@@ -114,10 +114,15 @@ def _running_appid():
     return None
 
 
+def _appid(game):
+    return game["appid"] if game else None
+
+
 class GameContext:
     def __init__(self):
         self.selected = None  # {"appid": str, "name": str|None}
         self.running = None
+        self.on_event = None  # (name, game) -> None for game_started/stopped/selected; must not block
         self._names = {}
 
     def info(self, appid):
@@ -182,4 +187,21 @@ class GameContext:
             log.info("selected: %s", sel)
         if run != self.running:
             log.info("running: %s", run)
+        old_sel, old_run = self.selected, self.running
         self.selected, self.running = sel, run
+        # Events follow the appid: a name that turns up late isn't a new game.
+        if _appid(old_run) != _appid(run):
+            if old_run:
+                self._emit("game_stopped", old_run)
+            if run:
+                self._emit("game_started", run)
+        if sel and _appid(old_sel) != _appid(sel):
+            self._emit("game_selected", sel)
+
+    def _emit(self, name, game):
+        if self.on_event is None:
+            return
+        try:
+            self.on_event(name, dict(game))
+        except Exception:
+            log.exception("game event %s failed", name)

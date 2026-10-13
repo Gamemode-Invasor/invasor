@@ -38,7 +38,7 @@ that needs it stops working: never the panel, never Steam.
 |---|---|---|
 | `~/.steam/steam/.cef-enable-remote-debugging` (empty file) | `invasor-installation.sh`, and `backend/invasor/cef_flag.py` each time the service starts | Steam opens CEF DevTools on port 8080 at its next start. The same entry point Decky uses. |
 | `http://127.0.0.1:8080/json` (window list) | `backend/invasor/cef.py` `list_targets` | Finding Steam's windows. Polled by `injector.Injector.run`, a loop that logs and retries on any error and never stops. |
-| `http://127.0.0.1:8080/json/version` (the browser's WebSocket URL, `…/devtools/browser/<id>`) | `cef.browser_id`, polled by `injector._round` | Telling Steam instances apart: the id is new each time Steam starts, so a new one is a Steam (re)start and modules' `on_steam_start` callbacks run. A moment without an answer keeps the last id, so it never counts as a restart. |
+| `http://127.0.0.1:8080/json/version` (the browser's WebSocket URL, `…/devtools/browser/<id>`) | `cef.browser_id`, polled by `injector._round` | Telling Steam instances apart: the id is new each time Steam starts, so a new one is a Steam (re)start and modules' `steam_start` event runs (also their deprecated `on_steam_start`). A moment without an answer keeps the last id, so it never counts as a restart. |
 | CDP over WebSocket: `Runtime.enable`, `Runtime.evaluate`, `Runtime.executionContextCreated` | `cef.CDPSession`, `injector._handle` / `_inject` | Evaluating the bundle in a window, and evaluating it again when the window reloads (a new default execution context). The WebSocket client is written with the stdlib only. |
 
 How it can fail:
@@ -77,7 +77,7 @@ Steam's hidden page, which holds `SteamClient` and Steam's router. Invasor never
 
 | What | Where | Used for |
 |---|---|---|
-| Its URL in the `/json` list: `…/routes/library/app/<appid>` | `backend/invasor/context.py` | The **selected** game (the game page that's open), with no code inside Steam. |
+| Its URL in the `/json` list: `…/routes/library/app/<appid>` | `backend/invasor/context.py` | The **selected** game (the game page that's open), with no code inside Steam. A change of it is the modules' `game_selected` event. |
 | `SteamClient.<path>(…)` evaluated there | `backend/invasor/steam.py` `SteamBridge`, `injector.evaluate_shared` | `ctx.steam_call` / `steam_call_async` for module backends, and `core.steam_call` for UIs whose window has no `SteamClient`. |
 | `SteamClient.User.StartRestart(false)` (Steam's own *Restart now* call; without the argument it fails with `requires 1 arguments`) | `backend/invasor/core.py` `restart_steam` | ⚙ Settings › Manage Invasor › Restart Steam. If this Steam has no such function the button says so (503); nothing is killed from outside. |
 | `window.NotificationStore.OnNotification(id, 5, bytes)` | `steam.py` `SteamBridge.notify` (a fixed script) | `ctx.notify` / `core.notify`: a notification shown as Steam shows an achievement, with our title, text and icon. Type 5 and the message (`CAchievementNotification`) are Steam's public protobuf definitions (`steammessages_clientnotificationtypes.proto`), encoded by Invasor. Steam's achievement toast setting applies. |
@@ -122,14 +122,14 @@ far less often.
 
 | What | Where | Used for |
 |---|---|---|
-| `SteamAppId` / `SteamGameId` in `/proc/<pid>/environ` | `context.py` `_running_appid` | The **running** game. For a non-Steam shortcut the game id is 64-bit: `(appid << 32) \| 0x02000000`. |
+| `SteamAppId` / `SteamGameId` in `/proc/<pid>/environ` | `context.py` `_running_appid` | The **running** game; a change of it is the modules' `game_started` / `game_stopped` events. For a non-Steam shortcut the game id is 64-bit: `(appid << 32) \| 0x02000000`. |
 | `steamapps/libraryfolders.vdf`, `steamapps/appmanifest_<appid>.acf` | `context.py` | Names of installed Steam games. |
 | `userdata/*/config/shortcuts.vdf` (binary VDF) | `vdf.py`, `context.py` | Names and executables of non-Steam shortcuts; re-read only when the files change. |
 | evdev `/dev/input/event*`; hidraw with Valve's vendor id `28de` | `gamepad.py` | The open/close combo. Read-only and non-exclusive: Steam and games still get every input. The hidraw layout is Valve's hardware protocol (as in the kernel's `hid-steam.c`), not Steam client code. |
 
 How it can fail:
-- **Steam stops putting `SteamAppId`/`SteamGameId` in the game's environment:** `running` is null; selected
-  and highlighted still work.
+- **Steam stops putting `SteamAppId`/`SteamGameId` in the game's environment:** `running` is null and the
+  `game_started` / `game_stopped` events stop; selected and highlighted still work.
 - **The binary VDF format or the shortcut id formula changes:** shortcut names are missing (ids still show).
 - **Several Steam accounts in `userdata/`:** shortcut names are read from all of them. Artwork has to pick one
   account (the only one, or the most recent login in `loginusers.vdf`) and says so when it can't tell.
@@ -165,10 +165,10 @@ drive Steam's pages through port 8080. That's a property of Steam's debugging po
 |---|---|---|---|
 | Debugging file gone / CEF port moved | No "I" anywhere | Keeps polling, logs "waiting for Steam CEF"; puts the file back when the service next starts | Restart the service, then Steam; `CEF_PORT` |
 | Steam restarts or crashes | Panel gone for a moment | Re-injects on the next round | Nothing |
-| `/json/version` without a browser id | Modules' `on_steam_start` never runs (e.g. Deckico) | Nothing else changes | `cef.browser_id`; the smoke test's "Steam instance id" line |
+| `/json/version` without a browser id | Modules' `steam_start` event (and `on_steam_start`) never runs (e.g. Deckico) | Nothing else changes | `cef.browser_id`; the smoke test's "Steam instance id" line |
 | A window reloads | Panel gone for a moment | Re-injects on `executionContextCreated` | Nothing |
 | Window useragent/title renamed | No "I" in that window | Nothing matches that window | `log_level: DEBUG`, then `targets` in `config.json` |
-| `SharedJSContext` renamed | No "Selected" game; module calls 503 | Plan B in each caller | Window titles in the debug log; `injector.evaluate_shared` |
+| `SharedJSContext` renamed | No "Selected" game and no `game_selected` event; module calls 503 | Plan B in each caller | Window titles in the debug log; `injector.evaluate_shared` |
 | `SharedJSContext` hangs | Module calls and notifications fail after a few seconds | 503 after the 5 s connect / 15 s call timeout; the panel and the rest keep working | `cef.CONNECT_TIMEOUT`; Steam itself (restart it) |
 | Route URL format changed | No "Selected" game | Running and highlighted still work | `context.py` route parsing |
 | `SteamClient` API renamed or re-signed | A module's live action fails, with its fallback; ⚙ Settings › Manage Invasor › Restart Steam says it's unavailable (`User.StartRestart`) | `Unavailable` (503), one log line per call | The module's plan B; the new name in Steam's JS |
