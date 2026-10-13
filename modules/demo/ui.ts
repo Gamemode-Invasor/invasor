@@ -361,6 +361,16 @@ export default defineModule({
                 return "Notification sent";
               })),
           ]),
+          ui.section("Background tasks (core.tasks(), also in the log)", [
+            callButton(ctx, "Run a 5 s task", async () => {
+              await ctx.call("slow_task", { seconds: 5 });
+              return "Task done";
+            }),
+            callButton(ctx, "Run a task that fails", async () => {
+              await ctx.call("slow_task", { seconds: 2, fail: true });
+              return "Task done";
+            }),
+          ]),
           ui.section("Calls", [
             callButton(ctx, "Who am I", async () => JSON.stringify(await ctx.call("whoami"))),
             callButton(ctx, "Notify", async () => {

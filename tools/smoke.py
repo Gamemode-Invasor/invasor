@@ -621,6 +621,16 @@ class Smoke:
                    "Backend thread: up" in stats and "Python files:" in stats and "Backend tab visits:" in stats, stats)
         await asyncio.sleep(2.0)
         self.check("stats line refreshes every second", await self.js(first_info) != stats, stats)
+        # Background tasks: Demo's slow_task runs from the API; core.tasks() lists it afterwards
+        # (the registry is in memory: nothing is left on disk).
+        st, body = await self.api("slow_task", feature="demo", seconds=1)
+        self.check("tasks: Demo's slow task runs", st == 200, (st, body))
+        st, body = await self.api("slow_task", feature="demo", seconds=1, fail=True)
+        self.check("tasks: a failing task answers 503", st == 503, (st, body))
+        st, body = await self.api("tasks")
+        recent = [(t["module"], t["state"]) for t in body.get("recent", [])] if st == 200 else body
+        self.check("tasks: core.tasks() lists both as ended, the newest first",
+                   st == 200 and recent[:2] == [("demo", "failed"), ("demo", "done")] and not body["active"], recent)
         # Every notification button: Steam's own sounds, with the toast of the answer.
         for label in ["Default (Steam decides)", *(f"Sound: {s}" for s in SOUNDS)]:
             await self.goto(label, limit=6)

@@ -9,6 +9,7 @@
 - clean errors: InvalidArgument (400) and Unavailable (503);
 - plain and `async def` methods, a background thread stopped in teardown();
 - ctx.events: counts the Steam starts it has seen and notes the last game started, stopped or selected;
+- ctx.task: a long operation that reports its progress (slow_task), seen from anywhere in core.tasks();
 - upgrade() when a new version loads, uninstall() undoing what it left outside its folder;
 - a helper file imported as `from . import helpers`.
 """
@@ -128,6 +129,20 @@ async def notify_async(title="Demo", body="", sound=""):
     return {"ok": True}
 
 
+def slow_task(seconds=5, fail=False):
+    """A long operation others can watch: it advances once a second and can end failing.
+    `with ctx.task(...)` ends it by itself (done, or failed if an error leaves the block)."""
+    if not isinstance(seconds, int) or isinstance(seconds, bool) or not 1 <= seconds <= 30:
+        raise ctx.InvalidArgument("seconds must be a whole number from 1 to 30")
+    with ctx.task("Demo: slow task") as task:
+        for i in range(seconds):
+            task.update(i / seconds, f"Step {i + 1} of {seconds}")
+            time.sleep(1)
+        if fail:
+            raise ctx.Unavailable("Demo failed this task on purpose (Unavailable: 503)")
+    return {"seconds": seconds}
+
+
 def _system(info):
     keys = ("sOSName", "sOSVersionId", "sSteamBuildDate", "sCPUName")
     return {k: info.get(k) for k in keys} if isinstance(info, dict) else {"result": info}
@@ -212,6 +227,7 @@ METHODS = {
     "fail": fail,
     "visit": visit,
     "stats": stats,
+    "slow_task": slow_task,
     "profile_get": profile_get,
     "profile_set": profile_set,
 }

@@ -312,6 +312,34 @@ class FileOrLive(unittest.TestCase):
         self.assertTrue((home / path).is_file())
         shutil.rmtree(work)
 
+    def test_a_task_gets_the_download_progress_and_the_steps(self):
+        from invasor.tasks import TaskRegistry
+        home = temp_dir(self)
+        patch(self, "invasor.install.HOME", home)
+        patch(self, "invasor.config.CACHE_DIR", home / ".cache" / "invasor")
+        self.net.answers[market.FILE_URL] = market_file()
+        data = b"PK"
+        sha = hashlib.sha256(data).hexdigest()
+        registry = TaskRegistry()
+        seen = []
+
+        def fetch_file(url, dest, limit, progress=None):
+            if url.endswith(".zip"):
+                dest.write_bytes(data)
+                progress(1, 2)
+                seen.append(dict(registry.snapshot()["active"][0]))
+            else:
+                self.assertIsNone(progress)
+                dest.write_text(sha)
+
+        m = market.Market(fetch=self.net.get, fetch_text=self.net.get, fetch_file=fetch_file)
+        task = registry.start("core", "Installing")
+        path, work, mid = m.download("invasor-patito", task)
+        self.assertEqual((seen[0]["fraction"], seen[0]["text"]), (0.4, "Downloading Patito"))
+        last = registry.snapshot()["active"][0]
+        self.assertEqual((last["fraction"], last["text"]), (0.8, "Verifying Patito"))
+        shutil.rmtree(work)
+
     def test_a_card_from_the_file_downloads_like_any_other(self):
         home = temp_dir(self)
         patch(self, "invasor.install.HOME", home)

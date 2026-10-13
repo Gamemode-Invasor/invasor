@@ -7,6 +7,7 @@ import tempfile
 import time
 import tomllib
 import unittest
+from unittest import mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parents[1]
@@ -17,6 +18,7 @@ sys.path.insert(0, str(Path(os.environ.get("INVASOR_CORE") or HERE.parents[1]) /
 from invasor import schema, tomlio  # noqa: E402
 from invasor.modules import Form, Settings  # noqa: E402
 from invasor.storage import JsonStore  # noqa: E402
+from invasor.tasks import TaskRegistry  # noqa: E402
 
 import helpers  # noqa: E402
 
@@ -58,6 +60,7 @@ class FakeCtx:
         self._folder = folder
         self.notified = []
         self.events = FakeEvents()
+        self.registry = TaskRegistry()
 
     def game_data(self, appid):
         return JsonStore(self._folder / "games" / f"{appid}.json")
@@ -65,6 +68,10 @@ class FakeCtx:
     def notify(self, title, body="", icon="", timeout=15, sound=""):
         self.notified.append((title, body))
         self.last_notify = {"timeout": timeout, "sound": sound}
+
+
+    def task(self, label):
+        return self.registry.start("demo", label)
 
 
 class FakeEvents:
@@ -138,6 +145,24 @@ class Backend(unittest.TestCase):
         stats = self.b.stats()
         self.assertEqual(stats["steam_starts"], 2)
         self.assertRegex(stats["last_steam_start"], r"^\d\d:\d\d:\d\d$")
+
+    def test_slow_task_reports_its_steps_and_ends(self):
+        self.b.time = mock.Mock()  # no real seconds in a test
+        self.assertEqual(self.b.slow_task(3), {"seconds": 3})
+        done = self.ctx.registry.snapshot()["recent"][0]
+        self.assertEqual((done["module"], done["state"], done["text"]), ("demo", "done", ""))
+        self.assertEqual(self.b.time.sleep.call_count, 3)
+
+    def test_slow_task_can_fail_on_purpose_and_checks_its_argument(self):
+        self.b.time = mock.Mock()
+        with self.assertRaises(schema.Unavailable):
+            self.b.slow_task(2, fail=True)
+        failed = self.ctx.registry.snapshot()["recent"][0]
+        self.assertEqual(failed["state"], "failed")
+        self.assertEqual(failed["fraction"], 0.5)  # where it got to
+        for bad in (0, 31, "5", True, 2.5):
+            with self.subTest(seconds=bad), self.assertRaises(schema.InvalidArgument):
+                self.b.slow_task(bad)
 
     def test_game_events_are_noted(self):
         self.assertIsNone(self.b.stats()["last_game_event"])

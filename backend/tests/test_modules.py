@@ -1,9 +1,11 @@
 import json
 import logging
+import time
 import unittest
 
 from invasor.context import GameContext
 from invasor.modules import ModuleManager
+from invasor.schema import Unavailable
 
 from .helpers import patch, temp_dir
 
@@ -557,6 +559,57 @@ class Modules(unittest.TestCase):
             self.manager.steam_started("aaa")
             self.settle()
         self.assertTrue((d / "ran").exists())
+
+    def test_a_module_can_run_a_task_and_the_core_lists_it(self):
+        self.user_module("worker", (
+            "import threading\n"
+            "gate, release = threading.Event(), threading.Event()\n"
+            "def work(c):\n"
+            "    with c.task('Crunching') as t:\n"
+            "        t.update(0.5, 'half')\n"
+            "        gate.set()\n"
+            "        release.wait(5)\n"
+            "def setup(c):\n"
+            "    threading.Thread(target=work, args=(c,), daemon=True).start()\n"))
+        self.manager.add("worker")
+        mod = self.manager._loaded["worker"]
+        self.assertTrue(mod.gate.wait(2))
+        active = self.manager.tasks.snapshot()["active"]
+        self.assertEqual([(t["module"], t["label"], t["fraction"], t["text"]) for t in active], [("worker", "Crunching", 0.5, "half")])
+        mod.release.set()
+        deadline = time.monotonic() + 2
+        while self.manager.tasks.snapshot()["active"] and time.monotonic() < deadline:
+            time.sleep(0.01)
+        self.assertEqual([t["state"] for t in self.manager.tasks.snapshot()["recent"]], ["done"])
+
+    def test_unloading_a_module_fails_its_open_tasks_and_it_cannot_start_more(self):
+        self.user_module("leaky", (
+            "def setup(c):\n"
+            "    global CTX\n"
+            "    CTX = c\n"
+            "    c.task('never ends')\n"))
+        self.manager.add("leaky")
+        mod = self.manager._loaded["leaky"]
+        self.assertEqual([t["label"] for t in self.manager.tasks.snapshot()["active"]], ["never ends"])
+        self.manager.set_enabled("leaky", False)
+        snap = self.manager.tasks.snapshot()
+        self.assertEqual(snap["active"], [])
+        self.assertEqual((snap["recent"][0]["state"], snap["recent"][0]["text"]), ("failed", "module unloaded"))
+        with self.assertRaises(Unavailable):
+            mod.CTX.task("too late")
+
+    def test_a_module_whose_setup_failed_leaves_no_task_behind(self):
+        self.user_module("broken", "def setup(c):\n    c.task('half done')\n    raise RuntimeError('no')\n")
+        with self.assertLogs("invasor.modules", "ERROR"):
+            self.manager.add("broken")
+        self.assertEqual(self.manager.tasks.snapshot()["active"], [])
+        self.assertEqual(self.manager.tasks.snapshot()["recent"][0]["text"], "module unloaded")
+
+    def test_a_module_hears_the_task_event(self):
+        seen = self.events_module("watch", "c.events.on('task', lambda p: log([p['module'], p['label'], p['state']]))")
+        self.manager.tasks.start("core", "Updating").done()
+        self.settle()
+        self.assertCountEqual(seen(), [["core", "Updating", "running"], ["core", "Updating", "done"]])
 
     def test_a_failing_steam_start_callback_is_logged(self):
         self.user_module("bad", "def setup(c):\n    c.on_steam_start(lambda: 1 / 0)\n")

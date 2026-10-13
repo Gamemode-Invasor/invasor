@@ -195,11 +195,13 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
 
     async def market_install(repo):
         """Download (sha256 checked) and install, or update, the market's module of a repository."""
-        path, work, mid = await asyncio.to_thread(market.download, repo)
-        try:
-            return await module_install(path, replace=any(m["id"] == mid for m in manager.listing()))
-        finally:
-            shutil.rmtree(work, ignore_errors=True)
+        with manager.tasks.start("core", "Installing a module from the Market") as task:
+            path, work, mid = await asyncio.to_thread(market.download, repo, task)
+            try:
+                task.update(0.9, "Installing")
+                return await module_install(path, replace=any(m["id"] == mid for m in manager.listing()))
+            finally:
+                shutil.rmtree(work, ignore_errors=True)
 
     def module_uninstall(id, purge=False):
         """Uninstall a module (its uninstall() runs first). With purge its settings and data
@@ -319,7 +321,14 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
     def update_apply():
         """Download, verify and install the new version. The service restarts a moment
         after this returns; Steam is not restarted."""
-        return updater.apply()
+        with manager.tasks.start("core", "Updating Invasor") as task:
+            return updater.apply(task)
+
+    def tasks():
+        """What is running in the background and what ended lately: {active, recent}, each task
+        {id, module ("core" or a module id), label, state, fraction (0..1 or None), text, started,
+        updated, finished}. Cheap: the panel may ask for it often."""
+        return manager.tasks.snapshot()
 
     def pads():
         return [{"device": dev, "name": name, "kind": kind} for dev, name, kind in gamepad.pads()]
@@ -331,6 +340,7 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
         "set_qam_width": set_qam_width,
         "set_qam_shown": set_qam_shown,
         "pads": pads,
+        "tasks": tasks,
         "update_status": update_status,
         "update_check": update_check,
         "update_apply": update_apply,

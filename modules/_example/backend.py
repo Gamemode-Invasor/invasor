@@ -24,7 +24,8 @@ def setup(context):
     - context.game_data(appid): free-form JsonStore for this module and one game
     - context.game.selected / context.game.running: {"appid", "name", "shortcut"} or None
     - context.events.on(name, cb): cb(payload) on "steam_start" (each time Steam starts or
-      restarts; now, if it's up), "game_started", "game_stopped" and "game_selected"
+      restarts; now, if it's up), "game_started", "game_stopped", "game_selected" and "task"
+    - context.task(label): `with context.task("Downloading X") as t:` then t.update(0.5, "text")
     - context.log: this module's logger
     """
     global ctx

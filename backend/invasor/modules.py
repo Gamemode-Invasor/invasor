@@ -23,6 +23,7 @@ import threading
 from . import __version__, config, schema, tomlio
 from .schema import Unavailable
 from .storage import JsonStore
+from .tasks import TaskRegistry
 
 log = logging.getLogger("invasor.modules")
 
@@ -43,7 +44,7 @@ SETUP_TIMEOUT = 20
 # How long unloading a module waits for event callbacks that are still running.
 EVENT_JOIN = 3
 # What ctx.events can subscribe to. Names with a dot are reserved for module-to-module events.
-CORE_EVENTS = ("steam_start", "game_started", "game_stopped", "game_selected")
+CORE_EVENTS = ("steam_start", "game_started", "game_stopped", "game_selected", "task")
 
 
 class Settings:
@@ -195,7 +196,7 @@ class ModuleContext:
     # Read/write TOML config files without losing anything (see tomlio.py).
     toml = tomlio
 
-    def __init__(self, module_id, path, game, settings, steam=None, forms=None):
+    def __init__(self, module_id, path, game, settings, steam=None, forms=None, tasks=None):
         self.id = module_id
         self.forms = forms or {}  # {name: Form} from module.json "forms"
         self.path = path
@@ -207,6 +208,7 @@ class ModuleContext:
         # Free-form storage for whatever isn't a user setting (caches, state…).
         self.data = JsonStore(DATA_DIR / module_id / "data.json", self._is_alive)
         self._steam = steam
+        self._tasks = tasks
         self.events = Events(self)
         self._warned_steam_start = False
 
@@ -251,6 +253,21 @@ class ModuleContext:
         if self._steam is None:
             raise Unavailable("SteamClient bridge not configured")
         return await self._steam.notify(title, body, icon, timeout, sound)
+
+    def task(self, label):
+        """A long operation that others can watch: `with ctx.task("Downloading X") as t:` then
+        `t.update(fraction, "text")` (fraction from 0 to 1, or None if unknown); leaving the block
+        ends it (an exception marks it failed and goes on). Also `t.done(text)` / `t.fail(text)`,
+        and `async with`. Raises Unavailable once the module is unloaded or with too many tasks running."""
+        if self._dead:
+            raise Unavailable("this module was unloaded: it can't start tasks anymore")
+        if self._tasks is None:
+            raise Unavailable("tasks aren't available here")
+        task = self._tasks.start(self.id, label)
+        if self._dead:  # unloaded while it started: nobody is left to end it
+            task.fail("module unloaded")
+            raise Unavailable("this module was unloaded: it can't start tasks anymore")
+        return task
 
     def game_data(self, appid):
         """Free-form storage for this module and one game."""
@@ -323,6 +340,7 @@ class ModuleManager:
         self._loaded = {}  # id -> the imported backend module (for teardown)
         self._contexts = {}  # id -> ModuleContext of a loaded module (its event callbacks)
         self.steam_instance = None  # CEF browser id of the running Steam, once seen
+        self.tasks = TaskRegistry(on_event=self.emit)  # ctx.task() and the core's own long operations
         # API methods run in worker threads and the injector in the event loop. _ops
         # serializes the changes to the module set (load, unload, Rescan…) and is held
         # while a module's code runs; nothing that must answer quickly (listing(), the
@@ -379,12 +397,15 @@ class ModuleManager:
         the old instance writes after teardown, a purge or the next setup()."""
         with self._lock:
             context = self._contexts.pop(mid, None)
-            if context is None:
-                return
-            context._dead = True
-            context.events._steam_start_now = None
-            context.events._listeners.clear()
-            running = list(context.events._threads)
+            if context is not None:
+                context._dead = True
+                context.events._steam_start_now = None
+                context.events._listeners.clear()
+                running = list(context.events._threads)
+        # Also for a module whose setup() failed (never adopted): what it left running ends here.
+        self.tasks.close_owner(mid, "module unloaded")
+        if context is None:
+            return
         for worker in running:
             if worker is not threading.current_thread():
                 worker.join(EVENT_JOIN)
@@ -565,7 +586,7 @@ class ModuleManager:
     def _context(self, mid):
         manifest = self.manifests[mid]
         forms = {name: Form(fields) for name, fields in manifest["form_fields"].items()}
-        return ModuleContext(mid, manifest["dir"], self.game, self.settings[mid], self.steam, forms)
+        return ModuleContext(mid, manifest["dir"], self.game, self.settings[mid], self.steam, forms, self.tasks)
 
     def _import(self, mid):
         """Import a module's backend.py as a package (without running setup()). Returns
