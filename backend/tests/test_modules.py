@@ -1,5 +1,6 @@
 import json
 import logging
+import threading
 import time
 import unittest
 
@@ -536,6 +537,28 @@ class Modules(unittest.TestCase):
         self.manager.emit("game_stopped", self.GAME)
         self.settle()
         self.assertCountEqual(seen(), [["started", self.GAME], ["stopped", self.GAME]])
+
+    def test_a_callback_that_edits_the_payload_cannot_corrupt_it(self):
+        self.events_module("mutator", "c.events.on('game_started', lambda p: p.update(appid='tampered'))")
+        self.manager.emit("game_started", self.GAME)
+        self.settle()
+        self.assertEqual(self.GAME["appid"], "2100")
+
+    def test_an_event_worker_starts_while_the_lock_is_held(self):
+        """_forget_context joins every registered worker: one that hadn't started would raise."""
+        self.events_module("watch", "c.events.on('game_started', lambda p: None)")
+        context = self.manager._contexts["watch"]
+        cb = context.events._listeners["game_started"][0]
+        owned = []
+        real_start = threading.Thread.start
+
+        def spy(thread):
+            owned.append(self.manager._lock._is_owned())
+            return real_start(thread)
+        patch(self, "threading.Thread.start", spy)
+        self.manager._run_event("watch", context, "game_started", cb, self.GAME)
+        self.assertEqual(owned, [True])
+        self.settle()
 
     def test_steam_start_event_carries_the_instance(self):
         seen = self.events_module("watch", "c.events.on('steam_start', lambda p: log(p))")

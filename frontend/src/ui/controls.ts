@@ -432,7 +432,7 @@ function textField(o: Base<string> & { placeholder?: string; maxLength?: number 
     el.classList.add("editing");
     kbd = createKeyboard(input, () => {}, finish, secret ? showHide : undefined);
     el.appendChild(kbd.el);
-    dismissHost = el.closest(".iwin-box, .panel");
+    dismissHost = el.closest(".iwin-box, .panel, .cover-panel");
     dismissHost?.addEventListener("invasor:dismiss", finish);
     setHint("A type · X delete · Y shift · B done");
   };
@@ -577,7 +577,7 @@ export const ui = {
     const open = () => {
       hi = index;
       list.hidden = false;
-      dismissHost = el.closest(".iwin-box, .panel");
+      dismissHost = el.closest(".iwin-box, .panel, .cover-panel");
       dismissHost?.addEventListener("invasor:dismiss", onDismiss);
       el.dataset.hint = "↑↓ choose · A select · B cancel";
       paint();

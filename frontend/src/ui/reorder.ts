@@ -106,7 +106,7 @@ export function reorderList(items: ReorderItem[], onCommit: (ids: string[]) => P
     grabbed = l;
     l.el.classList.add("grabbed");
     l.el.dataset.hint = GRABBED;
-    dismissHost = l.el.closest(".iwin-box, .panel");
+    dismissHost = l.el.closest(".iwin-box, .panel, .cover-panel");
     dismissHost?.addEventListener("invasor:dismiss", cancel);
     hintsChanged(l.el);
   };

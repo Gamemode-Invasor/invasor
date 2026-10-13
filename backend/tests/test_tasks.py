@@ -54,6 +54,13 @@ class Registry(unittest.TestCase):
         self.assertEqual(self.registry.snapshot()["recent"][0]["text"], "first")
         self.assertEqual([p["state"] for _, p in self.events], ["running", "failed"])
 
+    def test_a_huge_int_is_cut_to_the_edges_not_an_overflow(self):
+        task = self.registry.start("m", "big")
+        task.update(10**400)
+        self.assertEqual(self.registry.snapshot()["active"][0]["fraction"], 1.0)
+        task.update(-10**400)
+        self.assertEqual(self.registry.snapshot()["active"][0]["fraction"], 0.0)
+
     def test_values_are_checked_and_cut(self):
         task = self.registry.start("m", "  " + "L" * 100 + "  ")
         self.assertEqual(self.registry.snapshot()["active"][0]["label"], "L" * MAX_LABEL)

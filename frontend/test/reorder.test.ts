@@ -47,3 +47,14 @@ test("a refused save puts the rows back", async () => {
   await settle();
   assert.deepEqual(order(), ["A", "B", "C"]);
 });
+
+test("a row grabbed in a cover panel is let go when the cover is dismissed", () => {
+  const cover = document.body.appendChild(document.createElement("div"));
+  cover.className = "cover-panel";
+  cover.append(...reorderList(["a", "b"].map((id) => ({ id, label: id })), async () => {}));
+  const row = cover.querySelector<HTMLElement>(".reorder")!;
+  row.click();
+  assert.equal(row.classList.contains("grabbed"), true);
+  cover.dispatchEvent(new CustomEvent("invasor:dismiss"));
+  assert.equal(row.classList.contains("grabbed"), false);
+});

@@ -270,7 +270,7 @@ export function attachGamepadNav(
   }
 
   function activate() {
-    if (!current || !current.isConnected) return move(0);
+    if (!current || !items().includes(current)) return move(0); // gone or hidden meanwhile
     current.click();
   }
 

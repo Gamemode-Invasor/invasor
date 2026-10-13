@@ -72,8 +72,8 @@ export function createCoverPanel({ stage, panel, nav, kind, title, backHint, onO
     panel.classList.add("covered");
     el.hidden = false;
     const mine = ++opening;
-    nav.reset();
     const built = onOpen?.(content);
+    nav.reset(); // after a synchronous onOpen drew: the ring lands on its first control
     if (built && typeof (built as Promise<void>).then === "function") {
       (built as Promise<void>)
         .catch((e) => console.error(`[invasor] the ${title} panel failed`, e))
@@ -86,6 +86,7 @@ export function createCoverPanel({ stage, panel, nav, kind, title, backHint, onO
   function close(restoreFocus = true) {
     if (!isOpen()) return;
     opening++;
+    el.dispatchEvent(new CustomEvent("invasor:dismiss")); // a ui.confirm/select drawn in here resolves
     el.hidden = true;
     panel.classList.remove("covered");
     onClose?.();
@@ -104,7 +105,10 @@ export function createCoverPanel({ stage, panel, nav, kind, title, backHint, onO
     isOpen,
     content,
     destroy() {
-      if (isOpen()) onClose?.();
+      if (isOpen()) {
+        el.dispatchEvent(new CustomEvent("invasor:dismiss"));
+        onClose?.();
+      }
       panel.classList.remove("covered");
       el.remove();
     },

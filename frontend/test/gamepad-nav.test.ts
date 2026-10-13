@@ -5,8 +5,8 @@ import { attachGamepadNav, type GamepadNav } from "../src/ui/gamepad-nav";
 import { createTasksPanel, type TasksPanel } from "../src/ui/tasks-panel";
 
 // jsdom has no layout: the pad only stops on controls that have boxes, so every element gets one.
-Element.prototype.getClientRects = function () {
-  return [{}] as unknown as DOMRectList;
+Element.prototype.getClientRects = function (this: Element) {
+  return (this.closest("[hidden]") ? [] : [{}]) as unknown as DOMRectList; // hidden things have no boxes
 };
 
 const SELECT = 13;
@@ -205,4 +205,26 @@ test("the ⚙ button is not a stop for the pad", () => {
   nav!.reset();
   press(A);
   assert.equal(document.querySelector(".nav-focus")?.id, "one");
+});
+
+test("the first time Tasks opens the ring lands on its first control", () => {
+  const { tasks, stage } = setup();
+  const done = { id: 1, label: "x", module: "m", state: "done", fraction: null, text: "", started: 1, updated: 1, finished: 2 } as const;
+  tasks.update({ active: [], recent: [done] });
+  tasks.open();
+  const ring = stage.querySelector(".cover-panel .nav-focus");
+  assert.ok(ring, "the pad has a control selected");
+});
+
+test("A does not press a control that was hidden meanwhile", () => {
+  const { press, panel } = setup();
+  const one = panel.querySelector<HTMLElement>("#one")!;
+  let clicks = 0;
+  one.addEventListener("click", () => clicks++);
+  press(A); // the first A only puts the ring on the first control
+  press(A);
+  assert.equal(clicks, 1);
+  one.hidden = true;
+  press(A);
+  assert.equal(clicks, 1);
 });

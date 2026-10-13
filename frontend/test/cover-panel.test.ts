@@ -194,3 +194,20 @@ test("destroying it while open calls onClose; destroying it closed does not", ()
   second.cover.destroy();
   assert.equal(closed, 1);
 });
+
+test("closing or destroying it resolves a dialog that was drawn in it", async () => {
+  const { ui, setTopLayer } = await import("../src/ui/controls");
+  for (const how of ["close", "destroy"] as const) {
+    const { cover, el } = setup();
+    setTopLayer(() => el);
+    cover.open();
+    const answer = ui.confirm("Sure?");
+    assert.ok(el.querySelector(".modal"));
+    cover[how]();
+    // A dialog that never resolves must fail the test, not hang the suite.
+    const gone = new Promise<string>((r) => setTimeout(() => r("never resolved"), 500));
+    assert.equal(await Promise.race([answer, gone]), false);
+    assert.equal(el.querySelector(".modal"), null);
+  }
+  setTopLayer(null);
+});
