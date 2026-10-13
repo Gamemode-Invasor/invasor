@@ -1,5 +1,6 @@
 New
 - Modules can now choose the sound of a notification: `notify(title, body, icon, sound)` takes the new `sound` parameter (`trophy`, `message`, `toast`, `chat`, `mention`, `friend`, `online`, `ingame` or `none` for silence). It works in Game Mode and on the desktop client; omitted, Steam keeps its usual achievement sound
+- Modules can now react to games and Steam with `ctx.events.on(name, cb)` / `ctx.events.off(name, cb)`: `steam_start`, `game_started`, `game_stopped` and `game_selected` (the page of a game was opened), with the game as `{appid, name, shortcut}`. A module can, for example, hold back a heavy download while a game is running and resume when it ends. Games are checked every 3 seconds. `ctx.on_steam_start` keeps working (the module API is still 1) but is deprecated and logs a warning once
 - Module packing (`tools/pack_module.py`) now includes Python sub-packages, `bin/` (as executable) and `assets/`, and checks every hook (`setup`, `teardown`, `upgrade`, `uninstall`)
 - A module that was unloaded (disabled, uninstalled, replaced or whose `setup` failed) can no longer save settings or data, or register callbacks, from a thread it left running
 - Uninstalling a module also removes it from the module order and the disabled list, so a reinstall starts enabled
