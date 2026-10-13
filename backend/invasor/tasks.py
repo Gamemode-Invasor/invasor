@@ -106,10 +106,13 @@ class Task:
 class TaskRegistry:
     """The tasks of the whole core: `owner` is a module id, or "core". `on_event(name, payload)`
     hears `task` when one starts, ends or fails (not on every update: that would be a thread
-    per step for whoever listens); it's called outside the lock and a failure in it is logged."""
+    per step for whoever listens). `watch(fn)` is for whoever must know of every change, updates
+    included, and only that something changed (fn() takes nothing and must be quick: it's called
+    from the thread that changed it). Both are called outside the lock and a failure is logged."""
 
     def __init__(self, on_event=None, clock=time.time, max_active=MAX_ACTIVE, max_recent=MAX_RECENT):
         self._on_event = on_event
+        self._watchers = []
         self._clock = clock
         self._max_active = max_active
         self._lock = threading.Lock()
@@ -127,7 +130,12 @@ class TaskRegistry:
             self._active[task.id] = task
             view = task._view()
         self._emit(view)
+        self._changed()
         return task
+
+    def watch(self, fn):
+        """fn() whenever any task starts, advances, ends or fails."""
+        self._watchers.append(fn)
 
     def snapshot(self):
         """{"active": [...], "recent": [...]}: copies, in order (active by start, recent newest first)."""
@@ -149,6 +157,7 @@ class TaskRegistry:
             if task.state != "running":
                 return
             task.fraction, task.text, task.updated = fraction, text, self._clock()
+        self._changed()
 
     def _finish(self, task, state, text):
         with self._lock:
@@ -162,6 +171,14 @@ class TaskRegistry:
             self._recent.appendleft(task)
             view = task._view()
         self._emit(view)
+        self._changed()
+
+    def _changed(self):
+        for fn in list(self._watchers):
+            try:
+                fn()
+            except Exception:
+                log.exception("task watcher failed")
 
     def _emit(self, view):
         if self._on_event is None:

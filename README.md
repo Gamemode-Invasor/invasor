@@ -88,7 +88,7 @@ game is running, and the panel there leaves out modules that have nothing to do 
 | A / B | Select / close (or cancel, depending on the control) |
 | X | Fold / unfold the section (from its title or from inside it) |
 | Y | The control's special value, e.g. back to its default |
-| Select | Show / hide the Tasks panel (also the **Tasks** button in the panel's header). B closes it too |
+| Select | Show / hide the Tasks panel (also the **Tasks** button in the panel's header): what runs in the background, with its progress, and the last ones that ended. B closes it too. A dot on the "I" handle and on that button pulses while something runs and turns red if a task failed and you haven't looked yet |
 
 The panel takes 40% of the screen width in the Library (in Quick Access, the visible column). Only its content scrolls; the shadows at the
 top and bottom show there's more to see.

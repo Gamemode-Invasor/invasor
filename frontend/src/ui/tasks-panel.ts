@@ -4,6 +4,7 @@
 // For now it only holds the place: what long-running tasks show here comes with the tasks UI.
 
 import { WINDOW_CLOSE_EVENT, type GamepadNav } from "./gamepad-nav";
+import { EMPTY_TASKS, renderTasks, type TasksSnapshot } from "./tasks-view";
 
 export interface TasksPanel {
   /** Cover the Invasor panel and take the pad. */
@@ -12,6 +13,8 @@ export interface TasksPanel {
   close(restoreFocus?: boolean): void;
   toggle(): void;
   isOpen(): boolean;
+  /** The tasks as they are now: drawn at once if the panel is open, else when it opens. */
+  update(snapshot: TasksSnapshot): void;
   /** Where the tasks go. */
   readonly content: HTMLElement;
   destroy(): void;
@@ -23,9 +26,13 @@ interface TasksDeps {
   /** The Invasor panel this one covers. */
   panel: HTMLElement;
   nav: GamepadNav;
+  /** The name to show for a task's owner (a module id, or "core"). */
+  nameOf(owner: string): string;
+  /** The panel was just opened (the user is about to see the tasks). */
+  onOpen?(): void;
 }
 
-export function createTasksPanel({ stage, panel, nav }: TasksDeps): TasksPanel {
+export function createTasksPanel({ stage, panel, nav, nameOf, onOpen }: TasksDeps): TasksPanel {
   const el = document.createElement("div");
   el.className = "tasks-panel";
   el.hidden = true;
@@ -36,7 +43,7 @@ export function createTasksPanel({ stage, panel, nav }: TasksDeps): TasksPanel {
   el.innerHTML = `
     <header><span>Tasks</span><button class="close" aria-label="Close tasks">✕</button></header>
     <div class="content-wrap">
-      <section class="content"><p class="tasks-empty">No tasks yet</p></section>
+      <section class="content"></section>
       <div class="scrollbar"><div class="thumb"></div></div>
     </div>
     <div class="hints"></div>`;
@@ -44,6 +51,9 @@ export function createTasksPanel({ stage, panel, nav }: TasksDeps): TasksPanel {
   stage.appendChild(el);
 
   const isOpen = () => !el.hidden;
+  let latest: TasksSnapshot = EMPTY_TASKS;
+  const draw = () => renderTasks(content, latest, { now: Date.now() / 1000, nameOf });
+  draw();
   let opener: HTMLElement | null = null; // where the pad's ring was in the panel, to put it back
 
   function open() {
@@ -54,7 +64,9 @@ export function createTasksPanel({ stage, panel, nav }: TasksDeps): TasksPanel {
     opener = panel.querySelector<HTMLElement>(".nav-focus");
     panel.classList.add("covered");
     el.hidden = false;
+    draw();
     nav.reset();
+    onOpen?.();
   }
 
   function close(restoreFocus = true) {
@@ -74,6 +86,10 @@ export function createTasksPanel({ stage, panel, nav }: TasksDeps): TasksPanel {
     close,
     toggle: () => (isOpen() ? close() : open()),
     isOpen,
+    update(snapshot) {
+      latest = snapshot;
+      if (isOpen()) draw();
+    },
     content,
     destroy() {
       panel.classList.remove("covered");

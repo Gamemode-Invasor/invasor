@@ -124,6 +124,36 @@ class Registry(unittest.TestCase):
         registry.start("m", "x").done()
         self.assertEqual(len(seen), 2)
 
+    def test_a_watcher_hears_every_change_including_the_updates(self):
+        heard = []
+        self.registry.watch(lambda: heard.append(1))
+        task = self.registry.start("m", "x")
+        task.update(0.1)
+        task.update(0.2)
+        task.done()
+        task.update(0.9)  # after the end: nothing changed
+        task.fail("late")
+        self.assertEqual(len(heard), 4)
+
+    def test_a_watcher_that_fails_does_not_break_the_task_or_the_others(self):
+        heard = []
+
+        def boom():
+            raise RuntimeError("x")
+        self.registry.watch(boom)
+        self.registry.watch(lambda: heard.append(1))
+        with self.assertLogs("invasor.tasks", "ERROR"):
+            task = self.registry.start("m", "x")
+        task.done()
+        self.assertEqual(len(heard), 2)
+        self.assertEqual(self.registry.snapshot()["recent"][0]["state"], "done")
+
+    def test_a_watcher_may_read_the_registry(self):
+        seen = []
+        self.registry.watch(lambda: seen.append(self.registry.snapshot()))  # would deadlock inside the lock
+        self.registry.start("m", "x").update(0.5)
+        self.assertEqual(len(seen), 2)
+
     def test_many_threads_at_once(self):
         registry = TaskRegistry(max_active=100, max_recent=1000)
 

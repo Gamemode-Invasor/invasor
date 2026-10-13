@@ -4,13 +4,13 @@ import { test } from "node:test";
 import { WINDOW_CLOSE_EVENT, type GamepadNav } from "../src/ui/gamepad-nav";
 import { createTasksPanel } from "../src/ui/tasks-panel";
 
-function setup() {
+function setup(onOpen?: () => void) {
   const calls: string[] = [];
   const stage = document.body.appendChild(document.createElement("div"));
   const panel = stage.appendChild(document.createElement("div"));
   panel.className = "panel";
   const nav = { reset: () => calls.push("reset"), ensureFocus: () => calls.push("ensure") } as unknown as GamepadNav;
-  const tasks = createTasksPanel({ stage, panel, nav });
+  const tasks = createTasksPanel({ stage, panel, nav, nameOf: (owner) => owner.toUpperCase(), onOpen });
   const el = stage.querySelector<HTMLElement>(".tasks-panel")!;
   return { calls, stage, panel, tasks, el };
 }
@@ -86,6 +86,39 @@ test("it holds a place for the tasks and says there are none yet", () => {
   const { tasks } = setup();
   assert.match(tasks.content.textContent ?? "", /No tasks yet/);
   assert.ok(tasks.content.matches(".content"));
+});
+
+const sample = (label: string) => ({
+  active: [{ id: 1, module: "rakun", label, state: "running" as const, fraction: 0.5, text: "", started: 1, updated: 1, finished: null }],
+  recent: [],
+});
+
+test("what arrives while it's closed is drawn when it opens", () => {
+  const { tasks } = setup();
+  tasks.update(sample("Installing"));
+  assert.equal(tasks.content.querySelectorAll(".task-row").length, 0); // nobody is looking: nothing drawn
+  tasks.open();
+  assert.equal(tasks.content.querySelectorAll(".task-row").length, 1);
+  assert.equal(tasks.content.querySelector(".task-owner")!.textContent, "RAKUN"); // names go through nameOf
+});
+
+test("while it's open the updates show at once", () => {
+  const { tasks } = setup();
+  tasks.open();
+  tasks.update(sample("First"));
+  assert.equal(tasks.content.querySelector(".task-label")!.textContent, "First");
+  tasks.update(sample("Second"));
+  assert.equal(tasks.content.querySelector(".task-label")!.textContent, "Second");
+});
+
+test("opening tells the overlay, closing doesn't", () => {
+  let opened = 0;
+  const { tasks } = setup(() => opened++);
+  tasks.open();
+  tasks.open();
+  assert.equal(opened, 1);
+  tasks.close();
+  assert.equal(opened, 1);
 });
 
 test("destroy removes it and uncovers the panel", () => {

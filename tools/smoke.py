@@ -298,7 +298,10 @@ class Smoke:
         return await self.js(f"""(() => {{ const r = {SR}; const t = r.querySelector('.tasks-panel');
           return {{open: !!t && !t.hidden, covered: r.querySelector('.panel').classList.contains('covered'),
                    tab: r.querySelector('.tabbar.main .tab.on')?.textContent ?? null,
-                   hint: t?.querySelector('.hints')?.textContent ?? ''}}; }})()""")
+                   hint: t?.querySelector('.hints')?.textContent ?? '',
+                   handle: r.querySelector('.handle').dataset.tasks ?? '', button: r.querySelector('.tasks-btn').dataset.tasks ?? '',
+                   rows: [...(t?.querySelectorAll('.task-row') ?? [])].map(e => ({{label: e.querySelector('.task-label').textContent,
+                          state: e.dataset.state, pct: e.querySelector('.task-bar').getAttribute('aria-valuenow')}}))}}; }})()""")
 
     async def nudge(self):
         """Change the focused value with → (or ← at the end). Returns (before, after, undo button)."""
@@ -822,6 +825,32 @@ class Smoke:
         await self.js(f"{SR}.querySelector('.tasks-panel .close').click()")
         t = await self.tasks_state()
         self.check("tasks: its ✕ closes it by touch", not t["open"] and not t["covered"], t)
+        # A task from Demo, started without waiting: the backend pushes it, nobody polls.
+        await self.js(f"""fetch(`http://127.0.0.1:${{window.__INVASOR_CFG.apiPort}}/api/demo/slow_task`, {{method: 'POST',
+          headers: {{'Content-Type': 'application/json', 'X-Invasor-Token': window.__INVASOR_CFG.token}},
+          body: JSON.stringify({{seconds: 3}})}}).catch(() => null); 0""")
+        await asyncio.sleep(1.2)
+        t = await self.tasks_state()
+        self.check("tasks: the handle and the Tasks button show something runs, with nobody asking", t["handle"] == "running" and t["button"] == "running", t)
+        await self.press("SELECT", wait=0.5)
+        t = await self.tasks_state()
+        self.check("tasks: the running task is in the panel with its bar and text",
+                   t["rows"] and t["rows"][0]["label"] == "Demo: slow task" and t["rows"][0]["state"] == "running" and t["rows"][0]["pct"] is not None, t)
+        await asyncio.sleep(3.5)
+        t = await self.tasks_state()
+        self.check("tasks: when it ends it moves to Recent and the dot goes out",
+                   t["rows"] and t["rows"][0]["state"] == "done" and t["handle"] == "" and t["button"] == "", t)
+        await self.press("SELECT", wait=0.4)
+        await self.js(f"""fetch(`http://127.0.0.1:${{window.__INVASOR_CFG.apiPort}}/api/demo/slow_task`, {{method: 'POST',
+          headers: {{'Content-Type': 'application/json', 'X-Invasor-Token': window.__INVASOR_CFG.token}},
+          body: JSON.stringify({{seconds: 1, fail: true}})}}).catch(() => null); 0""")
+        await asyncio.sleep(2.2)
+        t = await self.tasks_state()
+        self.check("tasks: a failure not seen yet turns the dot red", t["handle"] == "failed" and t["button"] == "failed", t)
+        await self.press("SELECT", wait=0.5)
+        await self.press("SELECT", wait=0.5)
+        t = await self.tasks_state()
+        self.check("tasks: looking at it clears the dot", t["handle"] == "" and t["button"] == "", t)
         await self.press("SELECT", wait=0.4)
         await self.js(f"{SR}.querySelector('.close').click()")
         t = await self.tasks_state()

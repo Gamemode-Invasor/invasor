@@ -16,8 +16,8 @@ import { keepVisible } from "./scroll";
 // Button roles: A/B/L1/R1/L2/R2 and the D-pad navigate, X folds/unfolds sections,
 // Y is each control's "special value" (e.g. back to default), Select shows/hides the Tasks
 // panel. Controls get first say.
-// SELECT is 13 in Steam's button enum (START is 14, L3/R3 are 15/16 as confirmed below); not
-// yet confirmed in Game Mode logs like the others: if Select does nothing, check this number.
+// SELECT is 13 in Steam's button enum (START is 14, L3/R3 are 15/16 as confirmed below);
+// confirmed in Game Mode, like the others.
 const BTN = { A: 1, B: 2, X: 3, L1: 5, R1: 6, L2: 7, R2: 8, UP: 9, DOWN: 10, LEFT: 11, RIGHT: 12, SELECT: 13 } as const;
 // Steam's button numbers (detail.button), confirmed in Game Mode logs. Unknown ones go out as "BTN_<n>".
 const NAMES: Record<number, string> = {

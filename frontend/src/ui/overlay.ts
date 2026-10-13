@@ -13,6 +13,7 @@ import { renderSettings, type ModuleInfo } from "./settings";
 import { tabRowHTML } from "./tabbar";
 import { createTabHost, type TabSpec } from "./tabhost";
 import { createTasksPanel } from "./tasks-panel";
+import { EMPTY_TASKS, marker, parseSnapshot, summarize, type TasksSnapshot } from "./tasks-view";
 import { NO_ROOM, esc, safe } from "./util";
 import { openBigWindow } from "./window";
 
@@ -30,6 +31,8 @@ export interface Overlay {
   isAvailable(): boolean;
   /** Hide this window's "I" because another window shows its own. */
   setHandleHidden(hidden: boolean): void;
+  /** The backend says the tasks changed (it pushes this to every window; nothing is polled). */
+  setTasks(snapshot: unknown): void;
   destroy(): void;
 }
 
@@ -156,8 +159,56 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     onSelect: () => tasksPanel.toggle(),
   });
   // Covers the panel on Select (or its "Tasks" button) and gives the pad back on Select or B.
-  const tasksPanel = createTasksPanel({ stage, panel, nav });
-  $(".tasks-btn").addEventListener("click", () => tasksPanel.toggle());
+  const tasksPanel = createTasksPanel({
+    stage,
+    panel,
+    nav,
+    nameOf: (owner) => (owner === "core" ? "Invasor" : moduleNames.get(owner) ?? owner),
+    onOpen: () => {
+      applyTasks(latestTasks); // what's on screen now counts as seen
+      void refreshTasks(); // and make sure it's the latest
+    },
+  });
+  const tasksBtn = $(".tasks-btn");
+  tasksBtn.addEventListener("click", () => tasksPanel.toggle());
+
+  // ---------- tasks ----------
+  // The backend pushes the tasks to every window whenever one changes (setTasks), so nothing is
+  // polled. We ask once ourselves (a task may be running from before we were injected), when the
+  // panel opens and when the window is seen again: that catches anything a push missed.
+  const moduleNames = new Map<string, string>(); // id -> name, for the owner of a task
+  let latestTasks: TasksSnapshot = EMPTY_TASKS;
+  const seenFailed = new Set<number>(); // failed tasks the user has had the chance to see
+  let pushes = 0; // counts pushes, so an answer to an older question never overwrites a newer push
+
+  function applyTasks(snapshot: TasksSnapshot) {
+    latestTasks = snapshot;
+    const recent = new Set(snapshot.recent.map((t) => t.id));
+    for (const id of seenFailed) if (!recent.has(id)) seenFailed.delete(id); // gone from the list: nothing to remember
+    if (tasksPanel.isOpen()) for (const t of snapshot.recent) if (t.state === "failed") seenFailed.add(t.id);
+    const mark = marker(summarize(snapshot, seenFailed));
+    for (const node of [handle, tasksBtn]) {
+      if (mark) node.dataset.tasks = mark;
+      else delete node.dataset.tasks;
+    }
+    tasksPanel.update(snapshot);
+  }
+
+  async function refreshTasks() {
+    const asked = pushes;
+    try {
+      const snapshot = parseSnapshot(await api.call("core", "tasks"));
+      if (snapshot && !destroyed && asked === pushes) applyTasks(snapshot);
+    } catch {
+      // The backend isn't answering: keep what we have; the status line says so when the panel is open.
+    }
+  }
+  const onSeenAgain = () => {
+    if (!document.hidden) void refreshTasks();
+  };
+  document.addEventListener("visibilitychange", onSeenAgain);
+  window.addEventListener("focus", onSeenAgain);
+  void refreshTasks();
 
   const tabs = createTabHost({
     content: $<HTMLElement>(".content"),
@@ -373,6 +424,8 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     if (seq !== rebuildSeq || destroyed) return true; // a newer rebuild took over while we waited
     const before = modules;
     modules = new Map();
+    moduleNames.clear();
+    for (const m of list) moduleNames.set(m.id, m.name);
     for (const m of list) {
       if (qam && m.no_qam) continue; // the module asked not to be shown in Quick Access
       const live = moduleTab(m, before.get(m.id));
@@ -594,11 +647,19 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       handleHidden = hidden;
       showHandle();
     },
+    setTasks(value) {
+      const snapshot = parseSnapshot(value);
+      if (!snapshot || destroyed) return;
+      pushes++;
+      applyTasks(snapshot);
+    },
     destroy() {
       destroyed = true;
       panel.dispatchEvent(new CustomEvent("invasor:dismiss")); // a pending ui.confirm/choose resolves
       for (const w of [...windows]) w.close();
       tasksPanel.destroy();
+      document.removeEventListener("visibilitychange", onSeenAgain);
+      window.removeEventListener("focus", onSeenAgain);
       if (qam && lastShown) api.call("core", "set_qam_shown", { shown: false }).catch(() => {});
       window.clearInterval(availTimer);
       window.removeEventListener("focus", checkGame);

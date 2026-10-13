@@ -34,7 +34,7 @@ function setup() {
     onSubTab: (dir) => log.push(`subtab ${dir}`),
     onSelect: () => (log.push("select"), tasks.toggle()),
   });
-  tasks = createTasksPanel({ stage, panel, nav });
+  tasks = createTasksPanel({ stage, panel, nav, nameOf: (owner) => owner });
   const press = (button: number, extra: Record<string, unknown> = {}) => {
     const e = new CustomEvent("vgp_onbuttondown", { detail: { button, ...extra }, bubbles: true, cancelable: true });
     window.dispatchEvent(e);
@@ -140,4 +140,16 @@ test("the touch button into Tasks is not a stop for the pad", () => {
   nav!.reset();
   press(A); // activates the ring's control
   assert.equal(document.querySelector(".nav-focus")?.id, "one");
+});
+
+test("a list with nothing to stop on scrolls by pages with the D-pad", () => {
+  const { stage, tasks, press } = setup();
+  tasks.open();
+  const list = stage.querySelector<HTMLElement>(".tasks-panel .content")!;
+  Object.defineProperty(list, "clientHeight", { value: 100, configurable: true });
+  Object.defineProperty(list, "scrollHeight", { value: 1000, configurable: true });
+  press(10); // down
+  assert.ok(list.scrollTop > 0, "paged down");
+  press(9); // up
+  assert.equal(list.scrollTop, 0);
 });
