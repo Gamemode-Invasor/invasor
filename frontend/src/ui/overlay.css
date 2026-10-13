@@ -7,11 +7,11 @@
 }
 .handle,
 .panel,
-.tasks-panel {
+.cover-panel {
   pointer-events: auto;
 }
 .panel,
-.tasks-panel {
+.cover-panel {
   position: fixed;
   top: 8px;
   right: 8px;
@@ -32,14 +32,14 @@
   font: 15px/1.4 system-ui, sans-serif;
 }
 .panel[hidden],
-.tasks-panel[hidden] {
+.cover-panel[hidden] {
   display: none;
 }
 .panel > *,
-.tasks-panel > * {
+.cover-panel > * {
   flex: none;
 }
-.tasks-panel > .content-wrap {
+.cover-panel > .content-wrap {
   flex: 1 1 auto;
 }
 /* The Tasks panel is on top of it, in the same place: the pad and touch only reach the one in front. */
@@ -51,9 +51,19 @@
   align-items: center;
   gap: 8px;
 }
-.tasks-btn {
+.tasks-btn,
+.settings-btn {
   font-size: 13px;
   padding: 4px 10px;
+}
+.no-modules {
+  margin: 0;
+  padding: 16px;
+  color: #8b94a7;
+  font-size: 14px;
+}
+.no-modules[hidden] {
+  display: none;
 }
 /* ---- tasks (tasks-view.ts) ---- */
 .tasks-group {
@@ -266,7 +276,7 @@ button:focus-visible {
   border-radius: 0 8px 8px 0;
 }
 :host(.side-left) .panel,
-:host(.side-left) .tasks-panel {
+:host(.side-left) .cover-panel {
   right: auto;
   left: 8px;
 }

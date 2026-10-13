@@ -71,7 +71,7 @@ confirm it first. If it is the same version, nothing is offered.
 
 Log: `journalctl --user -u invasor -f`. Optional configuration:
 `~/.config/invasor/config.json` (`open_combo`, `panel_side`, `targets`, `disabled_modules`, `removed_modules`, `dev_desktop`,
-`handle_icon`, `module_order`, `update_check`, `update_channel`; most of them can also be changed from the **⚙ Settings** tab).
+`handle_icon`, `module_order`, `update_check`, `update_channel`; most of them can also be changed from the **⚙ Settings** panel).
 
 ## Using it with a controller
 The Invasor handle (a coloured tab with the icon, or the letter "I") is always there in the library. In Quick Access (···) it only shows while a
@@ -81,13 +81,14 @@ game is running, and the panel there leaves out modules that have nothing to do 
 | Button | Action |
 |---|---|
 | L3 + R3 | Open / close the panel (with a game running: press ··· first). Can be changed in ⚙ Settings |
-| L1 / R1 | Previous / next tab: each module is a tab, ⚙ Settings is the last one |
+| L1 / R1 | Previous / next tab: each module is a tab |
 | L2 / R2 | Previous / next sub-tab, if the module has any |
 | D-pad ↑↓ | Move (folded content is skipped). With a lot of content, pages through it |
 | D-pad ←→ | Change the control's value |
 | A / B | Select / close (or cancel, depending on the control) |
 | X | Fold / unfold the section (from its title or from inside it) |
 | Y | The control's special value, e.g. back to its default |
+| Start | Show / hide the ⚙ Settings panel (also its ⚙ button in the header). It covers the Invasor panel like Tasks does; B or Start go back |
 | Select | Show / hide the Tasks panel (also the **Tasks** button in the panel's header): what runs in the background, with its progress, and the last ones that ended. B closes it too. A dot on the "I" handle and on that button pulses while something runs and turns red if a task failed and you haven't looked yet |
 
 The panel takes 40% of the screen width in the Library (in Quick Access, the visible column). Only its content scrolls; the shadows at the
@@ -101,7 +102,7 @@ Both regular controllers (evdev: DualSense, Xbox…) and Steam Deck-protocol one
 read: a real Steam Deck, or handhelds such as the Legion Go virtualised by
 InputPlumber. To see which buttons the service detects: `python3 tools/pad.py`.
 
-**⚙ Settings tab** (always there, even with no modules): enable or disable modules (Manage modules), install one from a zip or from the Market (Library only), the shortcut that opens the panel, the panel side (Library only: Quick Access is always on the left), the order of the modules' tabs (grab a module with A, move it with the D-pad), what the handle shows (the icon, the letter "I" or nothing), the accent colour (also of the handle), "Manage Invasor" (updates, restart Invasor or Steam, view the log, reset the configuration, uninstall) and "About" (version, status and
+**⚙ Settings panel** (the ⚙ button in the panel's header, or Start; it works even with no modules): enable or disable modules (Manage modules), install one from a zip or from the Market (Library only), the shortcut that opens the panel, the panel side (Library only: Quick Access is always on the left), the order of the modules' tabs (grab a module with A, move it with the D-pad), what the handle shows (the icon, the letter "I" or nothing), the accent colour (also of the handle), "Manage Invasor" (updates, restart Invasor or Steam, view the log, reset the configuration, uninstall) and "About" (version, status and
 detected controllers). Invasor's own UI is in English; each module chooses its own
 language.
 
@@ -159,7 +160,7 @@ Modules can also show a notification the way Steam shows an achievement (`ctx.no
 | Window URLs: `useragent=Valve%20Steam%20Gamepad`, title `QuickAccess_…` | which windows get the panel | adjustable without code via `targets` in `config.json` |
 | `SharedJSContext` URL `/routes/library/app/<id>` | the selected game (and modules' `game_selected` event) | the selected game isn't shown and the event never runs; the running game still is (it comes from `/proc`) |
 | Library tile under the cursor: `document.activeElement` (`role="link"`), its artwork URL `/assets/<appid>/` or `/customimages/<appid>`, its `aria-labelledby` name (matched against `shortcuts.vdf`) | the highlighted game | `highlighted` is null; running and selected are unaffected |
-| `vgp_onbuttondown` events and their button numbers (Select is 13) | gamepad navigation in the panel, and Select for the Tasks panel | the panel opens (L3+R3) but isn't navigable with the pad (Tasks opens with its header button); touch and F10 still work |
+| `vgp_onbuttondown` events and their button numbers (Select is 13, Start 14) | gamepad navigation in the panel, and Select / Start for the Tasks / Settings panels | the panel opens (L3+R3) but isn't navigable with the pad (Tasks and Settings open with their header buttons); touch and F10 still work |
 | `window.screenX` / `innerWidth` of Steam's windows | fitting the panel in Quick Access | it falls back to the learned width (348px) |
 | CSS class `.gpfocus` | returning focus after physical-keyboard typing | focus isn't returned; nothing else changes |
 | `SteamClient` (optional), in this window or in `SharedJSContext` | `ctx.steam.safeCall` / `ctx.steam_call` for modules (e.g. Artwork's live refresh), and `User.StartRestart` for ⚙ Settings › Manage Invasor › Restart Steam | calls fail cleanly (503); modules fall back (Artwork: the new art shows after restarting Steam) |

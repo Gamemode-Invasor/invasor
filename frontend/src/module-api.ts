@@ -217,7 +217,7 @@ export interface ModuleDef {
  *   });
  */
 export interface InvasorButtonDetail {
-  /** "A" | "B" | "X" | "Y" | "UP" | "DOWN" | "LEFT" | "RIGHT" | "L1" | "R1" | "L2" | "R2" | "SELECT",
+  /** "A" | "B" | "X" | "Y" | "UP" | "DOWN" | "LEFT" | "RIGHT" | "L1" | "R1" | "L2" | "R2" | "SELECT" | "START",
    *  or "BTN_<code>" if not mapped yet. L1/R1 and L2/R2 switch tabs unless a control takes them. */
   button: string;
   /** Steam's raw button number. */

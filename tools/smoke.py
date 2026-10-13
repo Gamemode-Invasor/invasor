@@ -32,7 +32,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 from invasor import cef, context  # noqa: E402
 from invasor.config import CONFIG_DIR, CONFIG_FILE  # noqa: E402
 
-BTN = {"A": 1, "B": 2, "X": 3, "Y": 4, "L1": 5, "R1": 6, "L2": 7, "R2": 8, "UP": 9, "DOWN": 10, "LEFT": 11, "RIGHT": 12, "SELECT": 13}
+BTN = {"A": 1, "B": 2, "X": 3, "Y": 4, "L1": 5, "R1": 6, "L2": 7, "R2": 8, "UP": 9, "DOWN": 10, "LEFT": 11, "RIGHT": 12, "SELECT": 13, "START": 14}
 DEMO_DIR = CONFIG_DIR / "modules" / "demo"
 DEMO_SETTINGS = DEMO_DIR / "settings.json"
 SOUNDS = ["trophy", "message", "toast", "chat", "mention", "friend", "online", "ingame", "none"]  # Demo › Backend buttons
@@ -40,6 +40,7 @@ SR = "document.getElementById('invasor-root').shadowRoot"
 # Everything the checks look at: tabs, the control under the blue ring, open popups.
 STATE = f"""(() => {{
   const r = {SR};
+  const top = r.querySelector('.cover-panel:not([hidden])') ?? r.querySelector('.panel');
   const f = r.querySelector('.nav-focus');
   const list = f?.querySelector('.select-list');
   return {{
@@ -56,17 +57,17 @@ STATE = f"""(() => {{
     keyboard: !!f?.querySelector('.kbd'),
     modal: !!r.querySelector('.modal'),
     toast: r.querySelector('.toast:not([hidden])')?.textContent ?? null,
-    about: r.querySelector('.pane:not([hidden]) .section:last-of-type')?.textContent ?? '',
-    scroll: Math.round(r.querySelector('.content').scrollTop),
-    scrollMax: r.querySelector('.content').scrollHeight - r.querySelector('.content').clientHeight,
-    moreAbove: r.querySelector('.content').classList.contains('more-above'),
-    moreBelow: r.querySelector('.content').classList.contains('more-below'),
+    about: (top.querySelector('.pane:not([hidden])') ?? top.querySelector('.content'))?.querySelector('.section:last-of-type')?.textContent ?? '',
+    scroll: Math.round(top.querySelector('.content').scrollTop),
+    scrollMax: top.querySelector('.content').scrollHeight - top.querySelector('.content').clientHeight,
+    moreAbove: top.querySelector('.content').classList.contains('more-above'),
+    moreBelow: top.querySelector('.content').classList.contains('more-below'),
     width: r.querySelector('.panel').getBoundingClientRect().width,
     screen: innerWidth,
     realScreen: screen.width,
-    nativeBar: r.querySelector('.content').offsetWidth - r.querySelector('.content').clientWidth,
-    ownBar: !r.querySelector('.scrollbar').hidden,
-    thumbY: r.querySelector('.thumb').getBoundingClientRect().top,
+    nativeBar: top.querySelector('.content').offsetWidth - top.querySelector('.content').clientWidth,
+    ownBar: !top.querySelector('.scrollbar').hidden,
+    thumbY: top.querySelector('.thumb').getBoundingClientRect().top,
   }};
 }})()"""
 
@@ -117,6 +118,14 @@ class Smoke:
                 return st
             st = await self.press(button)
         return st
+
+    async def open_settings(self):
+        """Start opens the Settings panel over the Invasor one (it is built the first time: give it a moment)."""
+        return await self.press("START", wait=1.5)
+
+    async def close_cover(self):
+        """B closes the panel in front (Tasks or Settings) and gives the pad back to Invasor."""
+        return await self.press("B", wait=0.4)
 
     async def goto_tab(self, label, limit=30):
         """Switch module tabs (L1/R1) until the one called `label` is active."""
@@ -241,7 +250,7 @@ class Smoke:
             await self.js("window.__invasor.setOpen(false)")
             await self.js("window.__invasor.setOpen(true)")
             await asyncio.sleep(2.5)
-            await self.goto_tab("⚙ Settings")
+            await self.open_settings()
             # Installed behind the panel's back: Rescan draws the module list again.
             await self.unfold("Manage modules")
             await self.goto("Rescan modules", limit=60)
@@ -253,7 +262,7 @@ class Smoke:
             await self.unfold("Module order")
             st = await self.goto("Smoke Demo")
             st = await self.press("A", wait=0.3)
-            self.check("reorder: A grabs the row and the hint says how to drop it", "drop" in await self.js(f"{SR}.querySelector('.panel .hints').textContent"), st)
+            self.check("reorder: A grabs the row and the hint says how to drop it", "drop" in await self.js(f"{SR}.querySelector('.cover-panel:not([hidden]) .hints, .panel .hints').textContent"), st)
             await self.press("UP", wait=0.3)
             st = await self.state()
             self.check("reorder: the ring follows the moved row", st["label"] == "Smoke Demo", st)
@@ -283,6 +292,7 @@ class Smoke:
             self.check("uninstall: the module is gone", st == 200 and "smoke-demo" not in ids, ids)
             self.check("uninstall: its data is deleted", not (CONFIG_DIR / "modules" / "smoke-demo").exists())
             self.check("uninstall: its uninstall() removed what it left outside", not outside.exists())
+            await self.close_cover()  # Settings goes back to the Invasor panel
         finally:
             await self.api("module_uninstall", id="smoke-demo", purge=True)
             shutil.rmtree(work, ignore_errors=True)
@@ -293,9 +303,9 @@ class Smoke:
         """State of the open big window (None if there isn't one)."""
         return await self.js(WINDOW)
 
-    async def tasks_state(self):
-        """Is the Tasks panel open, is the Invasor panel covered by it, and which module tab is on."""
-        return await self.js(f"""(() => {{ const r = {SR}; const t = r.querySelector('.tasks-panel');
+    async def tasks_state(self, kind="tasks"):
+        """Is the `kind` panel (tasks, settings) open, is the Invasor panel covered, and which module tab is on."""
+        return await self.js(f"""(() => {{ const r = {SR}; const t = r.querySelector('.cover-panel[data-kind="{kind}"]');
           return {{open: !!t && !t.hidden, covered: r.querySelector('.panel').classList.contains('covered'),
                    tab: r.querySelector('.tabbar.main .tab.on')?.textContent ?? null,
                    hint: t?.querySelector('.hints')?.textContent ?? '',
@@ -485,7 +495,7 @@ class Smoke:
         await self.goto_sub("Controls")
         st = await self.goto("Volume")
         st2 = await self.press("RIGHT")
-        hint = await self.js(f"{SR}.querySelector('.panel .hints').textContent")
+        hint = await self.js(f"{SR}.querySelector('.cover-panel:not([hidden]) .hints, .panel .hints').textContent")
         self.check("disabled control: selectable, ignores ←→, hint says why",
                    st2["label"] == "Volume" and st2["value"] == st["value"] and "Locked from Demo" in hint, (st2, hint))
         await self.goto_sub("Text")
@@ -703,8 +713,12 @@ class Smoke:
         self.check("R1 goes to the next tab", st["tab"] != "Demo" and st["open"], st)
         st = await self.press("L1", wait=0.4)
         self.check("L1 goes back to Demo", st["tab"] == "Demo", st)
-        st = await self.goto_tab("⚙ Settings")
-        self.check("Settings is the last tab", st["tab"] == "⚙ Settings" and st["sub"] is None, st)
+        names = await self.js(f"[...{SR}.querySelectorAll('.tabbar.main .tab')].map(t => t.textContent)")
+        self.check("Settings is not a tab of the row any more", "⚙ Settings" not in names and len(names) >= 1, names)
+        before_cover = await self.state()
+        st = await self.open_settings()
+        sp = await self.tasks_state("settings")
+        self.check("Settings: Start opens it over the Invasor panel", sp["open"] and sp["covered"], sp)
         demo = await self.js(f"""(() => {{ const c = [...{SR}.querySelectorAll('.ctl')].find(c => c.querySelector('.ctl-label')?.textContent?.startsWith('Demo ('));
           return c ? [c.querySelector('.ctl-label').textContent, c.dataset.hint ?? ''] : null; }})()""")
         self.check("Modules: Demo's label shows version and author (no email), its hint the description",
@@ -746,6 +760,9 @@ class Smoke:
         st = await self.state()
         self.check("About: lists the controllers", "Controllers detected" in st["about"] and "·" in st["about"], st["about"][:120])
         await self.press("A")
+        await self.close_cover()
+        st = await self.state()
+        self.check("Settings: B goes back to the Invasor panel on the tab it was on", st["open"] and st["tab"] == before_cover["tab"], (st, before_cover))
 
         print(" Highlighted game")
         installed = sorted(p.name[12:-4] for lib in context._library_dirs() for p in (lib / "steamapps").glob("appmanifest_*.acf"))
@@ -822,9 +839,27 @@ class Smoke:
         await self.js(f"{SR}.querySelector('.tasks-btn').click()")
         t = await self.tasks_state()
         self.check("tasks: the header's Tasks button opens it by touch", t["open"] and t["covered"], t)
-        await self.js(f"{SR}.querySelector('.tasks-panel .close').click()")
+        await self.js(f"""{SR}.querySelector('.cover-panel[data-kind="tasks"] .close').click()""")
         t = await self.tasks_state()
         self.check("tasks: its ✕ closes it by touch", not t["open"] and not t["covered"], t)
+        print(" Settings panel (header button, exclusivity)")
+        await self.js(f"{SR}.querySelector('.settings-btn').click()")
+        await asyncio.sleep(1.0)
+        s = await self.tasks_state("settings")
+        self.check("settings: the ⚙ button in the header opens it by touch", s["open"] and s["covered"], s)
+        await self.press("SELECT", wait=0.4)
+        t = await self.tasks_state()
+        self.check("settings: Select does nothing while Settings is in front", not t["open"], t)
+        await self.press("START", wait=0.4)
+        s = await self.tasks_state("settings")
+        self.check("settings: Start goes back to Invasor", not s["open"] and not s["covered"], s)
+        await self.press("SELECT", wait=0.4)
+        await self.press("START", wait=0.4)
+        s = await self.tasks_state("settings")
+        t = await self.tasks_state()
+        self.check("settings: Start does nothing while Tasks is in front", not s["open"] and t["open"], (s, t))
+        await self.press("B", wait=0.4)
+
         # A task from Demo, started without waiting: the backend pushes it, nobody polls.
         await self.js(f"""fetch(`http://127.0.0.1:${{window.__INVASOR_CFG.apiPort}}/api/demo/slow_task`, {{method: 'POST',
           headers: {{'Content-Type': 'application/json', 'X-Invasor-Token': window.__INVASOR_CFG.token}},

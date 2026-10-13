@@ -11,7 +11,7 @@ function setup(onOpen?: () => void) {
   panel.className = "panel";
   const nav = { reset: () => calls.push("reset"), ensureFocus: () => calls.push("ensure") } as unknown as GamepadNav;
   const tasks = createTasksPanel({ stage, panel, nav, nameOf: (owner) => owner.toUpperCase(), onOpen });
-  const el = stage.querySelector<HTMLElement>(".tasks-panel")!;
+  const el = stage.querySelector<HTMLElement>(".cover-panel")!;
   return { calls, stage, panel, tasks, el };
 }
 
@@ -125,6 +125,6 @@ test("destroy removes it and uncovers the panel", () => {
   const { tasks, panel, stage } = setup();
   tasks.open();
   tasks.destroy();
-  assert.equal(stage.querySelector(".tasks-panel"), null);
+  assert.equal(stage.querySelector(".cover-panel"), null);
   assert.equal(panel.classList.contains("covered"), false);
 });

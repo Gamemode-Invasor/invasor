@@ -14,6 +14,7 @@ const B = 2;
 const L1 = 5;
 const R2 = 8;
 const A = 1;
+const START = 14;
 
 let nav: GamepadNav | null = null;
 afterEach(() => {
@@ -33,6 +34,7 @@ function setup() {
     onTab: (dir) => log.push(`tab ${dir}`),
     onSubTab: (dir) => log.push(`subtab ${dir}`),
     onSelect: () => (log.push("select"), tasks.toggle()),
+    onStart: () => log.push("start"),
   });
   tasks = createTasksPanel({ stage, panel, nav, nameOf: (owner) => owner });
   const press = (button: number, extra: Record<string, unknown> = {}) => {
@@ -129,7 +131,7 @@ test("the pad hint bar follows the Tasks panel", () => {
   const { press, stage } = setup();
   nav!.reset();
   press(SELECT);
-  const hints = stage.querySelector(".tasks-panel .hints")!.textContent;
+  const hints = stage.querySelector(".cover-panel .hints")!.textContent;
   assert.match(hints ?? "", /Select back/);
 });
 
@@ -145,11 +147,59 @@ test("the touch button into Tasks is not a stop for the pad", () => {
 test("a list with nothing to stop on scrolls by pages with the D-pad", () => {
   const { stage, tasks, press } = setup();
   tasks.open();
-  const list = stage.querySelector<HTMLElement>(".tasks-panel .content")!;
+  const list = stage.querySelector<HTMLElement>(".cover-panel .content")!;
   Object.defineProperty(list, "clientHeight", { value: 100, configurable: true });
   Object.defineProperty(list, "scrollHeight", { value: 1000, configurable: true });
   press(10); // down
   assert.ok(list.scrollTop > 0, "paged down");
   press(9); // up
   assert.equal(list.scrollTop, 0);
+});
+
+test("Start is taken from Steam and asks for its panel, with the same rules as Select", () => {
+  const { log, press, stage, panel } = setup();
+  const e = press(START);
+  assert.equal(e.defaultPrevented, true);
+  assert.deepEqual(log, ["start"]);
+  press(START, { is_repeat: true });
+  assert.deepEqual(log, ["start"]);
+  const win = stage.appendChild(document.createElement("div"));
+  win.className = "iwin";
+  press(START);
+  assert.deepEqual(log, ["start"]);
+  win.remove();
+  const modal = panel.appendChild(document.createElement("div"));
+  modal.className = "modal";
+  press(START);
+  assert.deepEqual(log, ["start"]);
+});
+
+test("Start with the panel closed is left to Steam", () => {
+  const { log, press, panel } = setup();
+  panel.hidden = true;
+  const e = press(START);
+  assert.equal(e.defaultPrevented, false);
+  assert.deepEqual(log, []);
+});
+
+test("a control sees Start as \"START\" and can take it", () => {
+  const { log, press, panel } = setup();
+  nav!.reset();
+  const seen: string[] = [];
+  panel.querySelector<HTMLElement>("#one")!.addEventListener("invasor:button", (e) => {
+    seen.push((e as CustomEvent).detail.button);
+    e.preventDefault();
+  });
+  press(START);
+  assert.deepEqual(seen, ["START"]);
+  assert.deepEqual(log, []);
+});
+
+test("the ⚙ button is not a stop for the pad", () => {
+  const { panel, press } = setup();
+  const touch = panel.querySelector(".content")!.appendChild(document.createElement("button"));
+  touch.className = "settings-btn";
+  nav!.reset();
+  press(A);
+  assert.equal(document.querySelector(".nav-focus")?.id, "one");
 });
