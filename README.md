@@ -110,8 +110,8 @@ language.
 Invasor ships with only `demo` (a showcase, also used by `tools/smoke.py`) and the `_example` template. Demo can be uninstalled from ⚙ Settings › Manage modules (it stays uninstalled after updates; the same section has a *Restore* button).
 Real modules live in their own repositories and install as a zip from **⚙ Settings › Install module**:
 
-- [invasor-artwork](../invasor-artwork): community artwork from steamgriddb.com for your games and shortcuts.
-- [invasor-patito](../invasor-patito): lsfg-vk frame generation, set up per game.
+- [invasor-artwork](https://github.com/Gamemode-Invasor/invasor-artwork): community artwork from steamgriddb.com for your games and shortcuts.
+- [invasor-patito](https://github.com/Gamemode-Invasor/invasor-patito): lsfg-vk frame generation, set up per game.
 
 Installed modules live in `~/.local/share/invasor/user-modules/`. Updating Invasor never touches them.
 
@@ -151,7 +151,7 @@ python3 tools/check_module.py modules/<id>
 Everything Invasor takes from the Steam client is listed here. Each point is marked `STEAM TOUCHPOINT` in
 the code. After a Steam update, `tools/smoke.py` checks all of them in a minute.
 The details, how each one can fail and a comparison with Decky Loader: [docs/API-Steam.md](docs/API-Steam.md).
-Modules can also show a notification the way Steam shows an achievement (`ctx.notify`).
+Modules can also show a notification the way Steam shows an achievement (`ctx.notify`), react to games and Steam (`ctx.events`) and report the progress of long operations (`ctx.task`, shown in the Tasks panel).
 
 | Touchpoint | Used for | If Valve changes it |
 |---|---|---|

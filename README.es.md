@@ -112,8 +112,8 @@ Invasor trae solo `demo` (una demostración que también usa `tools/smoke.py`) y
 Los módulos de verdad viven en sus propios repositorios y se instalan como zip desde **⚙ Settings › Install
 module**:
 
-- [invasor-artwork](../invasor-artwork): arte de la comunidad de steamgriddb.com para tus juegos y accesos directos.
-- [invasor-patito](../invasor-patito): generación de fotogramas con lsfg-vk, configurada por juego.
+- [invasor-artwork](https://github.com/Gamemode-Invasor/invasor-artwork): arte de la comunidad de steamgriddb.com para tus juegos y accesos directos.
+- [invasor-patito](https://github.com/Gamemode-Invasor/invasor-patito): generación de fotogramas con lsfg-vk, configurada por juego.
 
 Los módulos instalados viven en `~/.local/share/invasor/user-modules/`. Actualizar Invasor nunca los toca.
 
@@ -154,7 +154,7 @@ python3 tools/check_module.py modules/<id>
 Aquí está todo lo que Invasor toma del cliente de Steam. Cada punto está marcado `STEAM TOUCHPOINT` en el
 código. Tras una actualización de Steam, `tools/smoke.py` los comprueba todos en un minuto.
 El detalle, cómo puede fallar cada uno y una comparativa con Decky Loader (en inglés): [docs/API-Steam.md](docs/API-Steam.md).
-Los módulos también pueden mostrar una notificación como las de los logros de Steam (`ctx.notify`).
+Los módulos también pueden mostrar una notificación como las de los logros de Steam (`ctx.notify`), reaccionar a los juegos y a Steam (`ctx.events`) e informar del progreso de operaciones largas (`ctx.task`, que se ve en el panel Tasks).
 
 | Punto | Para qué | Si Valve lo cambia |
 |---|---|---|

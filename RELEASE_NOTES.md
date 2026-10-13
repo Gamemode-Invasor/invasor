@@ -16,5 +16,5 @@ Fixes
 - Installing the same module twice at once, a zip with empty or `.` entries, and a Downloads folder outside your home no longer break the installer or the file picker
 - Panel: rejected handlers no longer go unnoticed, stale answers no longer overwrite newer ones (Market, file picker, module order), a pending confirm closes with the panel, grid videos stop when it closes, Quick Access closes when the game ends and F10 only acts when the panel can toggle
 - Renamed non-Steam shortcuts show their new name without restarting Invasor
-- Minor fixes from rc4: a dialog drawn in the Tasks or Settings panel no longer stays behind when the panel closes, the pad's ring lands on the first control when Tasks opens, A no longer presses a hidden control, unloading a module can't trip over an event that was just starting, event callbacks no longer share (and corrupt) one payload, and a huge task progress value is cut to 0..1 instead of failing
+- A dialog drawn in the Tasks or Settings panel no longer stays behind when the panel closes, the pad's ring lands on the first control when Tasks opens, A no longer presses a hidden control, unloading a module can't trip over an event that was just starting, event callbacks no longer share (and corrupt) one payload, and a huge task progress value is cut to 0..1 instead of failing
 ---
