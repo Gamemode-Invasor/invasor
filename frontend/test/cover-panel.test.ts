@@ -204,7 +204,9 @@ test("closing or destroying it resolves a dialog that was drawn in it", async ()
     const answer = ui.confirm("Sure?");
     assert.ok(el.querySelector(".modal"));
     cover[how]();
-    assert.equal(await answer, false);
+    // A dialog that never resolves must fail the test, not hang the suite.
+    const gone = new Promise<string>((r) => setTimeout(() => r("never resolved"), 500));
+    assert.equal(await Promise.race([answer, gone]), false);
     assert.equal(el.querySelector(".modal"), null);
   }
   setTopLayer(null);

@@ -68,3 +68,15 @@ test("a button whose async onClick rejects logs it, nothing is left unhandled", 
   assert.equal(logged.length, 1);
   assert.deepEqual(unhandled, []);
 });
+
+test("a select in a cover panel closes its list when the cover is dismissed", () => {
+  const cover = document.body.appendChild(document.createElement("div"));
+  cover.className = "cover-panel";
+  const select = ui.select({ label: "S", value: 1, options: [{ label: "A", value: 1 }, { label: "B", value: 2 }] });
+  cover.append(select);
+  const list = select.querySelector<HTMLElement>(".select-list")!;
+  select.click();
+  assert.equal(list.hidden, false);
+  cover.dispatchEvent(new CustomEvent("invasor:dismiss"));
+  assert.equal(list.hidden, true);
+});
