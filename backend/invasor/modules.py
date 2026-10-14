@@ -20,7 +20,7 @@ import shutil
 import sys
 import threading
 
-from . import __version__, config, schema, tomlio
+from . import __version__, config, schema, steam, tomlio
 from .schema import Unavailable
 from .storage import JsonStore
 from .tasks import TaskRegistry
@@ -254,20 +254,39 @@ class ModuleContext:
             raise Unavailable("SteamClient bridge not configured")
         return await self._steam.notify(title, body, icon, timeout, sound)
 
-    def task(self, label):
+    def task(self, label, notify=True, sound="toast"):
         """A long operation that others can watch: `with ctx.task("Downloading X") as t:` then
         `t.update(fraction, "text")` (fraction from 0 to 1, or None if unknown); leaving the block
         ends it (an exception marks it failed and goes on). Also `t.done(text)` / `t.fail(text)`,
-        and `async with`. Raises Unavailable once the module is unloaded or with too many tasks running."""
+        and `async with`. Raises Unavailable once the module is unloaded or with too many tasks running.
+        Unless `notify=False`, a notification (see notify(); `sound` as there, "toast" by default)
+        shows when the task starts and when it ends; with no Steam bridge there is just no notification."""
         if self._dead:
             raise Unavailable("this module was unloaded: it can't start tasks anymore")
         if self._tasks is None:
             raise Unavailable("tasks aren't available here")
-        task = self._tasks.start(self.id, label)
+        on_event = None
+        if notify:
+            steam.check_notification("x", "", "", sound)  # only the sound is checked here
+            on_event = lambda phase, view: self._notify_task(phase, view, sound)
+        task = self._tasks.start(self.id, label, on_event)
         if self._dead:  # unloaded while it started: nobody is left to end it
             task.fail("module unloaded")
             raise Unavailable("this module was unloaded: it can't start tasks anymore")
         return task
+
+    def _notify_task(self, phase, view, sound):
+        # STEAM TOUCHPOINT (see docs/API-Steam.md, 2.3): the toast of a task. A thread of its own:
+        # notify_sync() waits for Steam and task() may be called from the event loop. Never fatal.
+        if self._steam is None or (phase == "end" and self._dead):
+            return
+        body = view["text"] if phase == "end" else ""
+        def show():
+            try:
+                self._steam.notify_sync(view["label"], body, "", sound=sound)
+            except Exception as e:
+                self._log.info("task notification not shown: %s", e)
+        threading.Thread(target=show, name="invasor-task-notify", daemon=True).start()
 
     def game_data(self, appid):
         """Free-form storage for this module and one game."""
