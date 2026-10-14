@@ -5,7 +5,7 @@ their dates are listed for reference. The notes of the release being prepared li
 
 ---
 
-## Unreleased (beta branch, after 0.2.0)
+## 0.2.1 (2026-10-14)
 
 - A task started with `ctx.task(label)` shows a notification when it starts and when it ends (with the final text as
   its body), with the `toast` sound unless the module picks another one: `ctx.task(label, notify=True, sound="toast")`.
@@ -22,6 +22,7 @@ Pre-releases: rc1 (2026-10-12), rc2 (2026-10-13), rc4 (2026-10-13), rc5 (2026-10
 This release also contains everything planned as 0.1.5 (its rc1 was renamed to 0.2.0-rc1).
 
 ### New
+
 - **Notification sounds.** `notify(title, body, icon, sound)` takes the new `sound` parameter (`trophy`, `message`,
   `toast`, `chat`, `mention`, `friend`, `online`, `ingame` or `none` for silence). It works in Game Mode and on the
   desktop client; omitted, Steam keeps its usual achievement sound. Demo has a button for each sound
@@ -50,6 +51,7 @@ This release also contains everything planned as 0.1.5 (its rc1 was renamed to 0
   covers them
 
 ### Fixes
+
 - A module with an absurd slider/number range in `module.json` could crash the service in a restart loop; it is now
   reported as an invalid module
 - Wrong argument types in the API (e.g. `"false"` for `purge`) are refused instead of being read as true, which could
@@ -83,6 +85,7 @@ This release also contains everything planned as 0.1.5 (its rc1 was renamed to 0
 Pre-releases: rc1 (2026-10-06), rc2 (2026-10-09), rc3 (2026-10-09).
 
 ### New
+
 - **Module Market** (Settings > Install module > Open the Market): browse the modules of the Invasor organization's
   repositories in a big window and install or update them with one press; downloads are checked before installing.
   The catalog is read from `market.json`, generated hourly by the workspace; when GitHub's request limit is reached it
@@ -94,6 +97,7 @@ Pre-releases: rc1 (2026-10-06), rc2 (2026-10-09), rc3 (2026-10-09).
 - Handle: the library's own handle is hidden while Quick Access shows its own
 
 ### Fixes
+
 - Security: a module zip can no longer write files outside its install folder; the installer trusts the checker's exit
   status
 - Robustness: slow or hung modules (setup runs bounded and off the event loop, listing never waits, Steam-start
