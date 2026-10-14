@@ -411,6 +411,47 @@ class Modules(unittest.TestCase):
         self.assertEqual((snap["recent"][0]["label"], snap["recent"][0]["state"], snap["recent"][0]["text"]),
                          ("Cleaning up", "failed", "module uninstalled"))
 
+    def context(self, bridge):
+        from invasor.modules import ModuleContext
+        return ModuleContext("good", self.mods / "good", GameContext(), None, steam=bridge, tasks=self.manager.tasks)
+
+    def task_toasts(self, call):
+        """The (title, body, sound) notifications that `call(ctx)` makes, with a stand-in for Steam."""
+        shown = []
+
+        class Bridge:
+            def notify_sync(self, title, body="", icon="", timeout=15, sound=""):
+                shown.append((title, body, sound))
+
+        call(self.context(Bridge()))
+        deadline = time.monotonic() + 3
+        while any(t.name == "invasor-task-notify" for t in threading.enumerate()) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        return shown
+
+    def test_a_task_shows_a_toast_when_it_starts_and_ends(self):
+        def run(c):
+            with c.task("Fetching"):
+                pass
+        self.assertEqual(sorted(self.task_toasts(run)), [("Fetching", "", "toast"), ("Fetching", "", "toast")])
+
+    def test_a_task_toast_takes_another_sound_and_can_be_off(self):
+        def loud(c):
+            c.task("Loud", sound="trophy").fail("it broke")
+        self.assertEqual(sorted(self.task_toasts(loud)), [("Loud", "", "trophy"), ("Loud", "it broke", "trophy")])
+        self.assertEqual(self.task_toasts(lambda c: c.task("Quiet", notify=False).done()), [])
+
+    def test_a_task_with_a_bad_sound_is_refused_and_one_without_steam_still_runs(self):
+        from invasor.schema import InvalidArgument
+
+        def bad(c):
+            with self.assertRaises(InvalidArgument):
+                c.task("X", sound="boom")
+        self.task_toasts(bad)
+        self.assertEqual(self.manager.tasks.snapshot()["active"], [])
+        self.context(None).task("No Steam").done()
+        self.assertEqual(self.manager.tasks.snapshot()["recent"][0]["label"], "No Steam")
+
     def test_a_task_that_uninstall_ends_itself_stays_done(self):
         self.user_module("tidy", (
             "def uninstall(c, purge):\n"

@@ -56,8 +56,9 @@ class Task:
     leaving normally calls done(); leaving with an exception calls fail(str(error)) and the
     exception goes on. Once it's done or failed, further calls do nothing."""
 
-    def __init__(self, registry, id, owner, label, now):
+    def __init__(self, registry, id, owner, label, now, on_event=None):
         self._registry = registry
+        self._on_event = on_event
         self.id = id
         self.owner = owner
         self.label = label
@@ -126,16 +127,20 @@ class TaskRegistry:
         self._active = {}  # id -> Task
         self._recent = deque(maxlen=max_recent)  # Task, the newest first
 
-    def start(self, owner, label):
+    def start(self, owner, label, on_event=None):
+        """Open a task. `on_event(phase, view)`, if given, hears just this task: "start" now and
+        "end" when it is done or failed (not when `close_owner` closes it). Called outside the
+        lock; a failure is logged."""
         label = _label(label)
         with self._lock:
             if len(self._active) >= self._max_active:
                 raise Unavailable("too many tasks running")
-            task = Task(self, self._next, owner, label, self._clock())
+            task = Task(self, self._next, owner, label, self._clock(), on_event)
             self._next += 1
             self._active[task.id] = task
             view = task._view()
         self._emit(view)
+        self._task_event(task, "start", view)
         self._changed()
         return task
 
@@ -165,7 +170,7 @@ class TaskRegistry:
         with self._lock:
             left = [t for t in self._active.values() if t.owner == owner]
         for task in left:
-            self._finish(task, "failed", text)
+            self._finish(task, "failed", text, quiet=True)
 
     def _update(self, task, fraction, text):
         with self._lock:
@@ -174,7 +179,7 @@ class TaskRegistry:
             task.fraction, task.text, task.updated = fraction, text, self._clock()
         self._changed()
 
-    def _finish(self, task, state, text):
+    def _finish(self, task, state, text, quiet=False):
         with self._lock:
             if task.state != "running":
                 return
@@ -186,7 +191,17 @@ class TaskRegistry:
             self._recent.appendleft(task)
             view = task._view()
         self._emit(view)
+        if not quiet:
+            self._task_event(task, "end", view)
         self._changed()
+
+    def _task_event(self, task, phase, view):
+        if task._on_event is None:
+            return
+        try:
+            task._on_event(phase, view)
+        except Exception:
+            log.exception("task event callback failed")
 
     def _changed(self):
         for fn in list(self._watchers):

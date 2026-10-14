@@ -7,6 +7,7 @@ from . import __version__, cef_flag, config, core, updater as updates
 from .combo import decide_combo
 from .context import GameContext
 from .gamepad import ComboWatcher
+from .market import Market
 from .injector import Injector, remove_overlays
 from .modules import ModuleManager
 from .server import ApiServer
@@ -30,7 +31,13 @@ async def main():
     manager = ModuleManager(cfg, game, steam)
     await asyncio.to_thread(manager.discover)  # module code never runs in the event loop
     game.on_event = manager.emit
-    injector = Injector(cfg, manager.ui_scripts, on_steam_start=manager.steam_started)
+    steam_up = asyncio.Event()  # set at every Steam start: the update check runs then
+
+    def on_steam_start(instance):
+        manager.steam_started(instance)
+        steam_up.set()
+
+    injector = Injector(cfg, manager.ui_scripts, on_steam_start=on_steam_start)
     # The windows hear of every change in the tasks (the panel, the handle's dot): no polling.
     task_pusher = TaskPusher(manager.tasks.snapshot, lambda js: injector.evaluate_all(js), asyncio.get_running_loop())
     manager.tasks.watch(task_pusher.notify)
@@ -62,7 +69,11 @@ async def main():
     watcher = ComboWatcher(cfg["open_combo"], on_combo)
     # "core" is reserved for the overlay's own API; a module can't shadow it.
     updater = updates.Updater(channel=lambda: cfg.get("update_channel", "stable"))
-    manager.registry["core"] = core.make_methods(manager, game, watcher, cfg, injector, steam, updater)
+    market = Market(
+        installed=lambda: {m["id"]: m["version"] for m in manager.listing()},
+        channel=lambda: cfg.get("update_channel", "stable"),
+    )
+    manager.registry["core"] = core.make_methods(manager, game, watcher, cfg, injector, steam, updater, market)
 
     # Stop cleanly on SIGTERM (systemctl stop/restart) so modules get their teardown().
     stop = asyncio.Event()
@@ -77,7 +88,7 @@ async def main():
             ("injector", injector.run()),
             ("game", game.run()),
             ("gamepad", watcher.run()),
-            ("updates", updates.run(updater, cfg, steam)),
+            ("updates", updates.run(updater, cfg, steam, market, steam_up)),
         )
     ]
     stopping = asyncio.create_task(stop.wait())

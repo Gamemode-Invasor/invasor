@@ -57,8 +57,11 @@ downloads the release package, checks it against the `.sha256` published next to
 The service restarts and the panel reloads by itself a few seconds later; Steam and any running game are
 not restarted.
 
-By default it also checks at startup and then daily, and Steam shows a notification once per new version.
-That is the only connection Invasor makes to the Internet; switch it off with *Check for updates
+By default it also checks when Steam starts and then daily, and Steam shows a notification once per new
+version. At the same time it looks in the Market (the module catalog on GitHub) for newer versions of the
+modules you have installed: if there are any, one generic notification says so (never for an older version).
+Besides what you open yourself (the Market), that is the only connection Invasor makes to the Internet;
+switch it off with *Check for updates
 automatically* (`update_check` in `config.json`). The checksum catches a corrupt download, not a
 compromised GitHub account. Modules installed from a zip are not touched.
 

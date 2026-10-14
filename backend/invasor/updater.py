@@ -42,7 +42,8 @@ MAX_JSON = 1 << 20
 MAX_PACKAGE = 64 << 20
 MAX_UNPACKED = 256 << 20
 
-STARTUP_DELAY = 60  # let Steam come up: the notification needs it
+STARTUP_DELAY = 60  # when nothing says Steam started: let it come up, the notification needs it
+SETTLE = 10  # after steam_start: let its UI come up
 CHECK_EVERY = 24 * 3600
 RETRY_NO_NET = 3600
 RETRY_NO_STEAM = 900
@@ -289,19 +290,35 @@ class Updater:
             raise InvalidArgument(f"the package holds version {m.group(1) if m else '?'}, not {version}")
 
 
-async def run(updater, cfg, steam):
-    """Background: look for an update at startup and then daily, and tell Steam about each
-    new version once. Switched off by the update_check preference."""
-    await asyncio.sleep(STARTUP_DELAY)
+async def run(updater, cfg, steam, market=None, steam_up=None):
+    """Background: look for a new Invasor release and for newer versions of the installed modules
+    in the Market when Steam starts (steam_up is set) and then daily, and tell Steam about each
+    once. Without steam_up it waits STARTUP_DELAY instead. Switched off by the update_check preference."""
+    await _pause(STARTUP_DELAY, steam_up, first=True)
     while True:
         delay = CHECK_EVERY
         try:
             delay = await _round(updater, cfg, steam)
+            if market is not None:
+                delay = min(delay, await _market_round(market, cfg, steam))
         except Exception:
             # Never let this background task end: a service task that stops stops Invasor.
             log.exception("update check failed")
             delay = RETRY_NO_NET
+        await _pause(delay, steam_up)
+
+
+async def _pause(delay, steam_up, first=False):
+    """Sleep `delay` seconds; a (new) Steam start cuts it short, after SETTLE for its UI to come up."""
+    if steam_up is None:
         await asyncio.sleep(delay)
+        return
+    try:
+        await asyncio.wait_for(steam_up.wait(), None if first else delay)
+    except asyncio.TimeoutError:
+        return
+    steam_up.clear()
+    await asyncio.sleep(SETTLE)
 
 
 async def _round(updater, cfg, steam):
@@ -323,4 +340,27 @@ async def _round(updater, cfg, steam):
             return RETRY_NO_STEAM
         cfg["update_last_notified"] = res["latest"]
         JsonStore(config.CONFIG_FILE).update(update_last_notified=res["latest"])
+    return CHECK_EVERY
+
+
+async def _market_round(market, cfg, steam):
+    """Tell Steam, once per set of updates, that the Market holds newer versions of installed modules.
+    A downgrade (the Market has an older version) or a module this Invasor can't run is not news."""
+    if not cfg.get("update_check", True):
+        return WHEN_OFF
+    try:
+        cards = (await asyncio.to_thread(market.list))["modules"]
+    except Exception as e:  # no network, GitHub rate limit…
+        log.info("market check failed: %s", e)
+        return RETRY_NO_NET
+    seen = ",".join(sorted(f"{c['id']}@{c['version']}" for c in cards if c["change"] == "update" and c["compatible"]))
+    if seen != cfg.get("market_last_notified", ""):
+        if seen:
+            try:
+                await steam.notify("Module updates available", "There are new versions in the Market.")
+            except (Unavailable, InvalidArgument) as e:
+                log.info("market notification not shown yet: %s", e)
+                return RETRY_NO_STEAM
+        cfg["market_last_notified"] = seen
+        JsonStore(config.CONFIG_FILE).update(market_last_notified=seen)
     return CHECK_EVERY

@@ -303,7 +303,7 @@ class Apply(unittest.TestCase):
 
 
 class Background(unittest.TestCase):
-    def run_once(self, up, cfg, steam):
+    def run_once(self, up, cfg, steam, market=None, steam_up=None):
         """One pass of run(): its first sleep is skipped, the second stops it."""
         sleeps = []
 
@@ -315,7 +315,7 @@ class Background(unittest.TestCase):
         async def go():
             with mock.patch("invasor.updater.asyncio.sleep", fake_sleep):
                 try:
-                    await updater.run(up, cfg, steam)
+                    await updater.run(up, cfg, steam, market, steam_up)
                 except asyncio.CancelledError:
                     pass
         asyncio.run(go())
@@ -375,6 +375,74 @@ class Background(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+    # ---- the Market ----
+
+    def market(self, *cards):
+        return mock.Mock(list=mock.Mock(return_value={"modules": [
+            {"id": i, "version": v, "change": ch, "compatible": ok} for i, v, ch, ok in cards]}))
+
+    def quiet_up(self):
+        return updater.Updater("0.2.0", fetch=lambda url: release("v0.2.0"))
+
+    def test_several_module_updates_make_one_notification(self):
+        cfg = {}
+        m = self.market(("a", "1.1.0", "update", True), ("b", "2.0.0", "update", True))
+        self.assertEqual(self.run_once(self.quiet_up(), cfg, self.steam, m), updater.CHECK_EVERY)
+        self.steam.notify.assert_awaited_once()
+        self.assertEqual(cfg["market_last_notified"], "a@1.1.0,b@2.0.0")
+        self.run_once(self.quiet_up(), cfg, self.steam, m)
+        self.steam.notify.assert_awaited_once()
+
+    def test_a_new_set_of_updates_is_announced_again(self):
+        cfg = {"market_last_notified": "a@1.1.0"}
+        self.run_once(self.quiet_up(), cfg, self.steam, self.market(("a", "1.2.0", "update", True)))
+        self.steam.notify.assert_awaited_once()
+
+    def test_downgrades_and_unusable_modules_are_not_announced(self):
+        cfg = {}
+        m = self.market(("a", "0.9.0", "downgrade", True), ("b", "1.0.0", "same", True), ("c", "3.0.0", "update", False))
+        self.run_once(self.quiet_up(), cfg, self.steam, m)
+        self.steam.notify.assert_not_awaited()
+
+    def test_nothing_new_forgets_the_old_set(self):
+        cfg = {"market_last_notified": "a@1.1.0"}
+        self.run_once(self.quiet_up(), cfg, self.steam, self.market(("a", "1.1.0", "same", True)))
+        self.assertEqual(cfg["market_last_notified"], "")
+
+    def test_market_and_steam_failures_retry_without_marking(self):
+        cfg = {}
+        m = mock.Mock(list=mock.Mock(side_effect=OSError("offline")))
+        self.assertEqual(self.run_once(self.quiet_up(), cfg, self.steam, m), updater.RETRY_NO_NET)
+        self.steam.notify.side_effect = Unavailable("no steam")
+        m = self.market(("a", "1.1.0", "update", True))
+        self.assertEqual(self.run_once(self.quiet_up(), cfg, self.steam, m), updater.RETRY_NO_STEAM)
+        self.assertNotIn("market_last_notified", cfg)
+
+    def test_the_market_is_not_asked_when_checking_is_off(self):
+        m = self.market(("a", "1.1.0", "update", True))
+        self.assertEqual(self.run_once(self.quiet_up(), {"update_check": False}, self.steam, m), updater.WHEN_OFF)
+        m.list.assert_not_called()
+
+    def test_steam_start_triggers_the_check_after_a_short_wait(self):
+        async def go():
+            up = asyncio.Event()
+            up.set()
+            sleeps = []
+
+            async def fake_sleep(s):
+                sleeps.append(s)
+                if len(sleeps) > 1:
+                    raise asyncio.CancelledError
+            with mock.patch("invasor.updater.asyncio.sleep", fake_sleep):
+                try:
+                    await updater.run(self.up(), {}, self.steam, None, up)
+                except asyncio.CancelledError:
+                    pass
+            self.assertEqual(sleeps, [updater.SETTLE, updater.CHECK_EVERY])
+            self.assertFalse(up.is_set())
+        asyncio.run(go())
+        self.steam.notify.assert_awaited_once()
 
 
 class Downloads(unittest.TestCase):

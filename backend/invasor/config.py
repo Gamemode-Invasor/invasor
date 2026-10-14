@@ -59,6 +59,8 @@ DEFAULTS = {
     "update_channel": "stable",
     # Learned: the last version announced in a Steam notification, so each is announced once.
     "update_last_notified": "",
+    # Learned: the module updates the Market was last announced for (id@version list), so each set is announced once.
+    "market_last_notified": "",
 }
 
 PANEL_SIDES = ("auto", "left", "right")
@@ -115,6 +117,7 @@ VALID = {
     "update_check": lambda v: isinstance(v, bool),
     "update_channel": lambda v: v in UPDATE_CHANNELS,
     "update_last_notified": lambda v: isinstance(v, str),
+    "market_last_notified": lambda v: isinstance(v, str),
 }
 
 DEV_DESKTOP_TARGET = {

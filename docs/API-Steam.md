@@ -100,6 +100,8 @@ How it can fail:
 - **`PlayNotificationSound` / `ChooseSound` change:** the notification still shows, with Steam's own sound, whatever `sound` asked.
 - **`NotificationStore` or its `OnNotification` is renamed:** `notify` is `Unavailable` (503) and no notification
   shows. If the achievement message changes, the notification may show without some text. Nothing else is affected.
+  The update check (Invasor release and Market module versions) shows its notifications the same way, once Steam has started: if Steam's UI is not ready it retries later without marking them as announced.
+  `ctx.task()` uses the same notification (when it starts and ends, unless `notify=False`): a failure there is only logged and the task itself goes on, so the Tasks panel is unaffected.
 
 ### 2.4 Inside the injected windows
 

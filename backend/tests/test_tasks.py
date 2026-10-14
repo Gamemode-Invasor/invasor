@@ -30,6 +30,24 @@ class Registry(unittest.TestCase):
             "id": 1, "module": "rakun", "label": "Installing", "state": "done", "fraction": 1.0,
             "text": "all set", "started": 100.0, "updated": 102.0, "finished": 102.0}])
 
+    def test_a_task_callback_hears_its_start_and_its_end(self):
+        heard = []
+        self.registry.start("m", "One", lambda phase, view: heard.append((phase, view["state"]))).done("ok")
+        self.registry.start("m", "Two", lambda phase, view: heard.append((phase, view["state"]))).fail("bad")
+        self.assertEqual(heard, [("start", "running"), ("end", "done"), ("start", "running"), ("end", "failed")])
+
+    def test_a_task_callback_is_quiet_when_its_owner_is_closed_and_its_failure_is_not_fatal(self):
+        heard = []
+        self.registry.start("m", "One", lambda phase, view: heard.append(phase))
+        self.registry.close_owner("m", "unloaded")
+        self.assertEqual(heard, ["start"])
+
+        def boom(phase, view):
+            raise RuntimeError("boom")
+        with self.assertLogs("invasor.tasks", "ERROR"):
+            self.registry.start("m", "Two", boom).done()
+        self.assertEqual(self.registry.snapshot()["recent"][0]["state"], "done")
+
     def test_a_failed_task_keeps_where_it_got_to(self):
         task = self.registry.start("core", "Updating")
         task.update(0.3)
