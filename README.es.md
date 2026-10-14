@@ -57,8 +57,11 @@ descarga el paquete de la release, lo comprueba con el `.sha256` publicado a su 
 El servicio se reinicia y el panel se recarga solo unos segundos después; Steam y cualquier juego en marcha
 no se reinician.
 
-Por defecto también comprueba al arrancar y luego cada día, y Steam muestra una notificación una vez por
-cada versión nueva. Es la única conexión a Internet que hace Invasor; se desactiva con *Check for updates
+Por defecto también comprueba cuando arranca Steam y luego cada día, y Steam muestra una notificación una
+vez por cada versión nueva. A la vez mira en el Market (el catálogo de módulos en GitHub) si hay versiones
+más nuevas de los módulos instalados: si las hay, una única notificación genérica lo indica (nunca por una
+versión más antigua). Aparte de lo que abres tú (el Market), es la única conexión a Internet que hace
+Invasor; se desactiva con *Check for updates
 automatically* (`update_check` en `config.json`). El checksum detecta una descarga corrupta, no una cuenta
 de GitHub comprometida. Los módulos instalados desde un zip no se tocan.
 
