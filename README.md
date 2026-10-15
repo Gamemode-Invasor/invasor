@@ -115,6 +115,12 @@ Real modules live in their own repositories and install as a zip from **⚙ Sett
 
 - [invasor-artwork](https://github.com/Gamemode-Invasor/invasor-artwork): community artwork from steamgriddb.com for your games and shortcuts.
 - [invasor-patito](https://github.com/Gamemode-Invasor/invasor-patito): lsfg-vk frame generation, set up per game.
+- [invasor-companion](https://github.com/Gamemode-Invasor/invasor-companion): builds a game's launch options, adds non-Steam games, shows what Steam knows about the current game and cleans leftovers.
+- [invasor-deckico](https://github.com/Gamemode-Invasor/invasor-deckico): puts each game's icon on its compatdata and shadercache folders.
+- [invasor-ge-rr](https://github.com/Gamemode-Invasor/invasor-ge-rr): keeps the latest GE-Proton installed as a single compatibility tool.
+- [invasor-noty](https://github.com/Gamemode-Invasor/invasor-noty): Steam notifications from your own scripts and from programs like Comet.
+- [invasor-pescao](https://github.com/Gamemode-Invasor/invasor-pescao): MAKO Renderer frame generation and scaling profiles, one per game.
+- [invasor-rakun](https://github.com/Gamemode-Invasor/invasor-rakun): download your games from third-party stores via the Rakun engine.
 
 Installed modules live in `~/.local/share/invasor/user-modules/`. Updating Invasor never touches them.
 

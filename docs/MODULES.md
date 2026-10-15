@@ -442,10 +442,10 @@ release only, checks its sha256 and then does exactly what choosing the zip by h
 corrupt download, not a compromised account, so `repos.conf` is part of what the user trusts.
 
 **Where the list is read from.** A GitHub Action of the workspace repository (`.github/workflows/market.yml`) runs
-`tools/gen_market.py` every hour, when `repos.conf` changes and on demand, and publishes the result as `market.json`
+`tools/gen_market.py` every 12 hours, when `repos.conf` changes and on demand, and publishes the result as `market.json`
 on that repository's `market-data` branch. The app reads that one file (the newest stable release and the newest one
 pre-releases included, per repository; no URLs: the app rebuilds them inside the organisation's releases). So a new
-release shows up in the market within about an hour. If the file is missing, older than three days or invalid, the app
+release shows up in the market within about twelve hours. If the file is missing, older than three days or invalid, the app
 asks GitHub repository by repository instead (about sixteen requests, of which about eight count against GitHub's
 limit of 60 an hour per IP), so the market keeps working without the Action. To run it by hand:
 `gh workflow run market.yml -R Gamemode-Invasor/invasor-workspace`.
