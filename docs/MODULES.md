@@ -422,6 +422,9 @@ A module doesn't have to live inside Invasor. Keep it in its own repository, nex
 - **Install:**
   - **On the console:** ⚙ Settings › Install module, then choose the zip, or open the Market (Library only) to install
     from the organisation's repositories.
+    Choosing the zip only reads it: none of the module's code runs until you confirm. Then its `backend.py` is
+    imported in a separate process to check it, and what is installed is exactly the zip you were shown (a zip
+    that changed meanwhile is refused).
   - **From a terminal:** `python3 ~/Projects/invasor/tools/install_module.py <id or zip>`.
 
   Installed modules live in `~/.local/share/invasor/user-modules/<id>/`. Updating Invasor never touches that
