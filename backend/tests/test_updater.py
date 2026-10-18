@@ -364,7 +364,7 @@ class Background(unittest.TestCase):
                     self.steam.notify.side_effect = failure
                     self.assertEqual(self.run_once(self.up(), {}, self.steam), updater.RETRY_NO_NET)
             self.steam.notify.side_effect = None
-            patch(self, "invasor.updater.JsonStore", mock.Mock(side_effect=OSError("read-only")))
+            patch(self, "invasor.config.save", mock.Mock(side_effect=OSError("read-only")))
             self.assertEqual(self.run_once(self.up(), {}, self.steam), updater.RETRY_NO_NET)
         self.assertEqual(len(logs.records), 4)
 
@@ -372,9 +372,6 @@ class Background(unittest.TestCase):
         up = updater.Updater("0.1.0", fetch=mock.Mock(side_effect=OSError("offline")))
         self.assertEqual(self.run_once(up, {}, self.steam), updater.RETRY_NO_NET)
 
-
-if __name__ == "__main__":
-    unittest.main()
 
     # ---- the Market ----
 
@@ -428,18 +425,27 @@ if __name__ == "__main__":
         async def go():
             up = asyncio.Event()
             up.set()
-            sleeps = []
+            sleeps, waits = [], []
 
             async def fake_sleep(s):
                 sleeps.append(s)
-                if len(sleeps) > 1:
-                    raise asyncio.CancelledError
-            with mock.patch("invasor.updater.asyncio.sleep", fake_sleep):
+
+            # The pauses wait for the next Steam start, at most until the next check: the first one
+            # has no limit (Steam is up here), the second (a day) ends the run.
+            async def fake_wait_for(aw, timeout):
+                waits.append(timeout)
+                if timeout is None:
+                    return await aw
+                aw.close()
+                raise asyncio.CancelledError
+            with mock.patch("invasor.updater.asyncio.sleep", fake_sleep), \
+                    mock.patch("invasor.updater.asyncio.wait_for", fake_wait_for):
                 try:
                     await updater.run(self.up(), {}, self.steam, None, up)
                 except asyncio.CancelledError:
                     pass
-            self.assertEqual(sleeps, [updater.SETTLE, updater.CHECK_EVERY])
+            self.assertEqual(sleeps, [updater.SETTLE])
+            self.assertEqual(waits, [None, updater.CHECK_EVERY])
             self.assertFalse(up.is_set())
         asyncio.run(go())
         self.steam.notify.assert_awaited_once()
@@ -488,3 +494,7 @@ class Downloads(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "non-https"):
             updater.download("https://github.com/x", dest, 100)
         self.assertFalse(dest.exists())
+
+
+if __name__ == "__main__":
+    unittest.main()

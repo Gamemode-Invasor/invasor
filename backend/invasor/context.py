@@ -13,22 +13,28 @@ import os
 import re
 from pathlib import Path
 
-from . import cef, vdf
+from . import cef, cef_flag, vdf
 
 log = logging.getLogger("invasor.context")
 
 POLL_INTERVAL = 3
-STEAM_ROOT = Path.home() / ".local/share/Steam"
+STEAM_ROOT = None  # Steam's folder if set (tests); else found as the installer and cef_flag find it
 # STEAM TOUCHPOINT: SharedJSContext's URL shows the library route (no game shown if it changes).
 ROUTE_APP = re.compile(r"/routes/library/app/(\d+)")
 VDF_PATH = re.compile(r'"path"\s+"([^"]+)"')
 VDF_NAME = re.compile(r'"name"\s+"([^"]*)"')
 
 
+def _steam_root():
+    """Steam's folder: ~/.steam/steam or ~/.local/share/Steam (cef_flag.steam_dir), whichever exists."""
+    return STEAM_ROOT or cef_flag.steam_dir() or Path.home() / ".local/share/Steam"
+
+
 def _library_dirs():
-    dirs = [STEAM_ROOT]
+    root = _steam_root()
+    dirs = [root]
     try:
-        text = (STEAM_ROOT / "steamapps/libraryfolders.vdf").read_text(errors="replace")
+        text = (root / "steamapps/libraryfolders.vdf").read_text(errors="replace")
         dirs += [Path(p.replace("\\\\", "\\")) for p in VDF_PATH.findall(text)]
     except OSError:
         pass
@@ -57,7 +63,7 @@ def _shortcut_exes():
 
 def _shortcut_names():
     """{appid: name} for non-Steam shortcuts of every local Steam user, re-read only when files change."""
-    files = sorted((STEAM_ROOT / "userdata").glob("*/config/shortcuts.vdf"))
+    files = sorted((_steam_root() / "userdata").glob("*/config/shortcuts.vdf"))
     key = []
     for f in files:
         try:
@@ -85,33 +91,65 @@ def _shortcut_names():
     return names
 
 
-def _running_appid():
+# (pid, start time, command name) -> the AppID in that process's environment, or None. A process's
+# environment never changes after it starts, so each one is read once instead of every poll. The start
+# time tells a reused pid apart; the name (it changes on exec) a process read between fork and exec,
+# when it still had its parent's environment.
+_environ_cache = {}
+
+
+def _process_key(stat_text):
+    """(start time, command name) from /proc/<pid>/stat. The name is between the first "(" and the
+    last ")" (it may hold spaces or parentheses); the start time is field 22, the 20th after it."""
+    name = stat_text[stat_text.index("(") + 1:stat_text.rindex(")")]
+    return stat_text[stat_text.rindex(")") + 1:].split()[19], name
+
+
+def _environ_appid(raw):
+    """The AppID in a process's environment (/proc/<pid>/environ), or None."""
+    env = dict(kv.split(b"=", 1) for kv in raw.split(b"\0") if b"=" in kv)
+    # Non-Steam shortcuts only carry SteamGameId; Steam games carry both.
+    appid = env.get(b"SteamAppId", b"0")
+    if appid in (b"", b"0"):
+        appid = env.get(b"SteamGameId", b"0")
+    if appid in (b"", b"0"):
+        return None
+    try:
+        n = int(appid) & 0xFFFFFFFFFFFFFFFF  # tolerate a signed rendering
+    except ValueError:
+        return None
+    # SteamGameId of a shortcut is the 64-bit game id: (appid << 32) | 0x02000000.
+    return str(n >> 32 if n > 0xFFFFFFFF else n)
+
+
+def _running_appid(proc=Path("/proc")):
     """AppID of a running game, from process environments (same user, no root)."""
     uid = os.getuid()
-    for pid in os.listdir("/proc"):
+    seen = {}
+    found = None
+    for pid in os.listdir(proc):
         if not pid.isdigit():
             continue
         try:
-            if os.stat(f"/proc/{pid}").st_uid != uid:
+            if os.stat(proc / pid).st_uid != uid:
                 continue
-            with open(f"/proc/{pid}/environ", "rb") as f:
-                env = dict(
-                    kv.split(b"=", 1) for kv in f.read().split(b"\0") if b"=" in kv
-                )
-        except OSError:
+            key = (pid, *_process_key((proc / pid / "stat").read_text(errors="replace")))
+        except (OSError, ValueError, IndexError):
             continue
-        # Non-Steam shortcuts only carry SteamGameId; Steam games carry both.
-        appid = env.get(b"SteamAppId", b"0")
-        if appid in (b"", b"0"):
-            appid = env.get(b"SteamGameId", b"0")
-        if appid not in (b"", b"0"):
+        if key in _environ_cache:
+            appid = _environ_cache[key]
+        else:
             try:
-                n = int(appid) & 0xFFFFFFFFFFFFFFFF  # tolerate a signed rendering
-            except ValueError:
-                continue
-            # SteamGameId of a shortcut is the 64-bit game id: (appid << 32) | 0x02000000.
-            return str(n >> 32 if n > 0xFFFFFFFF else n)
-    return None
+                appid = _environ_appid((proc / pid / "environ").read_bytes())
+            except OSError:
+                continue  # gone, or not readable right now: tried again next poll
+        seen[key] = appid
+        if found is None:
+            found = appid
+    # Only the processes still there: the cache never outgrows the process table.
+    _environ_cache.clear()
+    _environ_cache.update(seen)
+    return found
 
 
 def _appid(game):

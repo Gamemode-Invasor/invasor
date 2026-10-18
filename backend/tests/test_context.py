@@ -1,8 +1,9 @@
 import unittest
 
+from invasor import context
 from invasor.context import GameContext
 
-from .helpers import patch
+from .helpers import patch, temp_dir
 
 
 def game(appid, name=None):
@@ -79,6 +80,89 @@ class GameEvents(unittest.IsolatedAsyncioTestCase):
         self.context.on_event = None
         await self.poll(running="10")
         self.assertEqual(self.context.running["appid"], "10")
+
+
+
+def stat_line(pid, name, start):
+    """A /proc/<pid>/stat line: pid (comm) state, then fields 4..21, start time (22), more."""
+    return f"{pid} ({name}) S " + " ".join(["0"] * 18) + f" {start} 0 0\n"
+
+
+class RunningAppid(unittest.TestCase):
+    """_running_appid reads each process's environment once (a fake /proc here)."""
+
+    def setUp(self):
+        self.proc = temp_dir(self)
+        patch(self, "invasor.context._environ_cache", {})
+
+    def process(self, pid, env, name="game", start=100):
+        d = self.proc / str(pid)
+        d.mkdir(exist_ok=True)
+        (d / "stat").write_text(stat_line(pid, name, start))
+        (d / "environ").write_bytes(b"\0".join(f"{k}={v}".encode() for k, v in env.items()) + b"\0")
+
+    def test_appids_from_the_environment(self):
+        self.process(10, {"PATH": "/bin"})
+        self.assertIsNone(context._running_appid(self.proc))
+        self.process(11, {"SteamAppId": "620", "SteamGameId": "620"})
+        self.assertEqual(context._running_appid(self.proc), "620")
+
+    def test_a_shortcut_gives_its_64_bit_game_id_as_the_appid(self):
+        self.process(12, {"SteamAppId": "0", "SteamGameId": str(4000000000 << 32 | 0x02000000)})
+        self.assertEqual(context._running_appid(self.proc), "4000000000")
+
+    def test_each_environment_is_read_once(self):
+        self.process(20, {"SteamAppId": "620"})
+        self.assertEqual(context._running_appid(self.proc), "620")
+        (self.proc / "20" / "environ").unlink()  # read again, it would be gone
+        self.assertEqual(context._running_appid(self.proc), "620")
+
+    def test_a_reused_pid_or_an_exec_is_read_again(self):
+        self.process(30, {"PATH": "/bin"}, name="steam", start=100)
+        self.assertIsNone(context._running_appid(self.proc))
+        self.process(30, {"SteamAppId": "620"}, name="steam", start=200)  # another process, same pid
+        self.assertEqual(context._running_appid(self.proc), "620")
+        self.process(30, {"SteamAppId": "730"}, name="reaper", start=200)  # the same one after exec
+        self.assertEqual(context._running_appid(self.proc), "730")
+
+    def test_a_name_with_spaces_and_parentheses(self):
+        self.process(40, {"SteamAppId": "620"}, name="Game (x86) ) v2")
+        self.assertEqual(context._running_appid(self.proc), "620")
+
+    def test_processes_that_ended_leave_the_cache(self):
+        self.process(50, {"SteamAppId": "620"})
+        self.process(51, {"PATH": "/bin"})
+        context._running_appid(self.proc)
+        self.assertEqual(len(context._environ_cache), 2)
+        for f in (self.proc / "50").iterdir():
+            f.unlink()
+        (self.proc / "50").rmdir()
+        self.assertIsNone(context._running_appid(self.proc))
+        self.assertEqual([key[0] for key in context._environ_cache], ["51"])
+
+    def test_unreadable_processes_are_skipped(self):
+        self.process(60, {"SteamAppId": "620"})
+        (self.proc / "61").mkdir()  # no stat, no environ
+        (self.proc / "self").mkdir()
+        self.assertEqual(context._running_appid(self.proc), "620")
+        self.assertNotIn("61", [key[0] for key in context._environ_cache])
+
+
+class SteamRoot(unittest.TestCase):
+    """The Steam folder is looked for as the installer does: ~/.steam/steam, then ~/.local/share/Steam."""
+
+    def test_only_dot_steam(self):
+        home = temp_dir(self)
+        (home / ".steam/steam/steamapps").mkdir(parents=True)
+        (home / ".steam/steam/steamapps/appmanifest_620.acf").write_text('"AppState"\n{\n\t"name"\t\t"Portal 2"\n}\n')
+        patch(self, "invasor.cef_flag.HOME", home)
+        self.assertEqual(context._steam_root(), home / ".steam/steam")
+        self.assertEqual(context._app_name("620"), "Portal 2")
+
+    def test_the_override_wins(self):
+        root = temp_dir(self)
+        patch(self, "invasor.context.STEAM_ROOT", root)
+        self.assertEqual(context._steam_root(), root)
 
 
 if __name__ == "__main__":

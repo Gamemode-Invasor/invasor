@@ -9,7 +9,6 @@ from . import __version__, config, gamepad, install, modpool
 from .market import Market
 from .updater import Updater, run_detached
 from .schema import InvalidArgument, Unavailable
-from .storage import JsonStore
 
 log = logging.getLogger("invasor.frontend")
 
@@ -22,15 +21,33 @@ tmp="$(mktemp)" && cp "$1" "$tmp" && shift && bash "$tmp" "$@"
 rm -f "$tmp"
 '''
 LOG_MAX_LINES = 1000
+# What set_pref may change: the preferences the panel shows (the rest of config.json is not the panel's).
+USER_PREFS = {"open_combo", "accent_color", "module_order", "handle_icon", "panel_side", "update_check", "update_channel"}
 
 
-def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater=None, market=None):
-    updater = updater or Updater()
-    market = market or Market(
+def default_market(manager, cfg):
+    """The Market of this service: what is installed and the update channel, asked at each listing."""
+    return Market(
         installed=lambda: {m["id"]: m["version"] for m in manager.listing()},
         channel=lambda: cfg.get("update_channel", "stable"),
     )
 
+
+def _flag(name, value):
+    """A true/false argument: bool("false") is True, so anything else is refused, not guessed."""
+    if not isinstance(value, bool):
+        raise InvalidArgument(f"{name} must be true or false")
+    return value
+
+
+def _id(id):
+    if not isinstance(id, str):
+        raise InvalidArgument("id must be a string")
+    return id
+
+
+def _overlay_methods(game, watcher, cfg, injector, steam):
+    """The overlay itself: where it landed, the game under the cursor, Steam calls and the panel's preferences."""
     def info():
         return {"version": __version__, "python": platform.python_version(), "kernel": platform.release()}
 
@@ -39,40 +56,6 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
         from the log. Its first report per load is INFO; later ones (open, refit) DEBUG."""
         (log.debug if "event" in env else log.info)("overlay %s: %s", env.get("event", "up"), env)
         return True
-
-    def modules():
-        return manager.listing()
-
-    def _flag(name, value):
-        """A true/false argument: bool("false") is True, so anything else is refused, not guessed."""
-        if not isinstance(value, bool):
-            raise InvalidArgument(f"{name} must be true or false")
-        return value
-
-    def _id(id):
-        if not isinstance(id, str):
-            raise InvalidArgument("id must be a string")
-        return id
-
-    def set_enabled(id, enabled):
-        if _id(id) not in manager.manifests:
-            raise InvalidArgument(f"unknown module {id!r}")
-        manager.set_enabled(id, _flag("enabled", enabled))
-        return manager.listing()
-
-    def _settings(id):
-        if id not in manager.settings:
-            raise InvalidArgument(f"unknown module {id!r} (or its module.json is invalid)")
-        return manager.settings[id]
-
-    def settings_get(id):
-        """Every setting of a module, valid against its module.json schema."""
-        return _settings(id).get()
-
-    def settings_set(id, key, value):
-        """Change one setting from the panel: validated, saved, the module's backend told
-        (ctx.settings.on_change). Returns the value actually stored (clamped, snapped…)."""
-        return _settings(id).set(key, value, notify=True)
 
     async def game_state():
         """running / selected (kept up to date by GameContext) and highlighted: the tile
@@ -99,8 +82,76 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
             raise Unavailable("SteamClient bridge not configured")
         return await steam.notify(title, body, icon, sound=sound)
 
-    # ---------- ⚙ Settings › Manage Invasor ----------
+    def prefs():
+        return {
+            "open_combo": sorted(watcher.combo),
+            "panel_side": cfg.get("panel_side", "auto"),
+            "accent_color": cfg.get("accent_color", "blue"),
+            "handle_icon": cfg.get("handle_icon", "icon"),
+            "module_order": cfg.get("module_order", []),
+            "update_check": cfg.get("update_check", True),
+            "update_channel": cfg.get("update_channel", "stable"),
+            # Learned, not user-set: visible width of the Quick Access column (see overlay.ts).
+            "qam_visible_w": cfg.get("qam_visible_w"),
+        }
 
+    def set_qam_width(width):
+        """Remember the on-screen width of the Quick Access window, measured when Steam
+        reports its position, for the times it doesn't (e.g. no game running)."""
+        if not isinstance(width, (int, float)) or isinstance(width, bool) or not 200 <= width <= 4000:
+            raise InvalidArgument(f"implausible width {width!r}")
+        width = int(width)
+        if cfg.get("qam_visible_w") != width:
+            config.save(cfg, qam_visible_w=width)
+        return True
+
+    async def set_qam_shown(shown):
+        """Quick Access says whether its "I" is on screen: the library's hides while it is
+        (with the panel on the left nothing covers it, and two would show)."""
+        shown = _flag("shown", shown)
+        if injector is not None:
+            await injector.set_main_handle_hidden(shown)
+        return True
+
+    def set_pref(key, value):
+        """Only user-facing preferences can be changed from the panel, and only to valid values
+        (config.VALID, the same rules as config.json)."""
+        if key not in USER_PREFS:
+            raise InvalidArgument(f"unknown preference {key!r}")
+        if key == "open_combo":
+            names = {str(b).upper() for b in value} if isinstance(value, list) else set()
+            if not names <= set(gamepad.BUTTONS):
+                raise InvalidArgument(f"invalid combo {value!r}")
+            value = sorted(names)
+        elif key == "module_order" and isinstance(value, list):
+            value = list(dict.fromkeys(value)) if all(isinstance(x, str) for x in value) else value  # each id once, in the order given
+        if not config.VALID[key](value):
+            raise InvalidArgument(f"invalid {key} {value!r}")
+        if key == "open_combo":
+            watcher.set_combo(value)
+        config.save(cfg, **{key: value})
+        return prefs()
+
+    def pads():
+        return [{"device": dev, "name": name, "kind": kind} for dev, name, kind in gamepad.pads()]
+
+    return {
+        "ping": lambda: "pong",
+        "prefs": prefs,
+        "set_pref": set_pref,
+        "set_qam_width": set_qam_width,
+        "set_qam_shown": set_qam_shown,
+        "pads": pads,
+        "info": info,
+        "report": report,
+        "game": game_state,
+        "steam_call": steam_call,
+        "notify": notify,
+    }
+
+
+def _manage_methods(steam):
+    """⚙ Settings › Manage Invasor: restarts, the log, resetting and uninstalling."""
     def restart_service():
         """Restart this service (the panel reloads by itself a few seconds later). Steam and
         any running game are not restarted."""
@@ -141,8 +192,7 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
         """Uninstall Invasor with its own installer, in a detached unit: the service stops
         and the overlay leaves Steam a moment after this returns. purge also deletes the
         configuration."""
-        if not isinstance(purge, bool):
-            raise InvalidArgument("purge must be true or false")
+        purge = _flag("purge", purge)
         script = config.DATA_DIR / "invasor-installation.sh"
         if not script.is_file():
             raise Unavailable("this install has no uninstaller: install Invasor once more to enable it")
@@ -150,7 +200,39 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
         run_detached("invasor-uninstall", ["bash", "-c", UNINSTALL_SCRIPT, "invasor-uninstall", str(script), *args], "uninstall")
         return True
 
-    # ---------- user modules (⚙ Settings › Install module) ----------
+    return {
+        "restart_service": restart_service,
+        "restart_steam": restart_steam,
+        "log_tail": log_tail,
+        "reset_config": reset_config,
+        "uninstall_invasor": uninstall_invasor,
+    }
+
+
+def _module_methods(manager, cfg, injector, market):
+    """The module list and its settings, installing (zip or Market), uninstalling, restoring and rescanning."""
+    def modules():
+        return manager.listing()
+
+    def set_enabled(id, enabled):
+        if _id(id) not in manager.manifests:
+            raise InvalidArgument(f"unknown module {id!r}")
+        manager.set_enabled(id, _flag("enabled", enabled))
+        return manager.listing()
+
+    def _settings(id):
+        if id not in manager.settings:
+            raise InvalidArgument(f"unknown module {id!r} (or its module.json is invalid)")
+        return manager.settings[id]
+
+    def settings_get(id):
+        """Every setting of a module, valid against its module.json schema."""
+        return _settings(id).get()
+
+    def settings_set(id, key, value):
+        """Change one setting from the panel: validated, saved, the module's backend told
+        (ctx.settings.on_change). Returns the value actually stored (clamped, snapped…)."""
+        return _settings(id).set(key, value, notify=True)
 
     def _reserved():
         # Ids shipped with Invasor can't be taken by an installed module (not even an uninstalled one: it can come back).
@@ -186,8 +268,6 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
             await injector.inject_module(mid, ui_js)
         log.info("installed module %s %s", mid, entry.get("version"))
         return entry
-
-    # ---------- ⚙ Settings › Install module › Open the Market (backend/invasor/market.py) ----------
 
     async def market_list(refresh=False):
         """{modules: [card], notes}: the newest release of every module repository of the organisation."""
@@ -241,76 +321,25 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
                 await injector.inject_module(mid, ui_js)
         return manager.listing()
 
-    def prefs():
-        return {
-            "open_combo": sorted(watcher.combo),
-            "panel_side": cfg.get("panel_side", "auto"),
-            "accent_color": cfg.get("accent_color", "blue"),
-            "handle_icon": cfg.get("handle_icon", "icon"),
-            "module_order": cfg.get("module_order", []),
-            "update_check": cfg.get("update_check", True),
-            "update_channel": cfg.get("update_channel", "stable"),
-            # Learned, not user-set: visible width of the Quick Access column (see overlay.ts).
-            "qam_visible_w": cfg.get("qam_visible_w"),
-        }
+    return {
+        "module_browse": module_browse,
+        "module_inspect": module_inspect,
+        "module_install": module_install,
+        "market_list": market_list,
+        "market_install": market_install,
+        "module_uninstall": module_uninstall,
+        "module_removed": module_removed,
+        "module_restore": module_restore,
+        "module_rescan": module_rescan,
+        "modules": modules,
+        "set_enabled": set_enabled,
+        "settings_get": settings_get,
+        "settings_set": settings_set,
+    }
 
-    def set_qam_width(width):
-        """Remember the on-screen width of the Quick Access window, measured when Steam
-        reports its position, for the times it doesn't (e.g. no game running)."""
-        if not isinstance(width, (int, float)) or isinstance(width, bool) or not 200 <= width <= 4000:
-            raise InvalidArgument(f"implausible width {width!r}")
-        width = int(width)
-        if cfg.get("qam_visible_w") != width:
-            cfg["qam_visible_w"] = width
-            JsonStore(config.CONFIG_FILE).update(qam_visible_w=width)
-        return True
 
-    async def set_qam_shown(shown):
-        """Quick Access says whether its "I" is on screen: the library's hides while it is
-        (with the panel on the left nothing covers it, and two would show)."""
-        if not isinstance(shown, bool):
-            raise InvalidArgument(f"shown must be true or false, not {shown!r}")
-        if injector is not None:
-            await injector.set_main_handle_hidden(shown)
-        return True
-
-    def set_pref(key, value):
-        """Only user-facing preferences can be changed from the panel, and only to valid values."""
-        if key == "open_combo":
-            names = {str(b).upper() for b in value} if isinstance(value, list) else set()
-            if not names or not names <= set(gamepad.BUTTONS):
-                raise InvalidArgument(f"invalid combo {value!r}")
-            value = sorted(names)
-            watcher.set_combo(value)
-        elif key == "accent_color":
-            if value not in config.ACCENT_COLORS:
-                raise InvalidArgument(f"invalid accent_color {value!r}")
-        elif key == "module_order":
-            if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
-                raise InvalidArgument(f"invalid module_order {value!r}: a list of module ids")
-            value = list(dict.fromkeys(value))  # each id once, in the order given
-            if len(value) > config.MODULE_ORDER_MAX:
-                raise InvalidArgument(f"module_order: more than {config.MODULE_ORDER_MAX} modules")
-        elif key == "handle_icon":
-            if value not in config.HANDLE_ICONS:
-                raise InvalidArgument(f"invalid handle_icon {value!r}")
-        elif key == "panel_side":
-            if value not in config.PANEL_SIDES:
-                raise InvalidArgument(f"invalid panel_side {value!r}")
-        elif key == "update_check":
-            if not isinstance(value, bool):
-                raise InvalidArgument(f"invalid update_check {value!r}")
-        elif key == "update_channel":
-            if value not in config.UPDATE_CHANNELS:
-                raise InvalidArgument(f"invalid update_channel {value!r}")
-        else:
-            raise InvalidArgument(f"unknown preference {key!r}")
-        cfg[key] = value
-        JsonStore(config.CONFIG_FILE).update(**{key: value})
-        return prefs()
-
-    # ---------- updates (⚙ Settings › Updates; backend/invasor/updater.py) ----------
-
+def _update_methods(manager, updater):
+    """⚙ Settings › Updates (backend/invasor/updater.py) and the background tasks."""
     def update_status():
         """The last check's answer (None before the first one), without going to the network."""
         return updater.last
@@ -335,42 +364,28 @@ def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater
         manager.tasks.clear_recent()
         return manager.tasks.snapshot()
 
-    def pads():
-        return [{"device": dev, "name": name, "kind": kind} for dev, name, kind in gamepad.pads()]
-
     return {
-        "ping": lambda: "pong",
-        "prefs": prefs,
-        "set_pref": set_pref,
-        "set_qam_width": set_qam_width,
-        "set_qam_shown": set_qam_shown,
-        "pads": pads,
         "tasks": tasks,
         "tasks_clear": tasks_clear,
         "update_status": update_status,
         "update_check": update_check,
         "update_apply": update_apply,
-        "restart_service": restart_service,
-        "restart_steam": restart_steam,
-        "log_tail": log_tail,
-        "reset_config": reset_config,
-        "uninstall_invasor": uninstall_invasor,
-        "info": info,
-        "report": report,
-        "game": game_state,
-        "steam_call": steam_call,
-        "notify": notify,
-        "module_browse": module_browse,
-        "module_inspect": module_inspect,
-        "module_install": module_install,
-        "market_list": market_list,
-        "market_install": market_install,
-        "module_uninstall": module_uninstall,
-        "module_removed": module_removed,
-        "module_restore": module_restore,
-        "module_rescan": module_rescan,
-        "modules": modules,
-        "set_enabled": set_enabled,
-        "settings_get": settings_get,
-        "settings_set": settings_set,
     }
+
+
+def make_methods(manager, game, watcher, cfg, injector=None, steam=None, updater=None, market=None):
+    updater = updater or Updater()
+    market = market or default_market(manager, cfg)
+    sections = (
+        _overlay_methods(game, watcher, cfg, injector, steam),
+        _manage_methods(steam),
+        _module_methods(manager, cfg, injector, market),
+        _update_methods(manager, updater),
+    )
+    methods = {}
+    for section in sections:
+        repeated = methods.keys() & section.keys()
+        if repeated:
+            raise RuntimeError(f"core methods defined twice: {sorted(repeated)}")
+        methods.update(section)
+    return methods

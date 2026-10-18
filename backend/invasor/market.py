@@ -16,8 +16,6 @@ The client only ever names a repository from the catalog: URLs are built here an
 that repository's releases. As for the updater, the sha256 catches a corrupt or truncated download,
 not a compromised GitHub account.
 """
-import hashlib
-import hmac
 import json
 import logging
 import math
@@ -330,18 +328,6 @@ class Market:
 
     # ---------- installing ----------
 
-    @staticmethod
-    def _verify(path, sha_text):
-        words = sha_text.split()
-        if not words or not updater.SHA_RE.match(words[0]):
-            raise InvalidArgument("the module's checksum file is unreadable")
-        h = hashlib.sha256()
-        with open(path, "rb") as f:
-            for chunk in iter(lambda: f.read(1 << 20), b""):
-                h.update(chunk)
-        if not hmac.compare_digest(h.hexdigest(), words[0].lower()):
-            raise InvalidArgument("the module's checksum doesn't match: not installing it")
-
     def download(self, repo, task=None):
         """Download and verify the catalog's zip of `repo`. Returns (path relative to home, the work
         folder to delete afterwards, the module id). The repository must be in the catalog: nothing the client sends
@@ -370,7 +356,7 @@ class Market:
                 raise Unavailable(f"couldn't download {entry['name']}: {e}") from None
             if task:
                 task.update(0.8, f"Verifying {entry['name']}")
-            self._verify(zip_path, (work / "sha256").read_text(errors="replace"))
+            updater.verify_sha256(zip_path, (work / "sha256").read_text(errors="replace"), "module")
             try:
                 relative = zip_path.resolve().relative_to(install.HOME.resolve())
             except ValueError:
