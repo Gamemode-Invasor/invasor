@@ -17,6 +17,12 @@ def check(d):
     module = importlib.util.module_from_spec(spec)
     sys.modules[pkg] = module
     spec.loader.exec_module(module)
+    return check_module(module)
+
+
+def check_module(module):
+    """What's wrong with an imported backend's METHODS and hooks, or None. Shared with the
+    service (modules._import): the same rules before installing and when loading."""
     methods = getattr(module, "METHODS", {})
     if not isinstance(methods, dict) or not all(isinstance(k, str) and callable(v) for k, v in methods.items()):
         return "METHODS must be a dict of {name: function}"

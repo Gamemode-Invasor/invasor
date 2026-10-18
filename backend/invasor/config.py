@@ -4,6 +4,9 @@ import os
 import secrets
 from pathlib import Path
 
+from .schema import _is_int
+from .storage import JsonStore
+
 log = logging.getLogger("invasor.config")
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -68,10 +71,6 @@ UPDATE_CHANNELS = ("stable", "beta")
 HANDLE_ICONS = ("icon", "letter", "none")
 ACCENT_COLORS = ("blue", "yellow", "green", "red", "purple", "white")
 LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR")
-
-
-def _is_int(v):
-    return isinstance(v, int) and not isinstance(v, bool)
 
 
 def _str_list(v):
@@ -154,3 +153,10 @@ def load():
     # Fresh per run: only code we inject knows it, so other local pages can't call the API.
     cfg["token"] = secrets.token_urlsafe(24)
     return cfg
+
+
+def save(cfg, **changes):
+    """Change keys of the running config and write them to config.json (only those keys:
+    the user's other edits to the file stay)."""
+    cfg.update(changes)
+    JsonStore(CONFIG_FILE).update(**changes)
