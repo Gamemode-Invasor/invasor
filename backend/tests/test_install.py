@@ -1,3 +1,4 @@
+import hashlib
 import json
 import stat
 import sys
@@ -173,6 +174,65 @@ class Zips(unittest.TestCase):
         path = self.good("ui.zip", **{"hello/ui.ts": "x", "hello/dist/ui.js": "var __invasorModule={};"})
         self.assertEqual(install.install(path, set()), "hello")
         self.assertTrue((self.user / "hello" / "dist" / "ui.js").is_file())
+
+
+    # ---- choosing a zip runs nothing of it; installing installs the zip that was shown ----
+
+    def marking_backend(self, marker):
+        return f"open({str(marker)!r}, 'w').close()\nMETHODS = {{}}\n"
+
+    def test_inspect_runs_none_of_the_module_code(self):
+        marker = self.home / "ran"
+        path = self.good(backend=self.marking_backend(marker))
+        self.assertEqual(install.inspect(path, {"core"})["id"], "hello")
+        self.assertFalse(marker.exists())
+        install.install(path, {"core"})
+        self.assertTrue(marker.exists())  # imported to check it once the user said yes
+
+    def test_a_broken_backend_is_shown_but_not_installed(self):
+        path = self.good(backend="raise RuntimeError('boom')\n")
+        self.assertEqual(install.inspect(path, {"core"})["name"], "Hello")
+        with self.assertRaisesRegex(InvalidArgument, "boom"):
+            install.install(path, {"core"})
+        self.assertEqual(list(self.user.iterdir()), [])
+
+    def test_inspect_gives_the_sha256_install_takes(self):
+        path = self.good()
+        info = install.inspect(path, {"core"})
+        self.assertEqual(info["sha256"], hashlib.sha256((self.home / path).read_bytes()).hexdigest())
+        self.assertEqual(install.install(path, {"core"}, sha256=info["sha256"].upper()), "hello")
+
+    def test_a_zip_that_changed_after_inspect_is_refused(self):
+        marker = self.home / "ran"
+        path = self.good()
+        sha = install.inspect(path, {"core"})["sha256"]
+        self.good(backend=self.marking_backend(marker))  # same name, other contents
+        with self.assertRaisesRegex(InvalidArgument, "changed since it was checked"):
+            install.install(path, {"core"}, sha256=sha)
+        self.assertFalse(marker.exists())
+        self.assertEqual(list(self.user.iterdir()), [])
+
+    def test_a_malformed_sha256_is_refused(self):
+        path = self.good()
+        for bad in ("abc", "g" * 64, 123, ["x"]):
+            with self.subTest(sha256=bad), self.assertRaisesRegex(InvalidArgument, "sha256"):
+                install.install(path, {"core"}, sha256=bad)
+
+    def test_a_zip_that_grew_past_the_limit_is_refused_while_copying(self):
+        path = self.good(**{"hello/big.bin": b"x" * 4096})
+        patch(self, "invasor.install.MAX_ZIP_BYTES", 1024)
+        with self.assertRaisesRegex(InvalidArgument, "bigger than"):
+            install._unpack(self.home / path, {"core"})
+        self.assertEqual([p for p in self.user.iterdir()], [])
+
+    def test_a_broken_new_version_leaves_the_installed_one_alone(self):
+        install.install(self.good(), {"core"})
+        replaced = []
+        broken = self.good("new.zip", backend="raise RuntimeError('boom')\n")
+        with self.assertRaisesRegex(InvalidArgument, "boom"):
+            install.install(broken, {"core"}, replace=True, before_replace=replaced.append)
+        self.assertEqual(replaced, [])  # the running version was never unloaded
+        self.assertEqual(sorted(p.name for p in self.user.iterdir()), ["hello"])
 
 
 if __name__ == "__main__":

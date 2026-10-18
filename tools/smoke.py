@@ -207,7 +207,10 @@ class Smoke:
             st, body = await self.api("module_inspect", path=rel)
             self.check("zip: inspected by the core, author without email", st == 200 and body["result"]["id"] == "smoke-example"
                        and body["result"]["author"] == "FranjeGueje", body)
-            st, body = await self.api("module_install", path=rel)
+            sha256 = body.get("result", {}).get("sha256", "")
+            st, body = await self.api("module_install", path=rel, sha256="0" * 64)
+            self.check("zip: a zip other than the one inspected is refused", st == 400 and "changed" in body.get("error", ""), body)
+            st, body = await self.api("module_install", path=rel, sha256=sha256)
             self.check("zip: installed", st == 200 and body["result"]["source"] == "user", body)
             await self.js("window.__invasor.setOpen(false)")
             await self.js("window.__invasor.setOpen(true)")

@@ -9,9 +9,17 @@ Everything is checked by the core before a module can run:
 - an id that isn't reserved ("core" or a module shipped with Invasor);
 - a built UI (dist/ui.js) if it has ui.ts — nothing is compiled on the console;
 - backend.py imports cleanly, in a separate process (invasor.checkmod), setup() not run.
+  Only when installing, after the user confirmed: importing it runs the module's code. The
+  separate process catches a broken module; it isn't a sandbox.
+inspect() (what the panel shows before asking) does every check but that one: choosing a zip
+runs nothing of it. It hands back the zip's sha256, and install() given that sha256 refuses a
+zip that changed meanwhile: what is installed is the zip the user confirmed. Both work on a
+copy of the zip made while hashing it, never on the file the user picked.
 Then it's put in place atomically in USER_MODULES_DIR/<id>; a previous version is
 replaced only when the caller says so.
 """
+import hashlib
+import hmac
 import json
 import os
 import shutil
@@ -25,6 +33,7 @@ from pathlib import Path, PurePosixPath
 
 from . import __version__, config, schema
 from .schema import InvalidArgument, Unavailable
+from .updater import SHA_RE
 
 MAX_ZIP_BYTES = 64 << 20
 MAX_UNPACKED_BYTES = 128 << 20
@@ -156,15 +165,36 @@ def _check_backend(d):
         raise InvalidArgument(f"backend.py couldn't be checked: {run.stderr.strip()[-300:] or 'exited with an error'}")
 
 
-def _unpack(zip_path, reserved):
-    """Unpack into a fresh staging folder inside the user modules dir and check it all.
-    Returns (staging dir, module dir in it, manifest). The caller removes staging."""
+def _copy_hashed(src, dst):
+    """Copy src to dst; the sha256 (hex) of what was copied. The size limit holds here too: the
+    file may have grown since _zip_path looked at it."""
+    h = hashlib.sha256()
+    size = 0
+    with open(src, "rb") as f, open(dst, "wb") as out:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            size += len(chunk)
+            if size > MAX_ZIP_BYTES:
+                raise InvalidArgument(f"the zip is bigger than {MAX_ZIP_BYTES >> 20} MB")
+            h.update(chunk)
+            out.write(chunk)
+    return h.hexdigest()
+
+
+def _unpack(zip_path, reserved, sha256=None):
+    """Copy the zip into a fresh staging folder inside the user modules dir, unpack the copy
+    there and check it all, without running any of its code. With `sha256`, a zip that isn't
+    that one is refused. Returns (staging dir, module dir in it, manifest, the zip's sha256).
+    The caller removes staging."""
     base = _user_dir()
     base.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=base))
     try:
+        copy = staging / "module.zip"
+        digest = _copy_hashed(zip_path, copy)
+        if sha256 is not None and not hmac.compare_digest(digest, sha256.lower()):
+            raise InvalidArgument("the zip changed since it was checked: choose it again")
         try:
-            zf = zipfile.ZipFile(zip_path)
+            zf = zipfile.ZipFile(copy)
         except (zipfile.BadZipFile, OSError) as e:
             raise InvalidArgument(f"not a valid zip: {e}") from None
         with zf:
@@ -198,17 +228,17 @@ def _unpack(zip_path, reserved):
             raise InvalidArgument(f"{mid!r} is reserved (it's part of Invasor)")
         if (root / "ui.ts").exists() and not (root / "dist" / "ui.js").is_file():
             raise InvalidArgument("the module has ui.ts but no built dist/ui.js (build it before packing)")
-        _check_backend(root)
-        return staging, root, manifest
+        return staging, root, manifest, digest
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
 
 
 def inspect(path, reserved):
-    """What the zip holds, fully checked, without installing it:
-    {id, name, version, description, author (name only), installed_version}."""
-    staging, _, manifest = _unpack(_zip_path(path), reserved)
+    """What the zip holds, checked without installing it and without running any of its code:
+    {id, name, version, description, author (name only), installed_version, sha256}. Its
+    backend.py is checked by install(), which takes this sha256 to install this very zip."""
+    staging, _, manifest, digest = _unpack(_zip_path(path), reserved)
     try:
         current = None
         existing = _user_dir() / manifest["id"] / "module.json"
@@ -219,7 +249,7 @@ def inspect(path, reserved):
                 current = "?"
         return {"id": manifest["id"], "name": manifest["name"], "version": manifest["version"],
                 "description": manifest["description"], "author": manifest["author_name"],
-                "installed_version": current}
+                "installed_version": current, "sha256": digest}
     finally:
         shutil.rmtree(staging, ignore_errors=True)
 
@@ -227,20 +257,25 @@ def inspect(path, reserved):
 _install_lock = threading.Lock()
 
 
-def install(path, reserved, replace=False, before_replace=None):
+def install(path, reserved, replace=False, before_replace=None, sha256=None):
     """Check and put the module in USER_MODULES_DIR/<id>. An installed one is replaced
     only with replace=True (before_replace(id) is called first, e.g. to tear it down).
-    One install at a time: two for the same id would swap the folder under each other.
-    Returns the module id."""
+    `sha256` (from inspect()): install only that zip. Its backend.py is imported here, in a
+    separate process: the user has said yes. One install at a time: two for the same id
+    would swap the folder under each other. Returns the module id."""
+    if sha256 is not None and not (isinstance(sha256, str) and SHA_RE.match(sha256)):
+        raise InvalidArgument("sha256 must be the 64 hex digits inspect gave")
     with _install_lock:
-        return _install(path, reserved, replace, before_replace)
+        return _install(path, reserved, replace, before_replace, sha256)
 
 
-def _install(path, reserved, replace, before_replace):
-    staging, root, manifest = _unpack(_zip_path(path), reserved)
+def _install(path, reserved, replace, before_replace, sha256):
+    staging, root, manifest, _ = _unpack(_zip_path(path), reserved, sha256)
     mid = manifest["id"]
     target = _user_dir() / mid
     try:
+        # Before anything installed is touched: a new version that doesn't import leaves the old one running.
+        _check_backend(root)
         if target.exists():
             if not replace:
                 raise InvalidArgument(f"{manifest['name']} is already installed")

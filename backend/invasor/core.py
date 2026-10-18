@@ -244,9 +244,10 @@ def _module_methods(manager, cfg, injector, market):
     def module_inspect(path):
         return install.inspect(path, _reserved())
 
-    async def module_install(path, replace=False):
-        """Check, install and load a module from a zip, and inject its UI right away.
-        Module code (teardown, import, setup) runs in a worker thread, never in the event loop."""
+    async def module_install(path, replace=False, sha256=None):
+        """Check, install and load a module from a zip, and inject its UI right away. `sha256`
+        (from module_inspect): install only the zip the user was shown. Module code (teardown,
+        import, setup) runs in a worker thread, never in the event loop."""
         replace = _flag("replace", replace)
         replaced = []
 
@@ -255,7 +256,7 @@ def _module_methods(manager, cfg, injector, market):
             manager.unload(mid)
 
         try:
-            mid = await modpool.run(install.install, path, _reserved(), replace, before_replace)
+            mid = await modpool.run(install.install, path, _reserved(), replace, before_replace, sha256=sha256)
         except BaseException:
             # Failed after the old version was unloaded: it's still in place, load it again.
             for old in replaced:

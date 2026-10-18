@@ -198,7 +198,7 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
   const picker = document.createElement("div");
   const formatSize = (n: number | null) => (n === null ? "" : n > 1 << 20 ? ` (${(n / (1 << 20)).toFixed(1)} MB)` : ` (${Math.max(1, Math.round(n / 1024))} KB)`);
   async function installFrom(path: string) {
-    let info: { id: string; name: string; version: string; description: string; author: string; installed_version: string | null };
+    let info: { id: string; name: string; version: string; description: string; author: string; installed_version: string | null; sha256: string };
     try {
       info = await api.call("core", "module_inspect", { path });
     } catch (e) {
@@ -212,7 +212,8 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
       : `Install ${what}?`;
     if (!(await ui.confirm(question, { ok: replacing ? "Replace" : "Install" }))) return;
     try {
-      await api.call("core", "module_install", { path, replace: replacing });
+      // The zip the user was just shown, not whatever is at that path now.
+      await api.call("core", "module_install", { path, replace: replacing, sha256: info.sha256 });
       toast(`${info.name} ${info.version} installed`);
     } catch (e) {
       return toast(`Not installed: ${(e as Error).message}`, "error");
