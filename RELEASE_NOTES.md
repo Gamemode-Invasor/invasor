@@ -1,5 +1,11 @@
-New
-- A task started with `ctx.task(label)` now shows a notification when it starts and when it ends (with the final text as its body), with the `toast` sound unless the module picks another one: `ctx.task(label, notify=True, sound="toast")`. A module can turn it off with `notify=False`
-- When Steam starts, Invasor looks for a new Invasor version (as before, then daily) and for newer versions of your installed modules in the Market. A new Invasor version shows its own notification; module updates show a single generic one. A version older than the installed one is never announced
+Fixes
+- Security: choosing a module zip in Settings > Install module no longer runs any of its code before you press Install, and only the zip that was shown is installed
+- The notification of a task that Steam can't show no longer fails silently: it is written to the log
+- Games are also found when Steam lives in ~/.steam/steam (before, only ~/.local/share/Steam was looked at)
+- Lighter background work: each running process is read once instead of on every check
+
+Internal
+- Code cleanup in the core with no change for modules: shared helpers, the core API split into sections, unused code removed
+- Docs: all modules listed, Popy and Cometa replace Noty, the Market catalog refreshes every 12 hours
 
 ---

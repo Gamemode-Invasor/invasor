@@ -5,6 +5,40 @@ their dates are listed for reference. The notes of the release being prepared li
 
 ---
 
+## 0.2.2 (2026-10-22)
+
+### Fixes
+
+- **Choosing a module zip runs none of its code.** In ⚙ Settings › Install module, `core.module_inspect` used to
+  import the module's `backend.py` to check it before the "Install?" dialog, so its top-level code ran even if you then
+  pressed Cancel. Now inspecting does every check but that import; `install()` imports it after you confirm and before
+  anything installed is touched, so a broken new version still leaves the old one loaded. Both work on a copy of the
+  zip made while hashing it: `inspect()` returns its `sha256` and `install(..., sha256=...)` refuses a zip that changed
+  meanwhile ("the zip changed since it was checked: choose it again"). The size limit also holds while copying. A zip
+  whose `backend.py` doesn't import is now refused when you press Install, with the same "Not installed: …" toast
+- The notification of a `ctx.task` that Steam can't show is logged ("task notification not shown") instead of
+  failing silently in its thread
+- The game context finds Steam's folder as `cef_flag` does: `~/.steam/steam`, then `~/.local/share/Steam`
+- The service refuses a module whose `setup`/`teardown`/`upgrade`/`uninstall` isn't callable, as the install check
+  already did
+- Each `/proc/<pid>/environ` is read once and cached by pid, start time and command name: about 18 ms → 5 ms per poll
+  with ~170 processes
+
+### Internal
+
+- Core cleanup with no change to the module API or the 34 `core` methods: one sha256 check for updates and Market
+  downloads (`updater.verify_sha256`), `config.save(cfg, **changes)` for every write of `config.json`,
+  `checkmod.check_module()` with the same rules when installing and loading, `set_pref` validated against
+  `config.VALID`, `SteamBridge.call_sync` through `_sync`, `core.default_market()`, and `core.make_methods` split into
+  overlay, manage, module and update sections. Unused imports removed
+- Tests: 7 tests in `test_updater.py` sat under a `__main__` guard and never ran; they run now. The `steam_start` test
+  no longer waits a real second. New tests for the process cache, the Steam folder lookup and zip inspection
+- Docs: every module listed (Popy and Cometa replace Noty), method queue limits, the Market catalog refreshes every
+  12 hours, Deckico and GE-RR use the `steam_start` event; the separate check process catches broken modules, it
+  isn't a sandbox
+
+---
+
 ## 0.2.1 (2026-10-14)
 
 - A task started with `ctx.task(label)` shows a notification when it starts and when it ends (with the final text as
