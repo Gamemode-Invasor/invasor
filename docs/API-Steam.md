@@ -146,10 +146,10 @@ How it can fail:
 | Artwork | `SteamClient.Apps.SetCustomArtworkForApp` / `ClearCustomArtworkForApp`, through `ctx.steam_call`, so the new art shows at once. | If the call fails, the art shows after restarting Steam. |
 | Patito, Pescao | The game's Steam id (or shortcut id) in lsfg-vk's / MAKO's `active_in`. lsfg-vk and MAKO match it themselves when the game runs. | None needed from Steam. |
 | Pescao | MAKO only runs in games started with `mako-launch %command%` in their launch options. | Pescao shows the line and the user pastes it. Pescao never writes launch options. |
-| Deckico | Reads custom art in `userdata/<account>/config/grid/` and Steam's icons in `appcache/librarycache/<appid>/`; writes a `.directory` file in each `steamapps/compatdata/<appid>/` and `steamapps/shadercache/<appid>/` of every library. Runs on `on_steam_start` (2.1). | Folders without an image are left alone; a file manager simply shows a plain folder. |
+| Deckico | Reads custom art in `userdata/<account>/config/grid/` and Steam's icons in `appcache/librarycache/<appid>/`; writes a `.directory` file in each `steamapps/compatdata/<appid>/` and `steamapps/shadercache/<appid>/` of every library. Runs on the `steam_start` event (2.1). | Folders without an image are left alone; a file manager simply shows a plain folder. |
 | Popy | `ctx.notify` (2.3) for notifications that local scripts send to its service on 127.0.0.1. | If Steam can't show them, the script's request gets a 503. |
 | Cometa | `ctx.notify` (2.3) for the achievements of GOG games run through Comet, sent to its service on 127.0.0.1. | If Steam can't show them, the request gets a 503. |
-| GE-RR | Installs GE-Proton as `compatibilitytools.d/GE-Proton` with its own `compatibilitytool.vdf` (Steam's documented format for custom compatibility tools). Checks on `on_steam_start`; `ctx.notify` when a download starts and ends. | Steam reads the folder only when it starts: the module asks for a restart. Notifications are optional (the log has the same). |
+| GE-RR | Installs GE-Proton as `compatibilitytools.d/GE-Proton` with its own `compatibilitytool.vdf` (Steam's documented format for custom compatibility tools). Checks on the `steam_start` event; `ctx.notify` when a download starts and ends. | Steam reads the folder only when it starts: the module asks for a restart. Notifications are optional (the log has the same). |
 
 ### 2.7 The local API
 

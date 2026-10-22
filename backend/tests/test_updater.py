@@ -4,7 +4,6 @@ import io
 import json
 import tarfile
 import unittest
-import urllib.error
 from unittest import mock
 
 from invasor import updater

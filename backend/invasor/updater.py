@@ -26,7 +26,7 @@ import urllib.request
 from pathlib import Path
 
 from . import __version__, config
-from .version import VERSION_RE, parse_version  # noqa: F401 (re-exported)
+from .version import parse_version
 from .schema import InvalidArgument, Unavailable
 
 log = logging.getLogger("invasor.updater")

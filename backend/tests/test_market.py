@@ -1,12 +1,9 @@
-import copy
 import hashlib
-import io
 import json
 import shutil
 import time
 import unittest
 from unittest import mock
-import urllib.error
 from datetime import datetime, timedelta, timezone
 
 from invasor import config, install, market

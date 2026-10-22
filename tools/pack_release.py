@@ -14,7 +14,6 @@ The target machine needs no Node: extract it and run ./invasor-installation.sh.
 """
 import hashlib
 import re
-import subprocess
 import sys
 import tarfile
 from pathlib import Path
