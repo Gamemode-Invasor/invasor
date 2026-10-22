@@ -395,7 +395,7 @@ export default defineModule({
 | `ui.js` has a syntax error or throws at load | It is evaluated on its own: the log says so, and the tab shows "its UI didn't load". |
 | A `render` throws | Only that page shows the error. |
 | An `onShow`, `onHide`, `onGameChange`, `showInQam`, `destroy` or window `onClose` hook throws | It's caught and logged in the browser console only; nothing is shown on the page, and the rest keeps working. |
-| A slow method | It runs in its own thread; the panel and the gamepad keep working. Too many at once are answered with 503 instead of queueing. |
+| A slow method | It runs in its own thread; the panel and the gamepad keep working. Up to 8 run at once and up to 32 more wait; beyond that they're answered with 503. |
 | A `setup` that hangs | After 20 seconds the module fails to load and is torn down; the rest of Invasor is unaffected. |
 | Corrupt or invalid stored settings | Invalid values read as their defaults and are corrected in the file. A file that isn't JSON is moved to `settings.json.corrupt`. |
 

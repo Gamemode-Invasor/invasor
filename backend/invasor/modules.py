@@ -285,7 +285,7 @@ class ModuleContext:
             try:
                 self._steam.notify_sync(view["label"], body, "", sound=sound)
             except Exception as e:
-                self._log.info("task notification not shown: %s", e)
+                self.log.info("task notification not shown: %s", e)
         threading.Thread(target=show, name="invasor-task-notify", daemon=True).start()
 
     def game_data(self, appid):

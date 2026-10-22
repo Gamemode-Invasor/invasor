@@ -120,9 +120,10 @@ module**:
 - [invasor-companion](https://github.com/Gamemode-Invasor/invasor-companion): arma las launch options de un juego, añade juegos no-Steam, muestra lo que Steam sabe del juego actual y limpia sus restos.
 - [invasor-deckico](https://github.com/Gamemode-Invasor/invasor-deckico): pone el icono de cada juego en sus carpetas compatdata y shadercache.
 - [invasor-ge-rr](https://github.com/Gamemode-Invasor/invasor-ge-rr): mantiene el último GE-Proton instalado como una única herramienta de compatibilidad.
-- [invasor-noty](https://github.com/Gamemode-Invasor/invasor-noty): notificaciones de Steam desde tus propios scripts y desde programas como Comet.
 - [invasor-pescao](https://github.com/Gamemode-Invasor/invasor-pescao): perfiles de generación de fotogramas y escalado de MAKO Renderer, uno por juego.
 - [invasor-rakun](https://github.com/Gamemode-Invasor/invasor-rakun): descarga tus juegos de tiendas de terceros con el motor Rakun.
+- [invasor-popy](https://github.com/Gamemode-Invasor/invasor-popy): muestra en Steam tus propias notificaciones, enviadas por web a un servicio local.
+- [invasor-cometa](https://github.com/Gamemode-Invasor/invasor-cometa): muestra como notificaciones de Steam los logros de los juegos de GOG lanzados con Comet.
 
 Los módulos instalados viven en `~/.local/share/invasor/user-modules/`. Actualizar Invasor nunca los toca.
 
