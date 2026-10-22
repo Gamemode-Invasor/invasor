@@ -30,7 +30,7 @@ jobs:
   module:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           path: module
       - name: Make sure the core can be read
@@ -44,18 +44,18 @@ jobs:
             echo "::error::Can't read Gamemode-Invasor/invasor: HTTP $status (CORE_READ_TOKEN is set: $HAS_SECRET, token length: ${#CORE_TOKEN}). While the core is private, the organization needs a CORE_READ_TOKEN secret with read access to it."
             exit 1
           fi
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           repository: Gamemode-Invasor/invasor
           ref: ${{ inputs.core-ref }}
           path: invasor
           token: ${{ secrets.CORE_READ_TOKEN || github.token }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: invasor/frontend/package-lock.json
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
       - run: npm ci --no-audit --no-fund
@@ -68,7 +68,7 @@ jobs:
       - name: Check, test and pack
         working-directory: module
         run: python3 ../invasor/tools/pack_module.py "$MODULE_ID" --out "$GITHUB_WORKSPACE/dist"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.MODULE_ID }}-zip
           path: dist/*.zip
