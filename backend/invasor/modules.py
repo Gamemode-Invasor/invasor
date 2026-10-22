@@ -20,7 +20,7 @@ import shutil
 import sys
 import threading
 
-from . import __version__, config, schema, steam, tomlio
+from . import __version__, checkmod, config, schema, steam, tomlio
 from .schema import Unavailable
 from .storage import JsonStore
 from .tasks import TaskRegistry
@@ -285,7 +285,7 @@ class ModuleContext:
             try:
                 self._steam.notify_sync(view["label"], body, "", sound=sound)
             except Exception as e:
-                self._log.info("task notification not shown: %s", e)
+                self.log.info("task notification not shown: %s", e)
         threading.Thread(target=show, name="invasor-task-notify", daemon=True).start()
 
     def game_data(self, appid):
@@ -500,8 +500,7 @@ class ModuleManager:
         with self._ops:
             self.remove(mid, purge)
             removed = sorted({*self.cfg.get("removed_modules", []), mid})
-            self.cfg["removed_modules"] = removed
-            JsonStore(config.CONFIG_FILE).update(removed_modules=removed)
+            config.save(self.cfg, removed_modules=removed)
 
     def removed_listing(self):
         """The shipped modules the user uninstalled and that can still be restored: [{id, name}]."""
@@ -523,8 +522,7 @@ class ModuleManager:
             removed = [m for m in self.cfg.get("removed_modules", []) if m != mid]
             if len(removed) == len(self.cfg.get("removed_modules", [])) or not (MODULES_DIR / mid).is_dir():
                 raise schema.InvalidArgument(f"{mid!r} isn't an uninstalled module")
-            self.cfg["removed_modules"] = removed
-            JsonStore(config.CONFIG_FILE).update(removed_modules=removed)
+            config.save(self.cfg, removed_modules=removed)
             self._read(MODULES_DIR / mid, "core")
             if self.enabled(mid) and mid in self.manifests:
                 self.load(mid)
@@ -562,8 +560,7 @@ class ModuleManager:
         otherwise they'd fill up (module_order has a limit) and a reinstall would come back disabled."""
         for key in ("module_order", "disabled_modules"):
             if mid in self.cfg.get(key, []):
-                self.cfg[key] = [m for m in self.cfg[key] if m != mid]
-                JsonStore(config.CONFIG_FILE).update(**{key: self.cfg[key]})
+                config.save(self.cfg, **{key: [m for m in self.cfg[key] if m != mid]})
 
     def _run_uninstall(self, mid, module, purge):
         def run():
@@ -630,9 +627,9 @@ class ModuleManager:
         sys.modules[pkg] = module
         spec.loader.exec_module(module)
         # Checked before setup(): a module rejected here never starts anything.
-        methods = getattr(module, "METHODS", {})
-        if not isinstance(methods, dict) or not all(isinstance(k, str) and callable(v) for k, v in methods.items()):
-            raise TypeError("METHODS must be a dict of {name: function}")
+        problem = checkmod.check_module(module)
+        if problem:
+            raise TypeError(problem)
         return module
 
     def load(self, mid):
@@ -738,8 +735,7 @@ class ModuleManager:
             else:
                 disabled.add(mid)
                 self.unload(mid)
-            self.cfg["disabled_modules"] = sorted(disabled)
-            JsonStore(config.CONFIG_FILE).update(disabled_modules=self.cfg["disabled_modules"])
+            config.save(self.cfg, disabled_modules=sorted(disabled))
 
     def ui_scripts(self):
         """[(id, path of dist/ui.js)] of every valid module with a UI, enabled or not:

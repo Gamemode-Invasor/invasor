@@ -26,9 +26,8 @@ import urllib.request
 from pathlib import Path
 
 from . import __version__, config
-from .version import VERSION_RE, parse_version  # noqa: F401 (re-exported)
+from .version import parse_version
 from .schema import InvalidArgument, Unavailable
-from .storage import JsonStore
 
 log = logging.getLogger("invasor.updater")
 
@@ -100,6 +99,19 @@ def download(url, dest, limit, progress=None):
                 f.write(chunk)
                 if progress:
                     progress(size, total)
+
+
+def verify_sha256(path, sha_text, what):
+    """InvalidArgument unless `path` matches the first word of a .sha256 file (`what`: "update", "module"…)."""
+    words = sha_text.split()
+    if not words or not SHA_RE.match(words[0]):
+        raise InvalidArgument(f"the {what}'s checksum file is unreadable")
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    if not hmac.compare_digest(h.hexdigest(), words[0].lower()):
+        raise InvalidArgument(f"the {what}'s checksum doesn't match: not installing it")
 
 
 def run_detached(unit, argv, what="update"):
@@ -250,7 +262,7 @@ class Updater:
                 raise Unavailable(f"couldn't download the update: {e}") from None
             if task:
                 task.update(0.8, "Verifying")
-            self._verify(tarball, (work / "sha256").read_text(errors="replace"))
+            verify_sha256(tarball, (work / "sha256").read_text(errors="replace"), "update")
             if task:
                 task.update(0.9, "Unpacking")
             try:
@@ -266,18 +278,6 @@ class Updater:
             shutil.rmtree(work, ignore_errors=True)
             raise
         return {"version": version}
-
-    @staticmethod
-    def _verify(tarball, sha_text):
-        words = sha_text.split()
-        if not words or not SHA_RE.match(words[0]):
-            raise InvalidArgument("the update's checksum file is unreadable")
-        h = hashlib.sha256()
-        with open(tarball, "rb") as f:
-            for chunk in iter(lambda: f.read(1 << 20), b""):
-                h.update(chunk)
-        if not hmac.compare_digest(h.hexdigest(), words[0].lower()):
-            raise InvalidArgument("the update's checksum doesn't match: not installing it")
 
     @staticmethod
     def _check_contents(root, version):
@@ -338,8 +338,7 @@ async def _round(updater, cfg, steam):
         except (Unavailable, InvalidArgument) as e:
             log.info("update notification not shown yet: %s", e)
             return RETRY_NO_STEAM
-        cfg["update_last_notified"] = res["latest"]
-        JsonStore(config.CONFIG_FILE).update(update_last_notified=res["latest"])
+        config.save(cfg, update_last_notified=res["latest"])
     return CHECK_EVERY
 
 
@@ -361,6 +360,5 @@ async def _market_round(market, cfg, steam):
             except (Unavailable, InvalidArgument) as e:
                 log.info("market notification not shown yet: %s", e)
                 return RETRY_NO_STEAM
-        cfg["market_last_notified"] = seen
-        JsonStore(config.CONFIG_FILE).update(market_last_notified=seen)
+        config.save(cfg, market_last_notified=seen)
     return CHECK_EVERY

@@ -5,7 +5,7 @@
 
 For every module repository in repos.conf it records the newest stable release and the newest one
 pre-releases included, read exactly as the app reads them (Market.entry). The workspace repository's
-GitHub Action runs it every hour and publishes the file on its market-data branch; the app reads it
+GitHub Action runs it every 12 hours and publishes the file on its market-data branch; the app reads it
 instead of asking GitHub repository by repository. The file carries no URLs: the app rebuilds them.
 
 GITHUB_TOKEN (optional) authenticates the calls to api.github.com: 1000 an hour instead of 60.

@@ -7,7 +7,6 @@ from . import __version__, cef_flag, config, core, updater as updates
 from .combo import decide_combo
 from .context import GameContext
 from .gamepad import ComboWatcher
-from .market import Market
 from .injector import Injector, remove_overlays
 from .modules import ModuleManager
 from .server import ApiServer
@@ -69,10 +68,7 @@ async def main():
     watcher = ComboWatcher(cfg["open_combo"], on_combo)
     # "core" is reserved for the overlay's own API; a module can't shadow it.
     updater = updates.Updater(channel=lambda: cfg.get("update_channel", "stable"))
-    market = Market(
-        installed=lambda: {m["id"]: m["version"] for m in manager.listing()},
-        channel=lambda: cfg.get("update_channel", "stable"),
-    )
+    market = core.default_market(manager, cfg)
     manager.registry["core"] = core.make_methods(manager, game, watcher, cfg, injector, steam, updater, market)
 
     # Stop cleanly on SIGTERM (systemctl stop/restart) so modules get their teardown().

@@ -356,7 +356,7 @@ class InstallRollback(unittest.IsolatedAsyncioTestCase):
         manager = ModuleManager(cfg, GameContext())
         manager.discover()
 
-        def failing_install(path, reserved, replace, before_replace):
+        def failing_install(path, reserved, replace, before_replace, sha256=None):
             before_replace("hello")
             raise OSError("disk full")
 
@@ -401,15 +401,29 @@ class MarketMethods(unittest.IsolatedAsyncioTestCase):
                 api, work, calls = self.make(listing)
                 seen = {}
 
-                async def fake_run(fn, path, reserved, replace_, before):
-                    seen["replace"] = replace_
+                async def fake_run(fn, path, reserved, replace_, before, sha256=None):
+                    seen["replace"], seen["sha256"] = replace_, sha256
                     return "patito"
 
                 patch(self, "invasor.modpool.run", fake_run)
                 with self.assertRaises(AttributeError):  # module_install goes on to load the module; only the hand-over matters
                     await api["market_install"]("invasor-patito")
                 self.assertEqual(seen["replace"], replace)
+                self.assertIsNone(seen["sha256"])  # the Market's zip is checked against its release's .sha256 instead
                 self.assertFalse(work.exists())
+
+    async def test_module_install_hands_the_inspected_sha256_over(self):
+        api, _, _ = self.make([])
+        seen = {}
+
+        async def fake_run(fn, path, reserved, replace, before, sha256=None):
+            seen.update(fn=fn, path=path, sha256=sha256)
+            raise InvalidArgument("stop here")
+
+        patch(self, "invasor.modpool.run", fake_run)
+        with self.assertRaisesRegex(InvalidArgument, "stop here"):
+            await api["module_install"]("Downloads/hello.zip", sha256="a" * 64)
+        self.assertEqual(seen, {"fn": core.install.install, "path": "Downloads/hello.zip", "sha256": "a" * 64})
 
     async def test_a_market_install_is_a_task_that_ends_even_when_it_fails(self):
         api, _, _ = self.make([])

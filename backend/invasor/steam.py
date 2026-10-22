@@ -187,7 +187,9 @@ class SteamBridge:
         """notify() for plain (threaded) module methods."""
         return self._sync(self.notify(title, body, icon, timeout, sound), timeout)
 
-    def _sync(self, coro, timeout):
+    def _sync(self, coro, timeout, blocks="this blocks: in an async method use the async variant"):
+        """Run `coro` on the service's loop from a worker thread and wait for it. `blocks`: the
+        RuntimeError's message when called from the loop itself."""
         if self.loop is None:
             coro.close()
             raise Unavailable("SteamClient bridge not ready")
@@ -197,7 +199,7 @@ class SteamBridge:
             running = None
         if running is self.loop:
             coro.close()
-            raise RuntimeError("this blocks: in an async method use the async variant")
+            raise RuntimeError(blocks)
         return self._wait(asyncio.run_coroutine_threadsafe(coro, self.loop), timeout)
 
     @staticmethod
@@ -213,12 +215,5 @@ class SteamBridge:
     def call_sync(self, path, *args, timeout=DEFAULT_TIMEOUT):
         """call() for plain (threaded) module methods. Not from the event loop itself:
         async methods use `await ctx.steam_call_async(...)`."""
-        if self.loop is None:
-            raise Unavailable("SteamClient bridge not ready")
-        try:
-            running = asyncio.get_running_loop()
-        except RuntimeError:
-            running = None
-        if running is self.loop:
-            raise RuntimeError("ctx.steam_call() blocks: in an async method use `await ctx.steam_call_async(...)`")
-        return self._wait(asyncio.run_coroutine_threadsafe(self.call(path, args, timeout), self.loop), timeout)
+        return self._sync(self.call(path, args, timeout), timeout,
+                          "ctx.steam_call() blocks: in an async method use `await ctx.steam_call_async(...)`")

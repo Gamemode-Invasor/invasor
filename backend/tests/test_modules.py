@@ -441,6 +441,19 @@ class Modules(unittest.TestCase):
         self.assertEqual(sorted(self.task_toasts(loud)), [("Loud", "", "trophy"), ("Loud", "it broke", "trophy")])
         self.assertEqual(self.task_toasts(lambda c: c.task("Quiet", notify=False).done()), [])
 
+    def test_a_task_toast_that_steam_refuses_is_logged_and_the_task_still_ends(self):
+        class Bridge:
+            def notify_sync(self, title, body="", icon="", timeout=15, sound=""):
+                raise RuntimeError("no Steam")
+
+        with self.assertLogs("invasor.mod.good", "INFO") as logs:
+            self.context(Bridge()).task("Fetching").done()
+            deadline = time.monotonic() + 3
+            while any(t.name == "invasor-task-notify" for t in threading.enumerate()) and time.monotonic() < deadline:
+                time.sleep(0.01)
+        self.assertEqual(sum("task notification not shown: no Steam" in m for m in logs.output), 2)
+        self.assertEqual(self.manager.tasks.snapshot()["recent"][0]["state"], "done")
+
     def test_a_task_with_a_bad_sound_is_refused_and_one_without_steam_still_runs(self):
         from invasor.schema import InvalidArgument
 

@@ -1,7 +1,6 @@
 import asyncio
 import os
 import unittest
-from unittest import mock
 
 from invasor import cef
 

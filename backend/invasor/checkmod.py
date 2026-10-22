@@ -1,7 +1,8 @@
 """Import a module's backend in a separate process to see that it loads, without
 calling setup(): `python3 -m invasor.checkmod <module dir>`. Prints a JSON line
-{"ok": bool, "error": str|None} and exits 0/1. Used before installing a module, so
-a broken (or exit()-ing) backend never runs inside the service."""
+{"ok": bool, "error": str|None} and exits 0/1. Used when installing a module (after the
+user confirmed), so a broken (or exit()-ing) backend never runs inside the service. It is
+not a sandbox: the module's code runs here with the user's rights, as it will in the service."""
 import importlib.util
 import json
 import sys
@@ -17,6 +18,12 @@ def check(d):
     module = importlib.util.module_from_spec(spec)
     sys.modules[pkg] = module
     spec.loader.exec_module(module)
+    return check_module(module)
+
+
+def check_module(module):
+    """What's wrong with an imported backend's METHODS and hooks, or None. Shared with the
+    service (modules._import): the same rules before installing and when loading."""
     methods = getattr(module, "METHODS", {})
     if not isinstance(methods, dict) or not all(isinstance(k, str) and callable(v) for k, v in methods.items()):
         return "METHODS must be a dict of {name: function}"

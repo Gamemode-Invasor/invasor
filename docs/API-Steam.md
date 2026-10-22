@@ -146,9 +146,10 @@ How it can fail:
 | Artwork | `SteamClient.Apps.SetCustomArtworkForApp` / `ClearCustomArtworkForApp`, through `ctx.steam_call`, so the new art shows at once. | If the call fails, the art shows after restarting Steam. |
 | Patito, Pescao | The game's Steam id (or shortcut id) in lsfg-vk's / MAKO's `active_in`. lsfg-vk and MAKO match it themselves when the game runs. | None needed from Steam. |
 | Pescao | MAKO only runs in games started with `mako-launch %command%` in their launch options. | Pescao shows the line and the user pastes it. Pescao never writes launch options. |
-| Deckico | Reads custom art in `userdata/<account>/config/grid/` and Steam's icons in `appcache/librarycache/<appid>/`; writes a `.directory` file in each `steamapps/compatdata/<appid>/` and `steamapps/shadercache/<appid>/` of every library. Runs on `on_steam_start` (2.1). | Folders without an image are left alone; a file manager simply shows a plain folder. |
-| Noty | `ctx.notify` (2.3) for notifications sent by local scripts. | If Steam can't show them, the script's request gets a 503. |
-| GE-RR | Installs GE-Proton as `compatibilitytools.d/GE-Proton` with its own `compatibilitytool.vdf` (Steam's documented format for custom compatibility tools). Checks on `on_steam_start`; `ctx.notify` when a download starts and ends. | Steam reads the folder only when it starts: the module asks for a restart. Notifications are optional (the log has the same). |
+| Deckico | Reads custom art in `userdata/<account>/config/grid/` and Steam's icons in `appcache/librarycache/<appid>/`; writes a `.directory` file in each `steamapps/compatdata/<appid>/` and `steamapps/shadercache/<appid>/` of every library. Runs on the `steam_start` event (2.1). | Folders without an image are left alone; a file manager simply shows a plain folder. |
+| Popy | `ctx.notify` (2.3) for notifications that local scripts send to its service on 127.0.0.1. | If Steam can't show them, the script's request gets a 503. |
+| Cometa | `ctx.notify` (2.3) for the achievements of GOG games run through Comet, sent to its service on 127.0.0.1. | If Steam can't show them, the request gets a 503. |
+| GE-RR | Installs GE-Proton as `compatibilitytools.d/GE-Proton` with its own `compatibilitytool.vdf` (Steam's documented format for custom compatibility tools). Checks on the `steam_start` event; `ctx.notify` when a download starts and ends. | Steam reads the folder only when it starts: the module asks for a restart. Notifications are optional (the log has the same). |
 
 ### 2.7 The local API
 
@@ -174,7 +175,7 @@ drive Steam's pages through port 8080. That's a property of Steam's debugging po
 | `SharedJSContext` hangs | Module calls and notifications fail after a few seconds | 503 after the 5 s connect / 15 s call timeout; the panel and the rest keep working | `cef.CONNECT_TIMEOUT`; Steam itself (restart it) |
 | Route URL format changed | No "Selected" game | Running and highlighted still work | `context.py` route parsing |
 | `SteamClient` API renamed or re-signed | A module's live action fails, with its fallback; ⚙ Settings › Manage Invasor › Restart Steam says it's unavailable (`User.StartRestart`) | `Unavailable` (503), one log line per call | The module's plan B; the new name in Steam's JS |
-| `NotificationStore` changed | No notifications (e.g. from Noty) | `notify` answers 503 | `window.NotificationStore` in `SharedJSContext`; `SteamBridge.notify` |
+| `NotificationStore` changed | No notifications (e.g. from Popy) | `notify` answers 503 | `window.NotificationStore` in `SharedJSContext`; `SteamBridge.notify` |
 | `vgp_` events or button numbers changed | The pad doesn't move in the panel (and Select / Start don't open Tasks / Settings) | Touch, F10, the backend combo and the Tasks and ⚙ buttons in the panel's header still work | `detail.button` of Steam's `vgp_onbuttondown` events (button numbers in `gamepad-nav.ts`) |
 | Library tile DOM changed | No "Highlighted" game | `highlighted` is null | `library.ts` (`appidFromArt` has unit tests) |
 | `.gpfocus` renamed | Focus not returned after keyboard typing | Nothing else | `controls.ts` |
