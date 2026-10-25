@@ -12,6 +12,7 @@ New for modules
 Fixes
 - Updates and the Market: a redirect that leaves https is refused before it is followed, a failed download leaves no partial file, and the catalog tool no longer sends its GitHub token to another host
 - Game names are found in libraries on SD cards and USB drives too
+- What the Tasks panel and the notifications show can't be broken into lines or disguised with hidden characters
 
 Internal
 - One shared download client and one archive unpacker for the core and modules

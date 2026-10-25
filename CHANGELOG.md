@@ -20,6 +20,11 @@ Pre-releases: rc1 (2026-10-25).
 - **Steam's language: `ctx.steam_language(raw=False)`.** A short code (`"en"`, `"es"`…) or, with `raw=True`, Steam's own name, read from `~/.steam/registry.vdf`. Needs `min_core` 0.3.0. Demo has a "Steam language" button
 - **Copying and picking files in a module's UI: `ctx.copy` and `ctx.pickPath`.** `ctx.copy(text)` copies to the clipboard (with a fallback that gives Steam its focus back) and answers whether it worked; `ctx.pickPath({...})` opens a file or folder picker window and answers the real path, or `null`. Options: files or a folder, endings (`ext`), where it opens, the choose button's label, hidden entries. Needs `min_core` 0.3.0. Demo has a "Files" section
 
+### Fixes
+
+- **A module's `ctx` follows the same rules everywhere once it's retired.** `steam_call` and `notify` raise `Unavailable` after the module is unloaded, like everything new; `game_data(appid)` refuses a bad appid with `InvalidArgument` (it was a bare `ValueError`, and accepted `0`)
+- **What the user reads can't be bent.** Control characters and bidi overrides in a task's label, text or question become spaces, so a question can't break into lines or pass for another; URLs with control characters are refused by `ctx.http` too (one check for `ctx.http` and `ctx.steam.open_url`); `ctx.steam.add_to` refuses an `exe` or `start_dir` with control characters (they could add lines to the fallback's `.desktop`)
+
 ### Internal
 
 - The game context finds Steam's libraries with `paths.py` (`libraryfolders.vdf` read with the text VDF reader instead of a regex), so games in a library on an SD card or USB drive under `/run/media` have their name too
@@ -27,6 +32,7 @@ Pre-releases: rc1 (2026-10-25).
 - The updater, the Market and `tools/gen_market.py` download through `http.py`: a redirect that leaves https is refused before it's followed (it was only checked after), a failed download leaves no partial file, and `gen_market`'s GitHub token is no longer sent on a redirect to another host
 - `steam.notify_later` shows a notification from a thread of its own, never fatal: shared by task toasts, the download question and `ctx.steam`
 - `core.browse_path` lists one folder for `ctx.pickPath`: real paths, folders first, game names next to numbered `compatdata` / `shadercache` folders, at most 1000 entries
+- One reader of `shortcuts.vdf` and one appmanifest lookup (`paths.py`) for the game context and `ctx.steam`; game names come from the text VDF reader instead of a regex
 
 ---
 
