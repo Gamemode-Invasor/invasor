@@ -91,6 +91,17 @@ function callButton(ctx: ModuleCtx, label: string, run: () => Promise<unknown>) 
 }
 
 /**
+ * A button for a ctx.steam feature: when this Steam can't do it (steam_supports), the plan B
+ * is said instead of calling it. Anything that changes the user's Steam waits for a press.
+ */
+function steamButton(ctx: ModuleCtx, label: string, feature: string, planB: string, run: () => Promise<unknown>) {
+  return callButton(ctx, label, async () => {
+    const supports = (await ctx.call("steam_supports")) as Record<string, boolean>;
+    return supports[feature] ? run() : `Not available (plan B): ${planB}`;
+  });
+}
+
+/**
  * A control of the module's own (section 5, "Button roles"): one navigation stop
  * (data-nav) with its hint (data-hint), driven by invasor:button. ←→ change, Y resets.
  * Drawn with the user's accent colour (--accent, --accent-rgb, --accent-fg).
@@ -404,6 +415,27 @@ export default defineModule({
               ]);
               return kind === null ? "Cancelled" : ctx.call("fail", { kind });
             }),
+          ]),
+          // ctx.steam: changes to the user's Steam, only on a Demo shortcut of its own (never a real game).
+          ui.section("Steam (ctx.steam)", [
+            callButton(ctx, "What this Steam supports", async () => JSON.stringify(await ctx.call("steam_supports"))),
+            callButton(ctx, "Steam language", async () => JSON.stringify(await ctx.call("steam_language"))),
+            steamButton(ctx, "Add the Demo shortcut", "add_to", "add it in Steam: Games > Add a Non-Steam Game",
+              async () => JSON.stringify(await ctx.call("steam_shortcut_add"))),
+            steamButton(ctx, "Its launch options", "launch_options", "see them in the shortcut's Properties",
+              async () => JSON.stringify(await ctx.call("steam_shortcut_options"))),
+            steamButton(ctx, "Set them to DEMO=2", "set_launch_options", "type DEMO=2 %command% in its Properties",
+              async () => JSON.stringify(await ctx.call("steam_shortcut_options", { line: "DEMO=2 %command%" }))),
+            steamButton(ctx, "Remove the Demo shortcut", "remove_shortcut", "remove it in Steam: Manage > Remove non-Steam game",
+              async () => {
+                if (!(await ui.confirm("Remove the Demo shortcut from Steam?", { ok: "Remove" }))) return "Cancelled";
+                return JSON.stringify(await ctx.call("steam_shortcut_remove"));
+              }),
+            steamButton(ctx, "Open Invasor's page", "open_url", "visit github.com/Gamemode-Invasor/invasor",
+              async () => {
+                await ctx.call("open_url");
+                return "Opened";
+              }),
           ]),
           // module.json "forms": the backend validates with ctx.forms and stores it in a TOML file.
           ui.section(

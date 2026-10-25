@@ -9,6 +9,9 @@
 - archives: ctx.archive.extract and swap_dir in unpack_sample (assets/sample.zip -> its data folder);
 - downloads: ctx.http.download in download_sample, with a checksum or asking the user in the Tasks panel;
 - Steam: notify (with an icon, a timeout and a sound) / notify_async, steam_call / steam_call_async, always with a plan B;
+- Steam changes: ctx.steam.add_to / launch_options / set_launch_options / remove_shortcut on a
+  Demo shortcut of its own (never a real game), open_url, supports() for the plan B, and
+  ctx.steam_language();
 - clean errors: InvalidArgument (400) and Unavailable (503);
 - plain and `async def` methods, a background thread stopped in teardown();
 - ctx.events: counts the Steam starts it has seen and notes the last game started, stopped or selected;
@@ -52,8 +55,12 @@ def upgrade(context, previous_version):
 def uninstall(context, purge):
     """The user is uninstalling Demo (after teardown, before its files go): undo what
     it left outside its folder. With purge the user also asked to delete its data."""
+    if context.data.load().get("shortcut"):
+        # Not removed here: Steam may be gone by now. The user can remove it in Steam.
+        context.log.info("the Demo shortcut stays in Steam")
     if purge:
         shutil.rmtree(profile_path(context).parent, ignore_errors=True)
+        (context.data.path.parent / SHORTCUT_SCRIPT).unlink(missing_ok=True)
     context.log.info("uninstalled%s", " with its data" if purge else "")
 
 
@@ -221,6 +228,58 @@ async def steam_info_async():
         return {"available": False, "reason": str(e)}
 
 
+SHORTCUT_SCRIPT = "demo-shortcut.sh"
+STEAM_FEATURES = ("add_to", "open_url", "remove_shortcut", "launch_options", "set_launch_options")
+
+
+def steam_supports():
+    """What ctx.steam can do with this Steam: the UI shows a plan B for what it can't."""
+    return {name: ctx.steam.supports(name) for name in STEAM_FEATURES}
+
+
+def steam_shortcut_add():
+    """Add a Demo shortcut (a tiny script in Demo's data folder) to Steam. Only on a button press:
+    anything that changes the user's Steam waits for the user."""
+    script = ctx.data.path.parent / SHORTCUT_SCRIPT
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_text('#!/bin/sh\necho "Invasor Demo"\n')
+    script.chmod(0o755)
+    res = ctx.steam.add_to("Invasor Demo", str(script), launch_options="DEMO=1 %command%")
+    ctx.data.update(shortcut=res["appid"])
+    return res
+
+
+def _shortcut():
+    appid = ctx.data.load().get("shortcut")
+    if not appid:
+        raise ctx.InvalidArgument("Demo has no shortcut in Steam: add it first")
+    return appid
+
+
+def steam_shortcut_options(line=None):
+    """The launch options of Demo's shortcut; with `line`, set them first."""
+    appid = _shortcut()
+    res = {"appid": appid}
+    if line is not None:
+        res.update(ctx.steam.set_launch_options(appid, line))
+    return {**res, "options": ctx.steam.launch_options(appid)}
+
+
+def steam_shortcut_remove():
+    res = ctx.steam.remove_shortcut(_shortcut())
+    ctx.data.transform(lambda d: {k: v for k, v in d.items() if k != "shortcut"})
+    return res
+
+
+def open_url():
+    ctx.steam.open_url("https://github.com/Gamemode-Invasor/invasor")
+    return {"ok": True}
+
+
+def steam_language():
+    return {"code": ctx.steam_language(), "raw": ctx.steam_language(raw=True)}
+
+
 def fail(kind="invalid"):
     if kind == "invalid":
         raise ctx.InvalidArgument("Demo refused this on purpose (InvalidArgument: 400)")
@@ -285,6 +344,12 @@ METHODS = {
     "steam_info": steam_info,
     "steam_info_async": steam_info_async,
     "fail": fail,
+    "steam_supports": steam_supports,
+    "steam_shortcut_add": steam_shortcut_add,
+    "steam_shortcut_options": steam_shortcut_options,
+    "steam_shortcut_remove": steam_shortcut_remove,
+    "open_url": open_url,
+    "steam_language": steam_language,
     "visit": visit,
     "stats": stats,
     "slow_task": slow_task,

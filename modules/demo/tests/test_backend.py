@@ -66,6 +66,10 @@ class FakeCtx:
         self.events = FakeEvents()
         self.registry = TaskRegistry()
         self.http = FakeHttp()
+        self.steam = FakeSteam()
+
+    def steam_language(self, raw=False):
+        return "spanish" if raw else "es"
 
     def game_data(self, appid):
         return JsonStore(self._folder / "games" / f"{appid}.json")
@@ -90,6 +94,40 @@ class FakeHttp:
         self.asked.append((url, Path(dest).name, checksum))
         Path(dest).write_bytes(self.BODY)
         return {"path": str(dest), "size": len(self.BODY), "sha256": hashlib.sha256(self.BODY).hexdigest(), "sha512": ""}
+
+
+class FakeSteam:
+    """ctx.steam without Steam: one list of shortcuts, and the calls it got."""
+
+    def __init__(self):
+        self.shortcuts = {}  # appid -> {"name", "exe", "options"}
+        self.calls = []
+        self.missing = set()
+
+    def supports(self, name):
+        return name not in self.missing
+
+    def add_to(self, name, exe, *, start_dir=None, launch_options=None):
+        self.calls.append(("add_to", name, exe, launch_options))
+        for appid, s in self.shortcuts.items():
+            if s["exe"] == exe:
+                return {"appid": appid, "existed": True}
+        self.shortcuts[3000000001] = {"name": name, "exe": exe, "options": launch_options or ""}
+        return {"appid": 3000000001, "existed": False}
+
+    def launch_options(self, appid):
+        return self.shortcuts[appid]["options"]
+
+    def set_launch_options(self, appid, line):
+        self.shortcuts[appid]["options"] = line
+        return {"applied": True, "verified": True}
+
+    def remove_shortcut(self, appid):
+        del self.shortcuts[appid]
+        return {"removed": True}
+
+    def open_url(self, url):
+        self.calls.append(("open_url", url))
 
 
 class FakeEvents:
@@ -246,6 +284,40 @@ class Backend(unittest.TestCase):
             (self.b.SAMPLE_URL, "LICENSE.txt", ("sha256", self.b.SAMPLE_SHA256)),
             (self.b.SAMPLE_URL, "LICENSE.txt", None),
         ])
+
+    def test_the_demo_shortcut_is_added_read_set_and_removed(self):
+        with self.assertRaises(schema.InvalidArgument):
+            self.b.steam_shortcut_options()  # none yet
+        added = self.b.steam_shortcut_add()
+        script = self.folder / "demo-shortcut.sh"
+        self.assertEqual(added, {"appid": 3000000001, "existed": False})
+        self.assertEqual(self.ctx.steam.calls, [("add_to", "Invasor Demo", str(script), "DEMO=1 %command%")])
+        self.assertTrue(script.read_text().startswith("#!/bin/sh"))
+        self.assertEqual(script.stat().st_mode & 0o777, 0o755)
+        self.assertTrue(self.b.steam_shortcut_add()["existed"])
+        self.assertEqual(self.b.steam_shortcut_options(), {"appid": 3000000001, "options": "DEMO=1 %command%"})
+        self.assertEqual(self.b.steam_shortcut_options("DEMO=2 %command%"),
+                         {"appid": 3000000001, "applied": True, "verified": True, "options": "DEMO=2 %command%"})
+        self.assertEqual(self.b.steam_shortcut_remove(), {"removed": True})
+        self.assertEqual(self.ctx.steam.shortcuts, {})
+        with self.assertRaises(schema.InvalidArgument):
+            self.b.steam_shortcut_remove()
+
+    def test_uninstall_leaves_the_shortcut_and_removes_the_script_only_with_purge(self):
+        self.b.steam_shortcut_add()
+        self.b.uninstall(self.ctx, False)
+        self.assertTrue((self.folder / "demo-shortcut.sh").exists())
+        self.b.uninstall(self.ctx, True)
+        self.assertFalse((self.folder / "demo-shortcut.sh").exists())
+        self.assertIn(3000000001, self.ctx.steam.shortcuts)  # never removed in uninstall
+
+    def test_open_url_language_and_supports(self):
+        self.assertEqual(self.b.open_url(), {"ok": True})
+        self.assertEqual(self.ctx.steam.calls, [("open_url", "https://github.com/Gamemode-Invasor/invasor")])
+        self.assertEqual(self.b.steam_language(), {"code": "es", "raw": "spanish"})
+        self.ctx.steam.missing = {"remove_shortcut"}
+        self.assertEqual(self.b.steam_supports(), {"add_to": True, "open_url": True, "remove_shortcut": False,
+                                                   "launch_options": True, "set_launch_options": True})
 
     def test_profile_path_is_named_after_the_module_id(self):
         b = load_backend()
