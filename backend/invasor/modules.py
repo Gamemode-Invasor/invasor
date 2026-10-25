@@ -255,14 +255,12 @@ class ModuleContext:
         """SteamClient.<path>(*args), evaluated in Steam's SharedJSContext. For plain
         (threaded) methods. Raises schema.Unavailable when Steam or that function
         isn't there: always have a plan B. Example: steam_call("Apps.SetShortcutName", appid, name)."""
-        if self._steam is None:
-            raise Unavailable("SteamClient bridge not configured")
+        self._bridge()
         return self._steam.call_sync(path, *args, timeout=timeout)
 
     async def steam_call_async(self, path, *args, timeout=15):
         """The same as steam_call(), for `async def` methods."""
-        if self._steam is None:
-            raise Unavailable("SteamClient bridge not configured")
+        self._bridge()
         return await self._steam.call(path, args, timeout)
 
     def notify(self, title, body="", icon="", timeout=15, sound=""):
@@ -270,15 +268,20 @@ class ModuleContext:
         icon: an https URL or data:image/…;base64; sound: "trophy", "message", "toast", "chat",
         "mention", "friend", "online", "ingame" or "none"; omitted: Steam decides). For plain (threaded) methods. Raises
         InvalidArgument for bad input and Unavailable when Steam can't show it: have a plan B."""
-        if self._steam is None:
-            raise Unavailable("SteamClient bridge not configured")
+        self._bridge()
         return self._steam.notify_sync(title, body, icon, timeout=timeout, sound=sound)
 
     async def notify_async(self, title, body="", icon="", timeout=15, sound=""):
         """The same as notify(), for `async def` methods."""
+        self._bridge()
+        return await self._steam.notify(title, body, icon, timeout, sound)
+
+    def _bridge(self):
+        """Unavailable when there's no Steam bridge, or once this module is unloaded."""
+        if self._dead:
+            raise Unavailable("this module was unloaded: it can't call Steam anymore")
         if self._steam is None:
             raise Unavailable("SteamClient bridge not configured")
-        return await self._steam.notify(title, body, icon, timeout, sound)
 
     def steam_language(self, raw=False):
         """Steam's language as a short code ("en", "es"...; "en" when unknown), or raw=True as
@@ -317,9 +320,7 @@ class ModuleContext:
     def game_data(self, appid):
         """Free-form storage for this module and one game."""
         # appid ends up in a file path: only plain numbers, never "../something".
-        appid = str(appid)
-        if not (appid.isascii() and appid.isdigit()):
-            raise ValueError(f"invalid appid {appid!r}")
+        appid = steam_paths.appid_str(appid)
         return JsonStore(DATA_DIR / self.id / "games" / f"{appid}.json", self._is_alive)
 
 

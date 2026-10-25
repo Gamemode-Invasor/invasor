@@ -6,7 +6,7 @@ import unittest
 
 from invasor.context import GameContext
 from invasor.modules import ModuleManager
-from invasor.schema import Unavailable
+from invasor.schema import InvalidArgument, Unavailable
 
 from .helpers import patch, temp_dir
 
@@ -177,8 +177,8 @@ class Modules(unittest.TestCase):
         store = self.manager.registry["good"]["store"]
         store("4000000000").save({"x": 1})
         self.assertEqual(store(4000000000).load(), {"x": 1})
-        for bad in ("../x", "1/2", "", "abc", "²", "٣"):
-            with self.subTest(appid=bad), self.assertRaises(ValueError):
+        for bad in ("../x", "1/2", "", "abc", "²", "٣", "12a", True, 0, 2**32, None):
+            with self.subTest(appid=bad), self.assertRaises(InvalidArgument):
                 store(bad)
 
     def test_ui_scripts_and_listing(self):
@@ -414,6 +414,20 @@ class Modules(unittest.TestCase):
     def context(self, bridge):
         from invasor.modules import ModuleContext
         return ModuleContext("good", self.mods / "good", GameContext(), None, steam=bridge, tasks=self.manager.tasks)
+
+    def test_a_retired_ctx_cant_call_steam(self):
+        class Bridge:
+            def call_sync(self, path, *args, timeout=15):
+                raise AssertionError("reached Steam")
+
+            def notify_sync(self, *args, **kw):
+                raise AssertionError("reached Steam")
+
+        c = self.context(Bridge())
+        c._dead = True
+        for call in (lambda: c.steam_call("Apps.X"), lambda: c.notify("Hi")):
+            with self.assertRaises(Unavailable):
+                call()
 
     def task_toasts(self, call):
         """The (title, body, sound) notifications that `call(ctx)` makes, with a stand-in for Steam."""
