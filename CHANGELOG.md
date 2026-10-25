@@ -11,10 +11,12 @@ their dates are listed for reference. The notes of the release being prepared li
 
 - **Steam's folders for modules: `ctx.paths`.** `steam_root()`, `libraries()` (every `steamapps` folder, from `libraryfolders.vdf` plus SD cards and USB drives under `/run/media`), `userdata()` (the account in use: `loginusers.vdf`'s `MostRecent` user, else the newest login, else the only account; `all=True` lists every account), `grid_dir()`, and a game's `compatdata(appid)` / `shadercache(appid)` in the library that holds it. Read only; `Unavailable` when Steam's folder or the account can't be found. Needs `min_core` 0.3.0. Demo has a "Steam folders" button
 - **Steam's VDF files for modules: `ctx.vdf`.** `loads_text` for text VDF (`libraryfolders.vdf`, `appmanifest_<appid>.acf`, `loginusers.vdf`…), `loads_binary` (`shortcuts.vdf`) and `get(node, *path, default=None)`, which ignores the case of the keys. Read only. `VDFError` is now an `InvalidArgument`. Needs `min_core` 0.3.0
+- **Unpacking archives for modules: `ctx.archive`.** `extract(archive, dest, …)` unpacks zip, tar (plain, `.gz`, `.xz`, `.bz2`), 7z and `tar.zst` (these two through `bsdtar`, which SteamOS ships) with the same rules for all: into a temporary folder next to `dest` and renamed into place, nothing outside it, links only with `symlinks="inside"`, no devices or hard links, modes normalised, limits on files and bytes really written. `swap_dir(new, target)` replaces a folder in one rename. Needs `min_core` 0.3.0. Demo has an "Unpack sample" button
 
 ### Internal
 
 - The game context finds Steam's libraries with `paths.py` (`libraryfolders.vdf` read with the text VDF reader instead of a regex), so games in a library on an SD card or USB drive under `/run/media` have their name too
+- The updater unpacks its package with `archive.py`, the same rules for every format; the module zip installer is unchanged
 
 ---
 
