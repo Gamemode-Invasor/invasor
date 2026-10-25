@@ -35,17 +35,17 @@ test("a snapshot from the wire is checked", () => {
 
 test("the summary counts what runs and the failures not seen yet", () => {
   const s = snap([task({ id: 9 })], [task({ id: 3, state: "failed" }), task({ id: 2, state: "done" }), task({ id: 1, state: "failed" })]);
-  assert.deepEqual(summarize(s, new Set()), { active: 1, unseenFailed: 2 });
-  assert.deepEqual(summarize(s, new Set([1])), { active: 1, unseenFailed: 1 });
-  assert.deepEqual(summarize(s, new Set([1, 3])), { active: 1, unseenFailed: 0 });
-  assert.deepEqual(summarize(snap(), new Set()), { active: 0, unseenFailed: 0 });
+  assert.deepEqual(summarize(s, new Set()), { active: 1, unseenFailed: 2, waiting: 0 });
+  assert.deepEqual(summarize(s, new Set([1])), { active: 1, unseenFailed: 1, waiting: 0 });
+  assert.deepEqual(summarize(s, new Set([1, 3])), { active: 1, unseenFailed: 0, waiting: 0 });
+  assert.deepEqual(summarize(snap(), new Set()), { active: 0, unseenFailed: 0, waiting: 0 });
 });
 
 test("the marker: a failure not seen outranks what is running", () => {
-  assert.equal(marker({ active: 0, unseenFailed: 0 }), "");
-  assert.equal(marker({ active: 2, unseenFailed: 0 }), "running");
-  assert.equal(marker({ active: 2, unseenFailed: 1 }), "failed");
-  assert.equal(marker({ active: 0, unseenFailed: 1 }), "failed");
+  assert.equal(marker({ active: 0, unseenFailed: 0, waiting: 0 }), "");
+  assert.equal(marker({ active: 2, unseenFailed: 0, waiting: 0 }), "running");
+  assert.equal(marker({ active: 2, unseenFailed: 1, waiting: 0 }), "failed");
+  assert.equal(marker({ active: 0, unseenFailed: 1, waiting: 0 }), "failed");
 });
 
 test("nothing running or recent says so", () => {
@@ -182,4 +182,107 @@ test("a click with no handler does nothing", () => {
   const c = content();
   draw(c, snap([], [task({ id: 2, state: "done", finished: 150 })]));
   c.querySelector<HTMLButtonElement>(".tasks-clear")!.click();
+});
+
+// --- tasks that wait for an answer ---
+
+/** The text the user can see: hidden elements (and what's inside them) don't count. */
+const visibleText = (e: Element): string =>
+  (e as HTMLElement).hidden ? "" : [...e.childNodes].map((n) => (n.nodeType === 3 ? n.textContent ?? "" : n.nodeType === 1 ? visibleText(n as Element) : "")).join("");
+const visible = (e: Element | null): boolean => {
+  for (let x = e as HTMLElement | null; x; x = x.parentElement) if (x.hidden) return false;
+  return !!e;
+};
+const button = (row: HTMLElement, label: string) =>
+  [...row.querySelectorAll<HTMLButtonElement>("button")].find((b) => b.textContent === label) ?? null;
+
+test("a snapshot with a waiting task and its question is accepted", () => {
+  const waiting = task({ state: "waiting", question: "Download x from y?" });
+  assert.deepEqual(parseSnapshot({ active: [waiting], recent: [] }), { active: [waiting], recent: [] });
+});
+
+test("the summary counts the tasks that wait for an answer", () => {
+  const s = snap([task({ id: 1, state: "waiting", question: "?" }), task({ id: 2 })], [task({ id: 3, state: "failed" })]);
+  const summary = summarize(s, new Set());
+  assert.equal(summary.waiting, 1);
+  assert.equal(summary.unseenFailed, 1);
+  assert.equal(summary.active, 2); // a waiting task is still active
+});
+
+test("the marker: an answer needed outranks a failure and what runs", () => {
+  assert.equal(marker({ active: 1, unseenFailed: 1, waiting: 1 }), "waiting");
+  assert.equal(marker({ active: 1, unseenFailed: 0, waiting: 1 }), "waiting");
+  assert.equal(marker({ active: 1, unseenFailed: 1, waiting: 0 }), "failed");
+  assert.equal(marker({ active: 1, unseenFailed: 0, waiting: 0 }), "running");
+  assert.equal(marker({ active: 0, unseenFailed: 0, waiting: 0 }), "");
+});
+
+test("a waiting row shows its question as text and Accept / Deny", () => {
+  const c = content();
+  draw(c, snap([task({ state: "waiting", question: "<b>x</b> from evil.example?" })]));
+  const [row] = rows(c);
+  assert.equal(c.querySelector("b"), null);
+  assert.ok(visibleText(row).includes("<b>x</b> from evil.example?"));
+  assert.equal(visible(button(row, "Accept")), true);
+  assert.equal(visible(button(row, "Deny")), true);
+});
+
+test("a running row has no visible question or answer buttons", () => {
+  const c = content();
+  draw(c, snap([task()]));
+  const [row] = rows(c);
+  assert.equal(visible(button(row, "Accept")), false);
+  assert.equal(visible(button(row, "Deny")), false);
+});
+
+test("Accept and Deny call onAnswer read at click time", () => {
+  const c = content();
+  const heard: [string, number, boolean][] = [];
+  const render = (tag: string, s: TasksSnapshot) =>
+    renderTasks(c, s, { ...options, onAnswer: (id: number, accept: boolean) => void heard.push([tag, id, accept]) });
+  render("first", snap([task({ id: 7, state: "waiting", question: "Go?" })]));
+  render("second", snap([task({ id: 7, state: "waiting", question: "Go?" })]));
+  const [row] = rows(c);
+  button(row, "Accept")!.click();
+  render("second", snap([task({ id: 7, state: "waiting", question: "Go?" })])); // a new snapshot enables them again
+  button(row, "Deny")!.click();
+  assert.deepEqual(heard, [["second", 7, true], ["second", 7, false]]);
+});
+
+test("after a click both buttons wait for the next snapshot", () => {
+  const c = content();
+  const s = snap([task({ id: 7, state: "waiting", question: "Go?" })]);
+  renderTasks(c, s, { ...options, onAnswer: () => {} });
+  const [row] = rows(c);
+  button(row, "Accept")!.click();
+  assert.equal(button(row, "Accept")!.disabled, true);
+  assert.equal(button(row, "Deny")!.disabled, true);
+  renderTasks(c, s, { ...options, onAnswer: () => {} });
+  assert.equal(button(row, "Accept")!.disabled, false);
+  assert.equal(button(row, "Deny")!.disabled, false);
+});
+
+test("the answer buttons are the same elements across renders, and hide once it runs again", () => {
+  const c = content();
+  draw(c, snap([task({ id: 4 })]));
+  const [row] = rows(c);
+  const accept = button(row, "Accept");
+  const deny = button(row, "Deny");
+  assert.ok(accept && deny, "created once with the row, hidden while not waiting");
+  draw(c, snap([task({ id: 4, state: "waiting", question: "Go?" })]));
+  assert.equal(rows(c)[0], row);
+  assert.equal(button(row, "Accept"), accept);
+  assert.equal(button(row, "Deny"), deny);
+  assert.equal(visible(accept), true);
+  draw(c, snap([task({ id: 4, state: "running", question: null, fraction: 0.6 })]));
+  assert.equal(button(row, "Accept"), accept);
+  assert.equal(visible(accept), false);
+  assert.equal(visible(deny), false);
+  assert.equal(visibleText(row).includes("Go?"), false);
+});
+
+test("an answer button with no handler does nothing", () => {
+  const c = content();
+  draw(c, snap([task({ state: "waiting", question: "Go?" })]));
+  button(rows(c)[0], "Accept")!.click();
 });

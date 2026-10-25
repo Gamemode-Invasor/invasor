@@ -153,6 +153,23 @@
   font-size: 12px;
   color: #8b94a7;
 }
+/* A waiting task's question and its Accept / Deny. */
+.task-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.task-question {
+  flex: 1 1 100%;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.task-row[data-state="waiting"] .task-fill {
+  background: #8b94a7;
+}
+.task-ask[hidden],
 .task-text[hidden],
 .task-when[hidden],
 .tasks-group[hidden],
@@ -188,6 +205,12 @@
 .tasks-btn[data-tasks="failed"]::after {
   background: #f06a6a;
 }
+/* A task asks the user something: the accent colour, pulsing, until it's answered. */
+.handle[data-tasks="waiting"]::after,
+.tasks-btn[data-tasks="waiting"]::after {
+  background: var(--accent);
+  animation: tasks-pulse 1s ease-in-out infinite;
+}
 @keyframes tasks-pulse {
   50% {
     transform: scale(1.35);
@@ -197,6 +220,8 @@
 @media (prefers-reduced-motion: reduce) {
   .handle[data-tasks="running"]::after,
   .tasks-btn[data-tasks="running"]::after,
+  .handle[data-tasks="waiting"]::after,
+  .tasks-btn[data-tasks="waiting"]::after,
   .task-bar[data-indeterminate] .task-fill {
     animation: none;
   }

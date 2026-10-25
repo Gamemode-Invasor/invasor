@@ -179,6 +179,13 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
         if (snapshot && !destroyed) applyTasks(snapshot);
       }).catch(() => toast("Couldn't clear the list", "error"));
     },
+    onAnswer: (id, accept) => {
+      pushes++;
+      api.call("core", "task_answer", { id, accept }).then((v) => {
+        const snapshot = parseSnapshot(v);
+        if (snapshot && !destroyed) applyTasks(snapshot);
+      }).catch(() => toast("Couldn't send the answer", "error"));
+    },
   });
   const tasksBtn = $(".tasks-btn");
   tasksBtn.addEventListener("click", () => tasksPanel.toggle());
