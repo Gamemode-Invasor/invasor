@@ -356,7 +356,8 @@ def _update_methods(manager, updater):
 
     def tasks():
         """What is running in the background and what ended lately: {active, recent}, each task
-        {id, module ("core" or a module id), label, state, fraction (0..1 or None), text, started,
+        {id, module ("core" or a module id), label, state (running, waiting, done or failed), fraction
+        (0..1 or None), text, question (what a waiting task asks the user, else None), started,
         updated, finished}. Cheap: the panel may ask for it often."""
         return manager.tasks.snapshot()
 
@@ -365,9 +366,16 @@ def _update_methods(manager, updater):
         manager.tasks.clear_recent()
         return manager.tasks.snapshot()
 
+    def task_answer(id, accept):
+        """The user's Accept (true) or Deny (false) to a waiting task's question. {answered: whether a
+        task with that id was waiting, and what core.tasks() would answer}."""
+        answered = manager.tasks.answer(id, accept)
+        return {"answered": answered, **manager.tasks.snapshot()}
+
     return {
         "tasks": tasks,
         "tasks_clear": tasks_clear,
+        "task_answer": task_answer,
         "update_status": update_status,
         "update_check": update_check,
         "update_apply": update_apply,
