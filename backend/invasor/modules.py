@@ -21,6 +21,7 @@ import sys
 import threading
 
 from . import __version__, checkmod, config, schema, steam, tomlio, vdf
+from . import archive
 from . import paths as steam_paths
 from .schema import Unavailable
 from .storage import JsonStore
@@ -200,6 +201,8 @@ class ModuleContext:
     paths = steam_paths
     # Steam's VDF files, read only (see vdf.py).
     vdf = vdf
+    # Unpack zip/tar/7z archives safely and swap folders in place (see archive.py).
+    archive = archive
 
     def __init__(self, module_id, path, game, settings, steam=None, forms=None, tasks=None):
         self.id = module_id
