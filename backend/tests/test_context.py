@@ -1,6 +1,6 @@
 import unittest
 
-from invasor import context
+from invasor import context, paths
 from invasor.context import GameContext
 
 from .helpers import patch, temp_dir
@@ -156,13 +156,13 @@ class SteamRoot(unittest.TestCase):
         (home / ".steam/steam/steamapps").mkdir(parents=True)
         (home / ".steam/steam/steamapps/appmanifest_620.acf").write_text('"AppState"\n{\n\t"name"\t\t"Portal 2"\n}\n')
         patch(self, "invasor.cef_flag.HOME", home)
-        self.assertEqual(context._steam_root(), home / ".steam/steam")
+        self.assertEqual(paths.root(), home / ".steam/steam")
         self.assertEqual(context._app_name("620"), "Portal 2")
 
     def test_the_override_wins(self):
         root = temp_dir(self)
         patch(self, "invasor.paths.STEAM_ROOT", root)
-        self.assertEqual(context._steam_root(), root)
+        self.assertEqual(paths.root(), root)
 
 
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from invasor import cef, context  # noqa: E402
+from invasor import cef, paths  # noqa: E402
 from invasor.config import CONFIG_DIR, CONFIG_FILE  # noqa: E402
 
 BTN = {"A": 1, "B": 2, "X": 3, "Y": 4, "L1": 5, "R1": 6, "L2": 7, "R2": 8, "UP": 9, "DOWN": 10, "LEFT": 11, "RIGHT": 12, "SELECT": 13, "START": 14}
@@ -882,7 +882,7 @@ class Smoke:
         self.check("Settings: B goes back to the Invasor panel on the tab it was on", st["open"] and st["tab"] == before_cover["tab"], (st, before_cover))
 
         print(" Highlighted game")
-        installed = sorted(p.name[12:-4] for lib in context._library_dirs() for p in (lib / "steamapps").glob("appmanifest_*.acf"))
+        installed = sorted(p.name[12:-4] for lib in paths.libraries() for p in lib.glob("appmanifest_*.acf"))
         if not installed:
             self.check("highlighted: needs an installed Steam game", False, "none found")
         else:

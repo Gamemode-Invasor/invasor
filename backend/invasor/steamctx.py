@@ -82,9 +82,6 @@ LANGUAGES = {
 SESSION_VARS = ("DISPLAY", "WAYLAND_DISPLAY", "XAUTHORITY", "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE",
                 "XDG_RUNTIME_DIR", "XDG_DATA_DIRS", "DBUS_SESSION_BUS_ADDRESS")
 
-_unreadable = set()  # shortcuts.vdf files already reported
-
-
 def language(raw=False):
     """Steam's language: a short code ("en", "es"...; "en" when unknown), or raw=True, as Steam
     names it ("" when unknown)."""
@@ -147,37 +144,6 @@ def _open_with_desktop(link):
             log.debug("opened with %s", argv[0])
             return
     raise Unavailable("neither Steam nor gio/xdg-open could open it")
-
-
-def _text(value):
-    return value if isinstance(value, str) else ""
-
-
-def _shortcuts():
-    """{appid: {"name", "exe", "options", "start_dir"}} of every account's non-Steam shortcuts."""
-    out = {}
-    for account in paths.userdata(all=True):
-        f = account / "config" / "shortcuts.vdf"
-        try:
-            data = vdf.loads_binary(f.read_bytes())
-        except FileNotFoundError:
-            continue
-        except (OSError, vdf.VDFError) as e:
-            if str(f) not in _unreadable:
-                _unreadable.add(str(f))
-                log.debug("can't read %s: %s", f, e)
-            continue
-        entries = vdf.get(data, "shortcuts", default={})
-        for entry in (entries.values() if isinstance(entries, dict) else ()):
-            appid = vdf.get(entry, "appid")
-            if isinstance(appid, int) and not isinstance(appid, bool):
-                out[str(appid & 0xFFFFFFFF)] = {
-                    "name": _text(vdf.get(entry, "AppName")),
-                    "exe": _text(vdf.get(entry, "Exe")).strip().strip('"'),
-                    "options": _text(vdf.get(entry, "LaunchOptions")),
-                    "start_dir": _text(vdf.get(entry, "StartDir")).strip().strip('"'),
-                }
-    return out
 
 
 def _wait_for(check, seconds):
@@ -262,13 +228,13 @@ class ModuleSteam:
             raise InvalidArgument("start_dir must be the absolute path of a folder that exists, with no control characters")
         if launch_options is not None:
             _line(launch_options)
-        same = [a for a, s in _shortcuts().items() if s["exe"] == exe]
+        same = [a for a, s in paths.shortcuts().items() if s["exe"] == exe]
         if same:
             return {"appid": int(same[0]), "existed": True}
         appid = self._add_principal(name, exe, start_dir, launch_options)
         if appid is None:
             # AddShortcut may have run but not answered in time: never add it twice.
-            appid = next((a for a, s in _shortcuts().items() if s["exe"] == exe), None) \
+            appid = next((a for a, s in paths.shortcuts().items() if s["exe"] == exe), None) \
                 or self._add_fallback(name, exe, start_dir)
         self._own(appid, exe)
         log.info("%s added %s to Steam as %r (appid %s)", self._ctx.id, exe, name, appid)
@@ -296,14 +262,14 @@ class ModuleSteam:
                 call("Apps.SetShortcutLaunchOptions", appid, options)
             self._finish_principal(str(appid), name, exe, options)
         except BaseException:
-            if str(appid) not in _shortcuts():  # nothing was added after all: nothing to own
+            if str(appid) not in paths.shortcuts():  # nothing was added after all: nothing to own
                 self._disown(str(appid))
             raise
         return str(appid)
 
     def _finish_principal(self, appid, name, exe, options):
         def mine():
-            s = _shortcuts().get(appid)
+            s = paths.shortcuts().get(appid)
             return s if s and s["exe"] == exe else None
         def done():
             s = mine()
@@ -337,7 +303,7 @@ class ModuleSteam:
                 self._ctx._steam.call_sync("URL.ExecuteSteamURL", link)
             except Unavailable:
                 _open_with_desktop(link)
-            found = _wait_for(lambda: next((a for a, s in _shortcuts().items() if s["exe"] == exe), None), 15)
+            found = _wait_for(lambda: next((a for a, s in paths.shortcuts().items() if s["exe"] == exe), None), 15)
         finally:
             shutil.rmtree(folder, ignore_errors=True)
             if made_marker:
@@ -353,14 +319,14 @@ class ModuleSteam:
         """Remove a non-Steam shortcut this module added: {"removed": True}."""
         self._check_call("remove_shortcut")
         appid = paths.appid_str(appid)
-        shortcut = _shortcuts().get(appid)
+        shortcut = paths.shortcuts().get(appid)
         if shortcut is None:
             raise InvalidArgument(f"{appid} is not a non-Steam shortcut")
         owner = _owners().load().get(appid)
         if not isinstance(owner, dict) or owner.get("module") != self._ctx.id or owner.get("exe") != shortcut["exe"]:
             raise InvalidArgument("this module didn't add that shortcut")
         self._ctx._steam.call_sync("Apps.RemoveShortcut", int(appid))
-        if _wait_for(lambda: appid not in _shortcuts(), 5) is None:
+        if _wait_for(lambda: appid not in paths.shortcuts(), 5) is None:
             raise Unavailable("Steam didn't remove it in time")
         self._disown(appid)
         log.info("%s removed the shortcut %r (appid %s) from Steam", self._ctx.id, shortcut["name"], appid)
@@ -372,7 +338,7 @@ class ModuleSteam:
         """The launch options the user has for a game or shortcut ("" when none)."""
         self._check_call("launch_options")
         appid = paths.appid_str(appid)
-        shortcut = _shortcuts().get(appid)
+        shortcut = paths.shortcuts().get(appid)
         return shortcut["options"] if shortcut else self._read_details(appid)
 
     def _read_details(self, appid):
@@ -391,12 +357,12 @@ class ModuleSteam:
         self._check_call("set_launch_options")
         appid, line = paths.appid_str(appid), _line(line)
         call = self._ctx._steam.call_sync
-        shortcut = _shortcuts().get(appid)
+        shortcut = paths.shortcuts().get(appid)
         if shortcut is not None:
             old = shortcut["options"]
             call("Apps.SetShortcutLaunchOptions", int(appid), line)
             # It never fails, even for a bogus appid: what Steam writes is the answer.
-            if _wait_for(lambda: (_shortcuts().get(appid) or {}).get("options") == line, 3) is None:
+            if _wait_for(lambda: (paths.shortcuts().get(appid) or {}).get("options") == line, 3) is None:
                 raise Unavailable("Steam didn't apply the launch options")
             verified = True
         else:

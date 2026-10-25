@@ -284,5 +284,43 @@ class AppFolders(SteamCase):
                         func(bad)
 
 
+class Manifests(SteamCase):
+    def test_found_in_the_library_that_holds_it(self):
+        other = self.library("SD")
+        self.write_libraries(("path", self.root), ("path", other))
+        (other / "steamapps" / "appmanifest_620.acf").write_text("x")
+        self.assertEqual(paths.appmanifest("620"), other / "steamapps" / "appmanifest_620.acf")
+        self.assertIsNone(paths.appmanifest(570))
+        with self.assertRaises(InvalidArgument):
+            paths.appmanifest("../620")
+
+
+class Shortcuts(SteamCase):
+    def write(self, account, data):
+        f = self.root / "userdata" / account / "config" / "shortcuts.vdf"
+        f.parent.mkdir(parents=True)
+        f.write_bytes(data)
+
+    def test_every_account_with_quotes_removed_and_unsigned_appids(self):
+        from .test_vdf import shortcut, shortcuts_file
+        self.write("111", shortcuts_file(shortcut(-294967296, "Mine", exe='"/g/My Game.sh"')))
+        self.write("222", shortcuts_file(shortcut(42, "Lower", "appname")))
+        self.account_dirs("0")  # never an account
+        found = paths.shortcuts()
+        self.assertEqual(found["4000000000"], {"name": "Mine", "exe": "/g/My Game.sh", "options": "", "start_dir": ""})
+        self.assertEqual(found["42"]["name"], "Lower")
+        self.assertEqual(len(paths.shortcut_files()), 2)
+
+    def test_an_unreadable_file_is_skipped_and_logged_once(self):
+        from .test_vdf import shortcut, shortcuts_file
+        self.write("111", b"\x09broken")
+        self.write("222", shortcuts_file(shortcut(7, "Good")))
+        patch(self, "invasor.paths._unreadable", set())
+        with self.assertLogs("invasor.paths", "WARNING") as logs:
+            self.assertEqual(list(paths.shortcuts()), ["7"])
+            paths.shortcuts()
+        self.assertEqual(len(logs.output), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

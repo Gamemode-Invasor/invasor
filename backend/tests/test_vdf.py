@@ -51,7 +51,7 @@ class ShortcutNames(unittest.TestCase):
     def test_corrupt_file_is_skipped(self):
         self.write("111", b"\x09broken")
         self.write("222", shortcuts_file(shortcut(7, "Bueno")))
-        with self.assertLogs("invasor.context", "WARNING"):
+        with self.assertLogs("invasor.paths", "WARNING"):
             self.assertEqual(context._shortcut_names(), {"7": "Bueno"})
 
 

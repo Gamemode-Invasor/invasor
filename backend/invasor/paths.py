@@ -1,11 +1,14 @@
 """Where Steam keeps things: its folder, the library folders, the current account's userdata,
 and a game's compatdata/shadercache. Read only; every path is a pathlib.Path."""
 import glob
+import logging
 import os
 from pathlib import Path
 
 from . import cef_flag, vdf
 from .schema import InvalidArgument, Unavailable
+
+log = logging.getLogger("invasor.paths")
 
 STEAM_ROOT = None  # Steam's folder if set (tests); else found as the installer and cef_flag find it
 # SD cards and USB drives, where Steam may keep a library it no longer lists.
@@ -123,9 +126,9 @@ def _game_dir(kind, appid):
     for lib in libs:
         if (lib / kind / appid).is_dir():
             return lib / kind / appid
-    for lib in libs:
-        if (lib / f"appmanifest_{appid}.acf").is_file():
-            return lib / kind / appid
+    manifest = appmanifest(appid)
+    if manifest is not None:
+        return manifest.parent / kind / appid
     return steam_root() / "steamapps" / kind / appid
 
 
@@ -137,3 +140,51 @@ def compatdata(appid):
 def shadercache(appid):
     """The shader cache folder of a game: <library>/shadercache/<appid>."""
     return _game_dir("shadercache", appid)
+
+
+def appmanifest(appid):
+    """steamapps/appmanifest_<appid>.acf of an installed Steam game, in whichever library holds it, or None."""
+    appid = appid_str(appid)
+    for lib in libraries():
+        if (lib / f"appmanifest_{appid}.acf").is_file():
+            return lib / f"appmanifest_{appid}.acf"
+    return None
+
+
+def shortcut_files():
+    """Every account's config/shortcuts.vdf that exists."""
+    return [f for f in (a / "config" / "shortcuts.vdf" for a in userdata(all=True)) if f.is_file()]
+
+
+_unreadable = set()  # shortcuts.vdf files already reported
+
+
+def _text(value):
+    return value if isinstance(value, str) else ""
+
+
+def shortcuts(files=None):
+    """{appid: {"name", "exe", "options", "start_dir"}} of the non-Steam shortcuts in `files`
+    (default: shortcut_files()). The appid is unsigned, as a string (Steam stores it as a signed
+    int32); Exe and StartDir come without their quotes. Read fresh each time: an unreadable file
+    is skipped (and logged once)."""
+    out = {}
+    for f in shortcut_files() if files is None else files:
+        try:
+            data = vdf.loads_binary(Path(f).read_bytes())
+        except (OSError, vdf.VDFError) as e:
+            if str(f) not in _unreadable:
+                _unreadable.add(str(f))
+                log.warning("can't read %s: %s", f, e)
+            continue
+        entries = vdf.get(data, "shortcuts", default={})
+        for entry in (entries.values() if isinstance(entries, dict) else ()):
+            appid = vdf.get(entry, "appid")
+            if isinstance(appid, int) and not isinstance(appid, bool):
+                out[str(appid & 0xFFFFFFFF)] = {
+                    "name": _text(vdf.get(entry, "AppName")),
+                    "exe": _text(vdf.get(entry, "Exe")).strip().strip('"'),
+                    "options": _text(vdf.get(entry, "LaunchOptions")),
+                    "start_dir": _text(vdf.get(entry, "StartDir")).strip().strip('"'),
+                }
+    return out
