@@ -22,6 +22,7 @@ import threading
 
 from . import __version__, checkmod, config, schema, steam, tomlio, vdf
 from . import archive
+from .http import ModuleHttp
 from . import paths as steam_paths
 from .schema import Unavailable
 from .storage import JsonStore
@@ -210,7 +211,7 @@ class ModuleContext:
         self.path = path
         self.game = game  # context.GameContext: .selected / .running
         self.log = logging.getLogger(f"invasor.mod.{module_id}")
-        self._dead = False  # set when the module is unloaded: its callbacks no longer start
+        self._stopped = threading.Event()  # set when the module is unloaded: see _dead
         self._terminal = False  # the context of uninstall(): nothing is left to react to Steam
         self.settings = ContextSettings(settings, self)
         # Free-form storage for whatever isn't a user setting (caches, state…).
@@ -218,7 +219,21 @@ class ModuleContext:
         self._steam = steam
         self._tasks = tasks
         self.events = Events(self)
+        # Downloads over https (see http.py).
+        self.http = ModuleHttp(self)
         self._warned_steam_start = False
+
+    @property
+    def _dead(self):
+        """The module was unloaded: its callbacks no longer start, its downloads stop."""
+        return self._stopped.is_set()
+
+    @_dead.setter
+    def _dead(self, value):
+        if value:
+            self._stopped.set()
+        else:
+            self._stopped.clear()
 
     def _is_alive(self):
         return not self._dead
