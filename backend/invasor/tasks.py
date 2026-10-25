@@ -10,6 +10,7 @@ starts a thread, so with no task open it costs nothing.
 import asyncio
 import logging
 import math
+import re
 import threading
 import time
 from collections import deque
@@ -28,16 +29,25 @@ ASK_TIMEOUT = 600  # seconds a question waits for the user before it counts as a
 MAX_ASK_TIMEOUT = 3600
 
 
+# Control characters and bidi overrides: in what the user reads (the Tasks panel, toasts) they could
+# break a line or make one text look like another. They become spaces.
+UNSAFE = re.compile("[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]")
+
+
+def _clean(value):
+    return UNSAFE.sub(" ", value)
+
+
 def _text(value, what):
     if not isinstance(value, str):
         raise InvalidArgument(f"{what} must be text")
-    return value[:MAX_TEXT]
+    return _clean(value[:MAX_TEXT])
 
 
 def _label(value):
     if not isinstance(value, str) or not value.strip():
         raise InvalidArgument("a task needs a label (some text)")
-    return value.strip()[:MAX_LABEL]
+    return _clean(value.strip()[:MAX_LABEL])
 
 
 def _fraction(value):
@@ -96,7 +106,7 @@ class Task:
             raise InvalidArgument("a question needs some text")
         if isinstance(timeout, bool) or not isinstance(timeout, Real) or not 0 < timeout <= MAX_ASK_TIMEOUT:
             raise InvalidArgument(f"timeout must be a number of seconds, more than 0 and up to {MAX_ASK_TIMEOUT}")
-        return self._registry._ask(self, question.strip()[:MAX_TEXT], timeout)
+        return self._registry._ask(self, _clean(question.strip()[:MAX_TEXT]), timeout)
 
     async def ask_async(self, question, timeout=ASK_TIMEOUT):
         """The same as ask(), for `async def` code."""

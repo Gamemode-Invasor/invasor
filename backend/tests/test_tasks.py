@@ -466,3 +466,23 @@ class AskRules(unittest.TestCase):
             return await waiting
 
         self.assertIs(asyncio.run(run()), True)
+
+
+class WhatTheUserReads(unittest.TestCase):
+    """Control characters and bidi overrides never reach the Tasks panel or a toast."""
+
+    def test_label_text_and_question_are_cleaned(self):
+        registry = TaskRegistry()
+        task = registry.start("good", "Line\nbreak‮evil")
+        task.update(None, "two\nlines⁦")
+        view = registry.snapshot()["active"][0]
+        self.assertEqual((view["label"], view["text"]), ("Line break evil", "two lines "))
+        asked = threading.Thread(target=lambda: task.ask("Download x\n‮gnp.exe?", timeout=5), daemon=True)
+        asked.start()
+        for _ in range(500):
+            if task.state == "waiting":
+                break
+            time.sleep(0.002)
+        self.assertEqual(registry.snapshot()["active"][0]["question"], "Download x  gnp.exe?")
+        registry.answer(task.id, False)
+        asked.join(2)
