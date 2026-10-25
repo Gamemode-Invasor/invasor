@@ -164,7 +164,7 @@ python3 tools/check_module.py modules/<id>
 Aquí está todo lo que Invasor toma del cliente de Steam. Cada punto está marcado `STEAM TOUCHPOINT` en el
 código. Tras una actualización de Steam, `tools/smoke.py` los comprueba todos en un minuto.
 El detalle, cómo puede fallar cada uno y una comparativa con Decky Loader (en inglés): [docs/API-Steam.md](docs/API-Steam.md).
-Los módulos también pueden mostrar una notificación como las de los logros de Steam (`ctx.notify`), reaccionar a los juegos y a Steam (`ctx.events`) e informar del progreso de operaciones largas (`ctx.task`, que se ve en el panel Tasks).
+Los módulos también pueden mostrar una notificación como las de los logros de Steam (`ctx.notify`), reaccionar a los juegos y a Steam (`ctx.events`), informar del progreso de operaciones largas (`ctx.task`, que se ve en el panel Tasks), añadir accesos directos y poner opciones de lanzamiento en Steam cuando lo pide el usuario (el `ctx.steam` del backend), y descargar archivos, preguntando antes al usuario si no hay checksum (`ctx.http`, con una notificación que avisa de que hay una pregunta).
 
 | Punto | Para qué | Si Valve lo cambia |
 |---|---|---|
@@ -177,6 +177,9 @@ Los módulos también pueden mostrar una notificación como las de los logros de
 | `window.screenX` / `innerWidth` de las ventanas de Steam | ajustar el panel en el menú rápido | usa el ancho aprendido (348 px) |
 | Clase CSS `.gpfocus` | devolver el foco tras escribir con teclado físico | no se devuelve el foco; nada más cambia |
 | `SteamClient` (opcional), en la ventana o en `SharedJSContext` | `ctx.steam.safeCall` / `ctx.steam_call` para módulos (p. ej. el refresco al momento de Artwork), y `User.StartRestart` para ⚙ Settings › Manage Invasor › Restart Steam | las llamadas fallan limpiamente (503) y los módulos tienen plan B (Artwork: el arte nuevo se ve tras reiniciar Steam) |
+| `SteamClient.Apps`: `AddShortcut`, `SetShortcutName` / `StartDir` / `LaunchOptions`, `RemoveShortcut`, `SetAppLaunchOptions`, `RegisterForAppDetails` | el `ctx.steam` del backend: añadir y quitar accesos directos de juegos ajenos a Steam, leer y poner opciones de lanzamiento | `ctx.steam.supports()` da `False` y el módulo muestra su plan B; para añadir usa el enlace `steam://addnonsteamgame` |
+| `SteamClient.URL.ExecuteSteamURL` (`steam://openurl/…`, `steam://addnonsteamgame/…`, que necesita `/tmp/addnonsteamgamefile`) | `ctx.steam.open_url`, y añadir un acceso directo sin `AddShortcut` | abre el enlace con `gio` / `xdg-open` en la sesión del usuario; si eso también falla, `Unavailable` (503) |
+| Archivos en disco: `userdata/*/config/shortcuts.vdf`, `libraryfolders.vdf`, `loginusers.vdf`, `~/.steam/registry.vdf` | nombres de los accesos directos, y comprobar lo que hizo `ctx.steam`; las bibliotecas de Steam y la carpeta de la cuenta (`ctx.paths`); el idioma de Steam (`ctx.steam_language`) | faltan nombres o carpetas, `ctx.paths` da `Unavailable`, el idioma es `"en"` |
 
 ## Pruebas
 

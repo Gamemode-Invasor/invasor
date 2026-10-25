@@ -82,6 +82,12 @@ Steam's hidden page, which holds `SteamClient` and Steam's router. Invasor never
 | `SteamClient.User.StartRestart(false)` (Steam's own *Restart now* call; without the argument it fails with `requires 1 arguments`) | `backend/invasor/core.py` `restart_steam` | ⚙ Settings › Manage Invasor › Restart Steam. If this Steam has no such function the button says so (503); nothing is killed from outside. |
 | `window.NotificationStore.OnNotification(id, 5, bytes)` | `steam.py` `SteamBridge.notify` (a fixed script) | `ctx.notify` / `core.notify`: a notification shown as Steam shows an achievement, with our title, text and icon. Type 5 and the message (`CAchievementNotification`) are Steam's public protobuf definitions (`steammessages_clientnotificationtypes.proto`), encoded by Invasor. Steam's achievement toast setting applies. |
 | `window.NotificationStore.PlayNotificationSound` / `ChooseSound` | `steam.py` `NOTIFY_JS` (only when `sound` is given) | `ctx.notify(…, sound=)`: Steam picks a visible toast's sound in `PlayNotificationSound`, through `ChooseSound`. Invasor wraps `PlayNotificationSound` once (`NotificationStore.__invasorSound = 2`) so a notification it sent (remembered by id, 60 s) is played with Steam's own sound number (enum `1` friend message … `5` achievement, `0` silent). `ProcessNotification` and `OnNotification` are MobX actions: read-only, never replaced. |
+| `SteamClient.Apps.AddShortcut(name, exe, startDir, options)`, then `SetShortcutName` / `SetShortcutStartDir` / `SetShortcutLaunchOptions` | `backend/invasor/steamctx.py` `ModuleSteam.add_to` | `ctx.steam.add_to`: a non-Steam shortcut. `AddShortcut` returns the new appid but ignores the name and the launch options, so the `SetShortcut*` calls apply them; `shortcuts.vdf` (2.5) is then read to see the result. |
+| `SteamClient.Apps.RemoveShortcut(appid)` | `steamctx.py` `remove_shortcut` | `ctx.steam.remove_shortcut`; Steam takes about 0.5–1 s, seen in `shortcuts.vdf`. Only for shortcuts that module added (recorded in `~/.local/share/invasor/steam-shortcuts.json`, core data). |
+| `SteamClient.Apps.SetAppLaunchOptions(appid, line)` / `SetShortcutLaunchOptions(appid, line)` | `steamctx.py` `set_launch_options` | `ctx.steam.set_launch_options`. Both return nothing and never throw, even for a bogus appid, so the line is read back to verify it. |
+| `SteamClient.Apps.RegisterForAppDetails(appid, cb)` (first answer's `strLaunchOptions`, then unregistered; 5 s) | `steamctx.py` `DETAILS_JS` | `ctx.steam.launch_options` of a Steam game, and verifying `set_launch_options`. For shortcuts it lags one write behind, so their line is read from `shortcuts.vdf` instead. `GetLaunchOptionsForApp` is not used: it gives the game's Play entries, not the user's line. |
+| `SteamClient.URL.ExecuteSteamURL("steam://openurl/…")` and `("steam://addnonsteamgame/<.desktop>")` | `steamctx.py` `open_url`, `_add_fallback` | `ctx.steam.open_url`, and `add_to`'s fallback when `AddShortcut` is missing. The `addnonsteamgame` link needs the marker file `/tmp/addnonsteamgamefile` (2.5). |
+| `typeof SteamClient.<path> === 'function'` | `steamctx.py` `TYPEOF_JS` | `ctx.steam.supports(name)`, so a module can show its plan B before the user presses anything. |
 
 The bridge only accepts dotted names (`Apps.SetCustomArtworkForApp`), never `constructor` or `prototype`.
 Arguments must be JSON, at most 176 MB, and each call has a 15 s timeout by default. Connecting to a page (here
@@ -103,6 +109,7 @@ How it can fail:
   The update check (Invasor release and Market module versions) shows its notifications the same way, once Steam has started: if Steam's UI is not ready it retries later without marking them as announced.
   `ctx.task()` uses the same notification (when it starts and ends, unless `notify=False`): a failure there is only logged and the task itself goes on, so the Tasks panel is unaffected.
   `ctx.http.download()` without a checksum shows one too ("<module> needs an answer", body "Open Invasor's Tasks panel", `notify_sync` in a thread of its own) while the user is asked: if it fails there is just no toast (logged), and the dot on the handle and the Tasks panel still show the question.
+- **The `Apps.*` shortcut or launch-option functions change** (`ctx.steam`): `add_to` falls back to the `steam://addnonsteamgame` link (through gio/xdg-open if `ExecuteSteamURL` is gone too), and `open_url` to gio/xdg-open. `remove_shortcut`, `launch_options` and `set_launch_options` have no fallback: `Unavailable`, and `supports()` says `False` beforehand. If a setter stops doing anything while still answering, the read-back catches it: `Unavailable` ("Steam didn't apply…"), or `verified: False` when the line can't be read back. Steam's own notification for each change is the same `notify` as above: if it fails, only the log has it.
 
 ### 2.4 Inside the injected windows
 
@@ -132,6 +139,10 @@ far less often.
 | `config/loginusers.vdf` (text VDF) | `paths.py` `userdata()` | The account in use: the `MostRecent` user, else the newest `timestamp`; its folder is `userdata/<SteamID64 - 76561197960265728>`. |
 | `userdata/<account>/` | `paths.py` | The account's folder for modules (`ctx.paths.userdata()`, `grid_dir()`). |
 | `userdata/*/config/shortcuts.vdf` (binary VDF) | `vdf.py`, `context.py` | Names and executables of non-Steam shortcuts; re-read only when the files change. |
+| `userdata/*/config/shortcuts.vdf`, again | `steamctx.py` `_shortcuts` | `ctx.steam`: what Steam really did after adding or removing a shortcut or setting its launch options (polled every 0.5 s for a few seconds), and a shortcut's launch options. |
+| `~/.steam/registry.vdf` (text VDF), `Registry/HKCU/Software/Valve/Steam/language` | `steamctx.py` `language` | `ctx.steam_language()`. |
+| `/tmp/addnonsteamgamefile` (empty marker) | `steamctx.py` `_add_fallback` | Without it Steam shows a dialog or does nothing for a `steam://addnonsteamgame` link. Created only if missing (never through a link someone left there) and removed afterwards. |
+| `gio open` / `xdg-open`, with the graphical session's variables from `/proc/<pid>/environ` of `steam` / `steamwebhelper` | `steamctx.py` `session_env`, `_open_with_desktop` | `ctx.steam`'s fallbacks when `ExecuteSteamURL` can't be called: the service has no `DISPLAY` / `WAYLAND_DISPLAY` / `DBUS_SESSION_BUS_ADDRESS` of its own. |
 | evdev `/dev/input/event*`; hidraw with Valve's vendor id `28de` | `gamepad.py` | The open/close combo. Read-only and non-exclusive: Steam and games still get every input. The hidraw layout is Valve's hardware protocol (as in the kernel's `hid-steam.c`), not Steam client code. |
 
 How it can fail:
@@ -143,6 +154,8 @@ How it can fail:
 - **The text VDF format changes, or `libraryfolders.vdf` is missing or unreadable:** only the main library and the ones under `/run/media` are found; games in other libraries have no name and `ctx.paths.compatdata` / `shadercache` fall back to the main library.
 - **`loginusers.vdf` is missing, has no `MostRecent` or `timestamp`, or points to an account with no folder, and there are several accounts:** `ctx.paths.userdata()` raises `Unavailable` ("couldn't tell which Steam account is in use"); `userdata(all=True)` still lists them all.
 - **Steam's folder isn't in `~/.steam/steam` or `~/.local/share/Steam`:** every `ctx.paths` function raises `Unavailable`; game names and shortcuts are missing.
+- **`registry.vdf` moves or its `language` key changes:** `ctx.steam_language()` gives `"en"` (`""` with `raw=True`).
+- **Steam no longer reads the `addnonsteamgamefile` marker, or gio/xdg-open can't reach the session:** `add_to`'s fallback times out with `Unavailable` (only matters when `AddShortcut` is gone too).
 - **Steam grabs a hidraw device exclusively, or InputPlumber changes the virtual device:** the combo doesn't
   fire. The "I" handle and F10 still open the panel.
 
@@ -184,6 +197,8 @@ drive Steam's pages through port 8080. That's a property of Steam's debugging po
 | Route URL format changed | No "Selected" game | Running and highlighted still work | `context.py` route parsing |
 | `SteamClient` API renamed or re-signed | A module's live action fails, with its fallback; ⚙ Settings › Manage Invasor › Restart Steam says it's unavailable (`User.StartRestart`) | `Unavailable` (503), one log line per call | The module's plan B; the new name in Steam's JS |
 | `NotificationStore` changed | No notifications (e.g. from Popy) | `notify` answers 503 | `window.NotificationStore` in `SharedJSContext`; `SteamBridge.notify` |
+| `Apps.AddShortcut` / `URL.ExecuteSteamURL` changed | A module's "Add to Steam" or web link goes through the fallback, or fails | `add_to` uses the `steam://addnonsteamgame` link, `open_url` gio/xdg-open; else `Unavailable` | `supports()` in Demo's Steam section; `steamctx.py` |
+| `Apps.RemoveShortcut`, `SetAppLaunchOptions`, `SetShortcutLaunchOptions` or `RegisterForAppDetails` changed | A module's remove / launch-options button fails and shows its plan B | `Unavailable`, or `set_launch_options` gives `verified: False` when it can't read the line back | `supports()` in Demo's Steam section; `steamctx.py` |
 | `vgp_` events or button numbers changed | The pad doesn't move in the panel (and Select / Start don't open Tasks / Settings) | Touch, F10, the backend combo and the Tasks and ⚙ buttons in the panel's header still work | `detail.button` of Steam's `vgp_onbuttondown` events (button numbers in `gamepad-nav.ts`) |
 | Library tile DOM changed | No "Highlighted" game | `highlighted` is null | `library.ts` (`appidFromArt` has unit tests) |
 | `.gpfocus` renamed | Focus not returned after keyboard typing | Nothing else | `controls.ts` |
