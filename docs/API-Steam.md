@@ -125,7 +125,11 @@ far less often.
 | What | Where | Used for |
 |---|---|---|
 | `SteamAppId` / `SteamGameId` in `/proc/<pid>/environ` | `context.py` `_running_appid` | The **running** game; a change of it is the modules' `game_started` / `game_stopped` events. For a non-Steam shortcut the game id is 64-bit: `(appid << 32) \| 0x02000000`. |
-| `steamapps/libraryfolders.vdf`, `steamapps/appmanifest_<appid>.acf` | `context.py` | Names of installed Steam games. |
+| `steamapps/libraryfolders.vdf` (text VDF) | `paths.py` `libraries()`, read with `vdf.py` | Every Steam library folder, for game names (`context.py`) and modules (`ctx.paths`). |
+| `/run/media/*/steamapps`, `/run/media/*/*/steamapps` | `paths.py` `libraries()` | Libraries on SD cards and USB drives, also when `libraryfolders.vdf` no longer lists them. |
+| `steamapps/appmanifest_<appid>.acf` | `context.py`, `paths.py` | Names of installed Steam games; which library holds a game (`ctx.paths.compatdata` / `shadercache`). |
+| `config/loginusers.vdf` (text VDF) | `paths.py` `userdata()` | The account in use: the `MostRecent` user, else the newest `timestamp`; its folder is `userdata/<SteamID64 - 76561197960265728>`. |
+| `userdata/<account>/` | `paths.py` | The account's folder for modules (`ctx.paths.userdata()`, `grid_dir()`). |
 | `userdata/*/config/shortcuts.vdf` (binary VDF) | `vdf.py`, `context.py` | Names and executables of non-Steam shortcuts; re-read only when the files change. |
 | evdev `/dev/input/event*`; hidraw with Valve's vendor id `28de` | `gamepad.py` | The open/close combo. Read-only and non-exclusive: Steam and games still get every input. The hidraw layout is Valve's hardware protocol (as in the kernel's `hid-steam.c`), not Steam client code. |
 
@@ -135,6 +139,9 @@ How it can fail:
 - **The binary VDF format or the shortcut id formula changes:** shortcut names are missing (ids still show).
 - **Several Steam accounts in `userdata/`:** shortcut names are read from all of them. Artwork has to pick one
   account (the only one, or the most recent login in `loginusers.vdf`) and says so when it can't tell.
+- **The text VDF format changes, or `libraryfolders.vdf` is missing or unreadable:** only the main library and the ones under `/run/media` are found; games in other libraries have no name and `ctx.paths.compatdata` / `shadercache` fall back to the main library.
+- **`loginusers.vdf` is missing, has no `MostRecent` or `timestamp`, or points to an account with no folder, and there are several accounts:** `ctx.paths.userdata()` raises `Unavailable` ("couldn't tell which Steam account is in use"); `userdata(all=True)` still lists them all.
+- **Steam's folder isn't in `~/.steam/steam` or `~/.local/share/Steam`:** every `ctx.paths` function raises `Unavailable`; game names and shortcuts are missing.
 - **Steam grabs a hidraw device exclusively, or InputPlumber changes the virtual device:** the combo doesn't
   fire. The "I" handle and F10 still open the panel.
 
