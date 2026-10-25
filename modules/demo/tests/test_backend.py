@@ -1,3 +1,4 @@
+import hashlib
 import importlib.util
 import json
 import logging
@@ -64,6 +65,7 @@ class FakeCtx:
         self.notified = []
         self.events = FakeEvents()
         self.registry = TaskRegistry()
+        self.http = FakeHttp()
 
     def game_data(self, appid):
         return JsonStore(self._folder / "games" / f"{appid}.json")
@@ -75,6 +77,19 @@ class FakeCtx:
 
     def task(self, label):
         return self.registry.start("demo", label)
+
+
+class FakeHttp:
+    """ctx.http without the network: writes a fixed text and remembers what it was asked."""
+    BODY = b"GNU GENERAL PUBLIC LICENSE"
+
+    def __init__(self):
+        self.asked = []
+
+    def download(self, url, dest, *, checksum=None, user_chose=False, max_bytes=None, task=None):
+        self.asked.append((url, Path(dest).name, checksum))
+        Path(dest).write_bytes(self.BODY)
+        return {"path": str(dest), "size": len(self.BODY), "sha256": hashlib.sha256(self.BODY).hexdigest(), "sha512": ""}
 
 
 class FakeEvents:
@@ -221,6 +236,16 @@ class Backend(unittest.TestCase):
                                  "files": ["README.txt", "hello.txt", "notes/list.txt"]})
         self.assertFalse((self.folder / "sample/stale.txt").exists())
         self.assertEqual(sorted(p.name for p in self.folder.iterdir() if p.name.startswith(".")), [])
+
+    def test_download_sample_with_and_without_a_checksum(self):
+        got = self.b.download_sample()
+        self.assertEqual(got, {"size": len(FakeHttp.BODY), "sha256": hashlib.sha256(FakeHttp.BODY).hexdigest()})
+        self.assertEqual((self.folder / "LICENSE.txt").read_bytes(), FakeHttp.BODY)
+        self.b.download_sample(checked=False)
+        self.assertEqual(self.ctx.http.asked, [
+            (self.b.SAMPLE_URL, "LICENSE.txt", ("sha256", self.b.SAMPLE_SHA256)),
+            (self.b.SAMPLE_URL, "LICENSE.txt", None),
+        ])
 
     def test_profile_path_is_named_after_the_module_id(self):
         b = load_backend()

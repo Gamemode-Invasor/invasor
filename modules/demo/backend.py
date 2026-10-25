@@ -7,6 +7,7 @@
 - game: info() and shortcut_exe() in whoami; ctx.id and ctx.path (the module's folder) too;
 - Steam folders: ctx.paths (root, libraries, account, artwork) and ctx.vdf (libraryfolders.vdf) in steam_folders;
 - archives: ctx.archive.extract and swap_dir in unpack_sample (assets/sample.zip -> its data folder);
+- downloads: ctx.http.download in download_sample, with a checksum or asking the user in the Tasks panel;
 - Steam: notify (with an icon, a timeout and a sound) / notify_async, steam_call / steam_call_async, always with a plan B;
 - clean errors: InvalidArgument (400) and Unavailable (503);
 - plain and `async def` methods, a background thread stopped in teardown();
@@ -160,6 +161,21 @@ def unpack_sample():
     return {"folder": str(target), "files": sorted(p.relative_to(target).as_posix() for p in target.rglob("*") if p.is_file())}
 
 
+SAMPLE_URL = "https://raw.githubusercontent.com/Gamemode-Invasor/invasor/main/LICENSE"
+SAMPLE_SHA256 = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+
+
+def download_sample(checked=True):
+    """Download Invasor's LICENSE next to ctx.data as LICENSE.txt. With checked=True its sha256 is
+    known, so it just downloads; with checked=False there is none and the core asks the user first
+    (Tasks panel). A plain method: ctx.http.download blocks while it waits."""
+    data = ctx.data.path.parent
+    data.mkdir(parents=True, exist_ok=True)
+    checksum = ("sha256", SAMPLE_SHA256) if checked else None
+    got = ctx.http.download(SAMPLE_URL, data / "LICENSE.txt", checksum=checksum)
+    return {"size": got["size"], "sha256": got["sha256"]}
+
+
 def notify(title="Demo", body="", sound=""):
     ctx.notify(title, body, ICON, timeout=10, sound=sound)  # timeout: seconds to wait for Steam. No sound: Steam decides. InvalidArgument/Unavailable reach the UI as clean errors
     return {"ok": True}
@@ -263,6 +279,7 @@ METHODS = {
     "whoami": whoami,
     "steam_folders": steam_folders,
     "unpack_sample": unpack_sample,
+    "download_sample": download_sample,
     "notify": notify,
     "notify_async": notify_async,
     "steam_info": steam_info,

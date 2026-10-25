@@ -375,6 +375,8 @@ export default defineModule({
             callButton(ctx, "Who am I", async () => JSON.stringify(await ctx.call("whoami"))),
             callButton(ctx, "Steam folders", async () => JSON.stringify(await ctx.call("steam_folders"))),
             callButton(ctx, "Unpack sample", async () => JSON.stringify(await ctx.call("unpack_sample"))),
+            callButton(ctx, "Download (checked)", async () => JSON.stringify(await ctx.call("download_sample", { checked: true }))),
+            callButton(ctx, "Download (asks you)", async () => JSON.stringify(await ctx.call("download_sample", { checked: false }))),
             callButton(ctx, "Notify", async () => {
               await ctx.call("notify", { title: "Demo", body: "A notification from Demo's backend" });
               return "Notification sent";
