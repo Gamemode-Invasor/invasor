@@ -381,6 +381,8 @@ export default defineModule({
               await ctx.call("slow_task", { seconds: 2, fail: true });
               return "Task done";
             }),
+            callButton(ctx, "Ask me (Tasks panel)", async () =>
+              ((await ctx.call<{ accepted: boolean }>("ask_task")).accepted ? "Accepted" : "Denied")),
           ]),
           ui.section("Calls", [
             callButton(ctx, "Who am I", async () => JSON.stringify(await ctx.call("whoami"))),

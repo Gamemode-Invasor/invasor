@@ -15,7 +15,8 @@
 - clean errors: InvalidArgument (400) and Unavailable (503);
 - plain and `async def` methods, a background thread stopped in teardown();
 - ctx.events: counts the Steam starts it has seen and notes the last game started, stopped or selected;
-- ctx.task: a long operation that reports its progress (slow_task), seen from anywhere in core.tasks();
+- ctx.task: a long operation that reports its progress (slow_task), seen from anywhere in core.tasks(),
+  and t.ask in ask_task (a question answered with Accept / Deny in the Tasks panel);
 - upgrade() when a new version loads, uninstall() undoing what it left outside its folder;
 - a helper file imported as `from . import helpers`.
 """
@@ -207,6 +208,15 @@ def slow_task(seconds=5, fail=False):
     return {"seconds": seconds}
 
 
+def ask_task(question="Demo asks: is this fine?"):
+    """A task that asks the user (Accept / Deny in the Tasks panel) and waits for the answer.
+    A plain method: t.ask blocks while it waits."""
+    if not isinstance(question, str) or not question.strip() or len(question) > 256:
+        raise ctx.InvalidArgument("question must be some text, at most 256 characters")
+    with ctx.task("Demo: a question", notify=False) as t:
+        return {"accepted": t.ask(question)}
+
+
 def _system(info):
     keys = ("sOSName", "sOSVersionId", "sSteamBuildDate", "sCPUName")
     return {k: info.get(k) for k in keys} if isinstance(info, dict) else {"result": info}
@@ -353,6 +363,7 @@ METHODS = {
     "visit": visit,
     "stats": stats,
     "slow_task": slow_task,
+    "ask_task": ask_task,
     "profile_get": profile_get,
     "profile_set": profile_set,
 }

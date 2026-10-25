@@ -6,10 +6,14 @@ import os
 import sys
 import tempfile
 import time
-import tomllib
 import unittest
 from unittest import mock
 from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11: ctx.toml needs it, so its tests are skipped
+    tomllib = None
 
 HERE = Path(__file__).resolve().parents[1]
 # Invasor's core (ctx.toml, forms): $INVASOR_CORE (set by tools/check_module.py), else the
@@ -79,7 +83,7 @@ class FakeCtx:
         self.last_notify = {"timeout": timeout, "sound": sound}
 
 
-    def task(self, label):
+    def task(self, label, notify=True, sound="toast"):
         return self.registry.start("demo", label)
 
 
@@ -172,6 +176,7 @@ class Backend(unittest.TestCase):
             time.sleep(0.02)  # the notification is sent from its own thread
         self.assertEqual(self.ctx.notified, [("Demo: Quiet preset", "Preset applied")])
 
+    @unittest.skipUnless(tomllib, "ctx.toml needs Python 3.11 or newer")
     def test_profile_lives_in_a_toml_file_and_keeps_the_rest(self):
         path = self.b.profile_path()
         self.assertEqual(self.b.profile_get(), self.ctx.forms["profile"].defaults())
@@ -220,6 +225,30 @@ class Backend(unittest.TestCase):
             with self.subTest(seconds=bad), self.assertRaises(schema.InvalidArgument):
                 self.b.slow_task(bad)
 
+    def test_ask_task_waits_for_the_answer(self):
+        import threading  # here: the import block at the top is being reworked
+        seen = []
+
+        def answer(accept):  # the user, from the Tasks panel
+            for _ in range(250):
+                waiting = [t for t in self.ctx.registry.snapshot()["active"] if t["state"] == "waiting"]
+                if waiting:
+                    seen.append((waiting[0]["label"], waiting[0]["question"]))
+                    return self.ctx.registry.answer(waiting[0]["id"], accept)
+                time.sleep(0.02)
+
+        for accept in (True, False):
+            with self.subTest(accept=accept):
+                t = threading.Thread(target=answer, args=(accept,))
+                t.start()
+                self.assertEqual(self.b.ask_task("Fine?"), {"accepted": accept})
+                t.join()
+                self.assertEqual(seen.pop(), ("Demo: a question", "Fine?"))
+                self.assertEqual(self.ctx.registry.snapshot()["recent"][0]["state"], "done")
+        for bad in ("", "  ", 3, "x" * 257):
+            with self.subTest(question=bad), self.assertRaises(schema.InvalidArgument):
+                self.b.ask_task(bad)
+
     def test_game_events_are_noted(self):
         self.assertIsNone(self.b.stats()["last_game_event"])
         self.ctx.events.emit("game_started", {"appid": "1", "name": "Test Game", "shortcut": False})
@@ -240,6 +269,7 @@ class Backend(unittest.TestCase):
         self.b.upgrade(self.ctx, "0.1.0")
         self.assertEqual(self.b.whoami()["upgraded_from"], "0.1.0")
 
+    @unittest.skipUnless(tomllib, "ctx.toml needs Python 3.11 or newer")
     def test_uninstall_removes_what_it_left_outside_only_with_purge(self):
         self.b.profile_set("vsync", False)
         folder = self.b.profile_path().parent
