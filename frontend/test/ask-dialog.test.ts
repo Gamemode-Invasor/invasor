@@ -54,6 +54,18 @@ test("Accept and Deny answer through onAnswer, and the next question follows", a
   assert.equal(text(), null);
 });
 
+test("an answer that didn't reach the backend is offered again with retry", async () => {
+  const { dialog, text, buttons } = setup();
+  dialog.update(snap(task(1, "Sure?")));
+  buttons()[1].click();
+  await settle();
+  assert.equal(text(), null);
+  dialog.update(snap(task(1, "Sure?"))); // a push: still waiting, but answered here
+  assert.equal(text(), null);
+  dialog.retry(1);
+  assert.equal(text(), "DEMO: Sure?");
+});
+
 test("the oldest question comes first", () => {
   const { dialog, text } = setup();
   dialog.update(snap(task(5, "Newer?", "waiting", 20), task(9, "Older?", "waiting", 10)));
@@ -99,15 +111,61 @@ test("it closes by itself when the task stops waiting", async () => {
   assert.deepEqual(answers, []);
 });
 
-test("closing the panel (invasor:dismiss) puts it off without answering", async () => {
-  const { dialog, host, text, answers } = setup();
+test("closing the panel hides it without answering; it's back when the panel opens", async () => {
+  const { dialog, host, text, answers, state } = setup();
   dialog.update(snap(task(1, "Sure?")));
+  state.open = false; // the overlay hides the panel, then dismisses what's drawn in it
   host.dispatchEvent(new CustomEvent("invasor:dismiss"));
   await settle();
   assert.equal(text(), null);
   assert.deepEqual(answers, []);
+  state.open = true;
   dialog.panelOpened();
   assert.equal(text(), "DEMO: Sure?");
+});
+
+test("closed with its window (the panel still open), it comes back at once, unanswered", async () => {
+  const { dialog, host, text, answers } = setup();
+  dialog.update(snap(task(1, "Sure?")));
+  host.dispatchEvent(new CustomEvent("invasor:dismiss"));
+  await settle();
+  assert.equal(text(), "DEMO: Sure?");
+  assert.deepEqual(answers, []);
+});
+
+test("the same task asking again is a new question, even with the same words", async () => {
+  const { dialog, text, buttons, answers } = setup();
+  dialog.update(snap(task(1, "Sure?", "waiting", 10)));
+  buttons()[1].click();
+  await settle();
+  dialog.update(snap(task(1, "Sure?", "waiting", 20))); // asked again before any push saw it running
+  assert.equal(text(), "DEMO: Sure?");
+  buttons()[0].click();
+  await settle();
+  assert.deepEqual(answers, [[1, true], [1, false]]);
+});
+
+test("a new question of the same task replaces the old one on screen", async () => {
+  const { dialog, text } = setup();
+  dialog.update(snap(task(1, "First?", "waiting", 10)));
+  dialog.update(snap(task(1, "Second?", "waiting", 20))); // the first timed out, the task asked again
+  await settle();
+  assert.equal(text(), "DEMO: Second?");
+});
+
+test("a module's ui.confirm comes first; the question steps aside and returns", async () => {
+  const { dialog, host, text, answers } = setup();
+  setTopLayer(() => host);
+  dialog.update(snap(task(1, "Sure?")));
+  const theirs = ui.confirm("Module's own?");
+  await settle();
+  assert.equal(text(), "Module's own?");
+  host.querySelector<HTMLElement>(".modal button")!.click(); // its Cancel
+  assert.equal(await theirs, false);
+  await settle();
+  assert.equal(text(), "DEMO: Sure?");
+  assert.deepEqual(answers, []);
+  setTopLayer(null);
 });
 
 test("it waits for a dialog already open, never answering it or the question", async () => {

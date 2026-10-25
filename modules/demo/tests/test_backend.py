@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import importlib.util
 import json
@@ -53,7 +54,6 @@ class FakeCtx:
     toml = tomlio
     paths = paths
     vdf = vdf
-    archive = archive
     id = "demo"
     path = HERE
 
@@ -71,6 +71,7 @@ class FakeCtx:
         self.registry = TaskRegistry()
         self.http = FakeHttp()
         self.steam = FakeSteam()
+        self.archive = FakeArchive()
 
     def steam_language(self, raw=False):
         return "spanish" if raw else "es"
@@ -87,6 +88,24 @@ class FakeCtx:
         return self.registry.start("demo", label)
 
 
+def _twins(cls, *names):
+    """Give `cls` the `<name>_async` twin of each plain method, as the real ctx has."""
+    for name in names:
+        def twin(self, *args, _name=name, **kw):
+            return asyncio.to_thread(getattr(self, _name), *args, **kw)
+        setattr(cls, f"{name}_async", twin)
+    return cls
+
+
+class FakeArchive:
+    """ctx.archive: the core's own functions, with the _async twins."""
+    extract = staticmethod(archive.extract)
+    swap_dir = staticmethod(archive.swap_dir)
+
+
+_twins(FakeArchive, "extract", "swap_dir")
+
+
 class FakeHttp:
     """ctx.http without the network: writes a fixed text and remembers what it was asked."""
     BODY = b"GNU GENERAL PUBLIC LICENSE"
@@ -98,6 +117,10 @@ class FakeHttp:
         self.asked.append((url, Path(dest).name, checksum))
         Path(dest).write_bytes(self.BODY)
         return {"path": str(dest), "size": len(self.BODY), "sha256": hashlib.sha256(self.BODY).hexdigest(), "sha512": ""}
+
+    def get_json(self, url, *, max_bytes=1 << 20):
+        self.asked.append((url, None, None))
+        return [{"tag_name": "v0.3.0", "prerelease": False}]
 
 
 class FakeSteam:
@@ -132,6 +155,10 @@ class FakeSteam:
 
     def open_url(self, url):
         self.calls.append(("open_url", url))
+
+
+_twins(FakeHttp, "download", "get_json")
+_twins(FakeSteam, "supports", "add_to", "launch_options", "set_launch_options", "remove_shortcut", "open_url")
 
 
 class FakeEvents:
@@ -249,6 +276,21 @@ class Backend(unittest.TestCase):
             with self.subTest(question=bad), self.assertRaises(schema.InvalidArgument):
                 self.b.ask_task(bad)
 
+    def test_ask_task_async_waits_without_blocking(self):
+        async def run():
+            asking = asyncio.ensure_future(self.b.ask_task_async("Fine?"))
+            for _ in range(250):
+                waiting = [t for t in self.ctx.registry.snapshot()["active"] if t["state"] == "waiting"]
+                if waiting:
+                    self.ctx.registry.answer(waiting[0]["id"], True)
+                    break
+                await asyncio.sleep(0.02)
+            return await asking
+
+        self.assertEqual(asyncio.run(run()), {"accepted": True})
+        with self.assertRaises(schema.InvalidArgument):
+            asyncio.run(self.b.ask_task_async(""))
+
     def test_game_events_are_noted(self):
         self.assertIsNone(self.b.stats()["last_game_event"])
         self.ctx.events.emit("game_started", {"appid": "1", "name": "Test Game", "shortcut": False})
@@ -293,7 +335,10 @@ class Backend(unittest.TestCase):
         self.assertEqual(none["libraries"], [])
         self.assertEqual(found, {"root": str(steam), "libraries": [str(steam / "steamapps")],
                                  "account": str(steam / "userdata/116437234"),
-                                 "grid": str(steam / "userdata/116437234/config/grid"), "libraries_vdf_entries": 1})
+                                 "grid": str(steam / "userdata/116437234/config/grid"), "libraries_vdf_entries": 1,
+                                 "game": {"appid": "1000", "compatdata": str(steam / "steamapps/compatdata/1000"),
+                                          "shadercache": str(steam / "steamapps/shadercache/1000"), "appmanifest": None},
+                                 "shortcuts": 0})
 
     def test_unpack_sample(self):
         first = self.b.unpack_sample()
@@ -304,6 +349,27 @@ class Backend(unittest.TestCase):
                                  "files": ["README.txt", "hello.txt", "notes/list.txt"]})
         self.assertFalse((self.folder / "sample/stale.txt").exists())
         self.assertEqual(sorted(p.name for p in self.folder.iterdir() if p.name.startswith(".")), [])
+
+    def test_unpack_sample_async_is_the_same(self):
+        self.assertEqual(asyncio.run(self.b.unpack_sample_async()), self.b.unpack_sample())
+
+    def test_download_sample_async_and_latest_release(self):
+        self.assertEqual(asyncio.run(self.b.download_sample_async(checked=False))["size"], len(FakeHttp.BODY))
+        self.assertEqual(self.b.latest_release(), {"tag": "v0.3.0", "prerelease": False})
+        self.assertEqual(asyncio.run(self.b.latest_release_async()), {"tag": "v0.3.0", "prerelease": False})
+        self.assertEqual([a[0] for a in self.ctx.http.asked], [self.b.SAMPLE_URL, self.b.RELEASES_URL, self.b.RELEASES_URL])
+        with mock.patch.object(self.ctx.http, "get_json", lambda url, **kw: []):
+            with self.assertRaises(schema.Unavailable):
+                self.b.latest_release()
+
+    def test_the_demo_shortcut_through_the_async_twins(self):
+        added = asyncio.run(self.b.steam_shortcut_add_async())
+        self.assertEqual(added, {"appid": 3000000001, "existed": False})
+        self.assertEqual(asyncio.run(self.b.steam_shortcut_options_async("DEMO=3 %command%")),
+                         {"appid": 3000000001, "applied": True, "verified": True, "options": "DEMO=3 %command%"})
+        self.assertEqual(asyncio.run(self.b.steam_shortcut_remove_async()), {"removed": True})
+        self.assertEqual(asyncio.run(self.b.open_url_async()), {"ok": True})
+        self.assertEqual(asyncio.run(self.b.steam_supports_async()), self.b.steam_supports())
 
     def test_download_sample_with_and_without_a_checksum(self):
         got = self.b.download_sample()
@@ -348,6 +414,13 @@ class Backend(unittest.TestCase):
         self.ctx.steam.missing = {"remove_shortcut"}
         self.assertEqual(self.b.steam_supports(), {"add_to": True, "open_url": True, "remove_shortcut": False,
                                                    "launch_options": True, "set_launch_options": True})
+
+    def test_every_public_function_is_a_method(self):
+        import inspect
+        public = {n for n, f in vars(self.b).items() if inspect.isfunction(f) and not n.startswith("_")
+                  and f.__module__ == self.b.__name__}
+        hooks = {"setup", "teardown", "upgrade", "uninstall", "profile_path", "steam_started", "game_event", "on_change"}
+        self.assertEqual(public - hooks - set(self.b.METHODS), set())
 
     def test_profile_path_is_named_after_the_module_id(self):
         b = load_backend()

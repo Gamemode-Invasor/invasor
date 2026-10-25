@@ -168,10 +168,16 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
   // Accept / Deny, from the Tasks panel or the question's dialog. The backend says how the list is now.
   const answerTask = (id: number, accept: boolean) => {
     pushes++;
+    // Two handlers, not then().catch(): a failure drawing the answer's snapshot isn't a failure to send it.
     api.call("core", "task_answer", { id, accept }).then((v) => {
       const snapshot = parseSnapshot(v);
       if (snapshot && !destroyed) applyTasks(snapshot);
-    }).catch(() => toast("Couldn't send the answer", "error"));
+    }, () => {
+      if (destroyed) return;
+      toast("Couldn't send the answer", "error");
+      applyTasks({ ...latestTasks }); // as a new snapshot: the Tasks panel's buttons come back
+      askDialog.retry(id); // and the dialog asks again
+    });
   };
   // Covers the panel on Select (or its "Tasks" button) and gives the pad back on Select or B.
   const tasksPanel = createTasksPanel({

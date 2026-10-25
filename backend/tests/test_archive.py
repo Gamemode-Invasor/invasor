@@ -580,7 +580,7 @@ class Selection(Case):
 
     def test_only_top_skipped_not_counted(self):
         entries = [("bin/a", tarfile.REGTYPE, b"a")] + [(f"junk/{i}", tarfile.REGTYPE, b"x" * 500) for i in range(10)]
-        self.extract(self.tar(entries), only_top=("bin",), max_files=1, max_bytes=100)
+        self.extract(self.tar(entries), only_top=("bin",), max_files=2, max_bytes=100)  # bin and bin/a
         self.assertEqual(self.read("bin/a"), b"a")
 
     def test_only_top_skipped_link_not_refused(self):
@@ -974,6 +974,16 @@ class ImplicitFolders(Case):
         with self.assertRaises(InvalidArgument):
             archive.extract(p, self.dest, max_files=3)
         archive.extract(p, self.box / "ok", max_files=6)
+
+    def test_many_files_in_their_own_folders_stay_within_max_files(self):
+        p = self.tar([(f"a/{i}/f", tarfile.REGTYPE, b"x") for i in range(3)])  # 3 files + a + 3 folders = 7
+        with self.assertRaises(InvalidArgument):
+            archive.extract(p, self.dest, max_files=6)
+        archive.extract(p, self.box / "ok", max_files=7)
+
+    def test_a_folder_listed_after_its_files_counts_once(self):
+        p = self.tar([("a/f", tarfile.REGTYPE, b"x"), ("a", tarfile.DIRTYPE, b"")])
+        archive.extract(p, self.dest, max_files=2)
 
 
 class ModuleArchive(Case):

@@ -139,6 +139,24 @@ class GameContext:
         """{"appid", "name", "shortcut"} of any app (installed Steam game or shortcut)."""
         return self._game(str(appid))
 
+    def names(self, appids):
+        """{appid: name} for those of `appids` that are shortcuts or installed Steam games (others are
+        left out). One look at the libraries for all of them, so a folder of hundreds is quick."""
+        shortcuts = _shortcut_names()
+        installed = None
+        out = {}
+        for appid in map(str, appids):
+            if appid in shortcuts:
+                out[appid] = shortcuts[appid]
+            elif appid in self._names:
+                out[appid] = self._names[appid]
+            else:
+                if installed is None:
+                    installed = paths.installed_appids()
+                if appid in installed and (name := _app_name(appid)) is not None:
+                    out[appid] = self._names[appid] = name
+        return out
+
     def shortcut_exe(self, appid):
         """The executable a non-Steam shortcut launches (as in shortcuts.vdf), or None."""
         return _shortcut_exes().get(str(appid))

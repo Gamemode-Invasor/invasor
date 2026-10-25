@@ -5,21 +5,25 @@
 - forms + toml: the "profile" form, stored by the module in a TOML file (saved with a validate=
   check that sees the new file before it replaces the old one);
 - game: info() and shortcut_exe() in whoami; ctx.id and ctx.path (the module's folder) too;
-- Steam folders: ctx.paths (root, libraries, account, artwork) and ctx.vdf (libraryfolders.vdf) in steam_folders;
-- archives: ctx.archive.extract and swap_dir in unpack_sample (assets/sample.zip -> its data folder);
-- downloads: ctx.http.download in download_sample, with a checksum or asking the user (a dialog and the Tasks panel);
+- Steam folders: ctx.paths (root, libraries, account, artwork, shortcuts, and a game's compatdata /
+  shadercache / appmanifest) and ctx.vdf (libraryfolders.vdf) in steam_folders;
+- archives: ctx.archive.extract and swap_dir in unpack_sample (assets/sample.zip -> its data folder),
+  and their _async twins in unpack_sample_async;
+- downloads: ctx.http.download in download_sample, with a checksum or asking the user (a dialog and the Tasks panel),
+  ctx.http.get_json in latest_release, and the _async twins of both;
 - Steam: notify (with an icon, a timeout and a sound) / notify_async, steam_call / steam_call_async, always with a plan B;
 - Steam changes: ctx.steam.add_to / launch_options / set_launch_options / remove_shortcut on a
-  Demo shortcut of its own (never a real game), open_url, supports() for the plan B, and
-  ctx.steam_language();
+  Demo shortcut of its own (never a real game), open_url, supports() for the plan B, the _async
+  twins of all of them, and ctx.steam_language();
 - clean errors: InvalidArgument (400) and Unavailable (503);
 - plain and `async def` methods, a background thread stopped in teardown();
 - ctx.events: counts the Steam starts it has seen and notes the last game started, stopped or selected;
 - ctx.task: a long operation that reports its progress (slow_task), seen from anywhere in core.tasks(),
-  and t.ask in ask_task (a question answered with Accept / Deny in a dialog or in the Tasks panel);
+  and t.ask in ask_task / t.ask_async in ask_task_async (a question answered in a dialog or in the Tasks panel);
 - upgrade() when a new version loads, uninstall() undoing what it left outside its folder;
 - a helper file imported as `from . import helpers`.
 """
+import asyncio
 import os
 import shutil
 import tempfile
@@ -142,6 +146,16 @@ def steam_folders():
     root = found(ctx.paths.steam_root)
     account = found(ctx.paths.userdata)
     grid = found(ctx.paths.grid_dir)
+    # A game's folders: the running game's, else the selected one's (none: nothing to show).
+    game = ctx.game.running or ctx.game.selected
+    appid = game["appid"] if game and not game.get("shortcut") else None
+    game_dirs = None
+    if appid is not None:
+        game_dirs = {"appid": appid}
+        for name in ("compatdata", "shadercache", "appmanifest"):
+            where = found(lambda get=getattr(ctx.paths, name): get(appid))
+            game_dirs[name] = str(where) if where else None
+    shortcuts = found(ctx.paths.shortcuts)
     entries = 0
     if root is not None:
         try:
@@ -152,7 +166,7 @@ def steam_folders():
             pass
     return {"root": str(root) if root else None, "libraries": [str(p) for p in found(ctx.paths.libraries) or []],
             "account": str(account) if account else None, "grid": str(grid) if grid else None,
-            "libraries_vdf_entries": entries}
+            "libraries_vdf_entries": entries, "game": game_dirs, "shortcuts": len(shortcuts or {})}
 
 
 def unpack_sample():
@@ -164,6 +178,19 @@ def unpack_sample():
     try:
         top = ctx.archive.extract(ctx.path / "assets/sample.zip", Path(work) / "unpacked", single_root=True)
         target = ctx.archive.swap_dir(top, data / "sample")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return {"folder": str(target), "files": sorted(p.relative_to(target).as_posix() for p in target.rglob("*") if p.is_file())}
+
+
+async def unpack_sample_async():
+    """The same from an `async def` method, with ctx.archive's _async twins (they never block the loop)."""
+    data = ctx.data.path.parent
+    data.mkdir(parents=True, exist_ok=True)
+    work = tempfile.mkdtemp(dir=data, prefix=".sample-")
+    try:
+        top = await ctx.archive.extract_async(ctx.path / "assets/sample.zip", Path(work) / "unpacked", single_root=True)
+        target = await ctx.archive.swap_dir_async(top, data / "sample")
     finally:
         shutil.rmtree(work, ignore_errors=True)
     return {"folder": str(target), "files": sorted(p.relative_to(target).as_posix() for p in target.rglob("*") if p.is_file())}
@@ -182,6 +209,33 @@ def download_sample(checked=True):
     checksum = ("sha256", SAMPLE_SHA256) if checked else None
     got = ctx.http.download(SAMPLE_URL, data / "LICENSE.txt", checksum=checksum)
     return {"size": got["size"], "sha256": got["sha256"]}
+
+
+async def download_sample_async(checked=True):
+    """The same from an `async def` method: download_async waits for the user without blocking the loop."""
+    data = ctx.data.path.parent
+    data.mkdir(parents=True, exist_ok=True)
+    checksum = ("sha256", SAMPLE_SHA256) if checked else None
+    got = await ctx.http.download_async(SAMPLE_URL, data / "LICENSE.txt", checksum=checksum)
+    return {"size": got["size"], "sha256": got["sha256"]}
+
+
+RELEASES_URL = "https://api.github.com/repos/Gamemode-Invasor/invasor/releases?per_page=1"
+
+
+def _newest(releases):
+    if not isinstance(releases, list) or not releases or not isinstance(releases[0], dict):
+        raise ctx.Unavailable("GitHub gave no release")
+    return {"tag": releases[0].get("tag_name"), "prerelease": bool(releases[0].get("prerelease"))}
+
+
+def latest_release():
+    """Invasor's newest release, with ctx.http.get_json (a small JSON answer, read in memory)."""
+    return _newest(ctx.http.get_json(RELEASES_URL))
+
+
+async def latest_release_async():
+    return _newest(await ctx.http.get_json_async(RELEASES_URL))
 
 
 def notify(title="Demo", body="", sound=""):
@@ -217,6 +271,14 @@ def ask_task(question="Demo asks: is this fine?"):
         return {"accepted": t.ask(question)}
 
 
+async def ask_task_async(question="Demo asks: is this fine?"):
+    """The same from an `async def` method: t.ask_async waits without blocking the loop."""
+    if not isinstance(question, str) or not question.strip() or len(question) > 256:
+        raise ctx.InvalidArgument("question must be some text, at most 256 characters")
+    async with ctx.task("Demo: a question", notify=False) as t:
+        return {"accepted": await t.ask_async(question)}
+
+
 def _system(info):
     keys = ("sOSName", "sOSVersionId", "sSteamBuildDate", "sCPUName")
     return {k: info.get(k) for k in keys} if isinstance(info, dict) else {"result": info}
@@ -247,16 +309,32 @@ def steam_supports():
     return {name: ctx.steam.supports(name) for name in STEAM_FEATURES}
 
 
+async def steam_supports_async():
+    return {name: await ctx.steam.supports_async(name) for name in STEAM_FEATURES}
+
+
 def steam_shortcut_add():
     """Add a Demo shortcut (a tiny script in Demo's data folder) to Steam. Only on a button press:
     anything that changes the user's Steam waits for the user."""
+    res = ctx.steam.add_to("Invasor Demo", str(_shortcut_script()), launch_options="DEMO=1 %command%")
+    ctx.data.update(shortcut=res["appid"])
+    return res
+
+
+async def steam_shortcut_add_async():
+    """The same from an `async def` method, with add_to_async."""
+    script = await asyncio.to_thread(_shortcut_script)
+    res = await ctx.steam.add_to_async("Invasor Demo", str(script), launch_options="DEMO=1 %command%")
+    ctx.data.update(shortcut=res["appid"])
+    return res
+
+
+def _shortcut_script():
     script = ctx.data.path.parent / SHORTCUT_SCRIPT
     script.parent.mkdir(parents=True, exist_ok=True)
     script.write_text('#!/bin/sh\necho "Invasor Demo"\n')
     script.chmod(0o755)
-    res = ctx.steam.add_to("Invasor Demo", str(script), launch_options="DEMO=1 %command%")
-    ctx.data.update(shortcut=res["appid"])
-    return res
+    return script
 
 
 def _shortcut():
@@ -275,14 +353,33 @@ def steam_shortcut_options(line=None):
     return {**res, "options": ctx.steam.launch_options(appid)}
 
 
+async def steam_shortcut_options_async(line=None):
+    appid = _shortcut()
+    res = {"appid": appid}
+    if line is not None:
+        res.update(await ctx.steam.set_launch_options_async(appid, line))
+    return {**res, "options": await ctx.steam.launch_options_async(appid)}
+
+
 def steam_shortcut_remove():
     res = ctx.steam.remove_shortcut(_shortcut())
     ctx.data.transform(lambda d: {k: v for k, v in d.items() if k != "shortcut"})
     return res
 
 
+async def steam_shortcut_remove_async():
+    res = await ctx.steam.remove_shortcut_async(_shortcut())
+    ctx.data.transform(lambda d: {k: v for k, v in d.items() if k != "shortcut"})
+    return res
+
+
 def open_url():
     ctx.steam.open_url("https://github.com/Gamemode-Invasor/invasor")
+    return {"ok": True}
+
+
+async def open_url_async():
+    await ctx.steam.open_url_async("https://github.com/Gamemode-Invasor/invasor")
     return {"ok": True}
 
 
@@ -348,22 +445,32 @@ METHODS = {
     "whoami": whoami,
     "steam_folders": steam_folders,
     "unpack_sample": unpack_sample,
+    "unpack_sample_async": unpack_sample_async,
     "download_sample": download_sample,
+    "download_sample_async": download_sample_async,
+    "latest_release": latest_release,
+    "latest_release_async": latest_release_async,
     "notify": notify,
     "notify_async": notify_async,
     "steam_info": steam_info,
     "steam_info_async": steam_info_async,
     "fail": fail,
     "steam_supports": steam_supports,
+    "steam_supports_async": steam_supports_async,
     "steam_shortcut_add": steam_shortcut_add,
+    "steam_shortcut_add_async": steam_shortcut_add_async,
     "steam_shortcut_options": steam_shortcut_options,
+    "steam_shortcut_options_async": steam_shortcut_options_async,
     "steam_shortcut_remove": steam_shortcut_remove,
+    "steam_shortcut_remove_async": steam_shortcut_remove_async,
     "open_url": open_url,
+    "open_url_async": open_url_async,
     "steam_language": steam_language,
     "visit": visit,
     "stats": stats,
     "slow_task": slow_task,
     "ask_task": ask_task,
+    "ask_task_async": ask_task_async,
     "profile_get": profile_get,
     "profile_set": profile_set,
 }

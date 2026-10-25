@@ -249,7 +249,8 @@ class ModuleSteam:
         except Unavailable as e:
             log.debug("AddShortcut unavailable (%s): using the steam:// link", e)
             return None
-        if isinstance(appid, bool) or not isinstance(appid, int) or appid <= 0:
+        # Unsigned as shortcuts.vdf's signed int32 would be read (-1294967296 is 3000000000).
+        if isinstance(appid, bool) or not isinstance(appid, int) or not -2**31 <= appid < 2**32 or not appid & 0xFFFFFFFF:
             raise Unavailable("Steam didn't give the new shortcut's appid")
         appid = appid & 0xFFFFFFFF
         # Recorded at once: if a call below fails, the shortcut is there and this module may remove it.

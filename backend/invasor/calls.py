@@ -32,8 +32,11 @@ def check_url(url, schemes):
     if not isinstance(url, str) or len(url) > MAX_URL or CONTROL.search(url):
         url_ok = False
     else:
-        parts = urlsplit(url)
-        url_ok = parts.scheme in schemes and bool(parts.hostname)
+        try:
+            parts = urlsplit(url)
+            url_ok = parts.scheme in schemes and bool(parts.hostname)
+        except ValueError:  # e.g. "https://[abc": a bracket that isn't an IPv6 address
+            url_ok = False
     if not url_ok:
         raise InvalidArgument(f"not a {'/'.join(schemes)} URL (up to {MAX_URL} characters): {str(url)[:100]!r}")
     return url

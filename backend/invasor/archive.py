@@ -195,6 +195,7 @@ def _write_all(entries, tmp, only_top, max_bytes, max_files, symlinks, cancel):
     written, dirs = set(), {""}  # explicit entries; every folder there is
     links = []
     total = 0
+    implicit = 0  # folders made for deeper entries and not (yet) listed themselves: they count toward max_files
     it = iter(entries)
     while True:
         _cancelled(cancel)
@@ -221,10 +222,12 @@ def _write_all(entries, tmp, only_top, max_bytes, max_files, symlinks, cancel):
         if kind == "other" or (kind == "link" and symlinks == "refuse"):
             raise InvalidArgument(f"unexpected entry in the archive: {name!r}")
         written.add(name)
-        if len(written) > max_files:
-            raise InvalidArgument(f"the archive holds more than {max_files} files")
+        if name in dirs:
+            implicit -= 1  # a folder made for an earlier entry, now listed itself: counted once
         parent, _, _ = name.rpartition("/")
-        _make_dirs(tmp, parent, dirs, written, name, max_files)
+        implicit += _make_dirs(tmp, parent, dirs, written, name)
+        if len(written) + implicit > max_files:
+            raise InvalidArgument(f"the archive holds more than {max_files} files and folders")
         path = os.path.join(tmp, name)
         if kind == "dir":
             if name not in dirs:
@@ -246,20 +249,21 @@ def _write_all(entries, tmp, only_top, max_bytes, max_files, symlinks, cancel):
             total = _copy(src, path, 0o755 if mode & 0o111 else 0o644, total, max_bytes, cancel, name)
 
 
-def _make_dirs(tmp, parent, dirs, written, name, max_files):
-    """Create the missing folders above an entry (7z may list a file before its folder)."""
+def _make_dirs(tmp, parent, dirs, written, name):
+    """Create the missing folders above an entry (7z may list a file before its folder). Returns how many."""
     parts = parent.split("/") if parent else []
+    made = 0
     for i in range(len(parts)):
         sub = "/".join(parts[:i + 1])
         if sub in dirs:
             continue
         if sub in written:
             raise InvalidArgument(f"{name!r} is inside {sub!r}, which isn't a folder")
-        if len(dirs) > max_files:
-            raise InvalidArgument(f"the archive holds more than {max_files} folders")
+        made += 1
         os.mkdir(os.path.join(tmp, sub))
         os.chmod(os.path.join(tmp, sub), 0o755)
         dirs.add(sub)
+    return made
 
 
 def _copy(src, path, mode, total, max_bytes, cancel, name):

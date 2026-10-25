@@ -249,7 +249,14 @@ test("Accept and Deny call onAnswer read at click time", () => {
   assert.deepEqual(heard, [["second", 7, true], ["second", 7, false]]);
 });
 
-test("after a click both buttons wait for the next snapshot", () => {
+test("Deny comes first, as in the question's dialog", () => {
+  const c = content();
+  draw(c, snap([task({ state: "waiting", question: "Go?" })]));
+  const [row] = rows(c);
+  assert.deepEqual([...row.querySelectorAll(".task-ask button")].map((b) => b.textContent), ["Deny", "Accept"]);
+});
+
+test("after a click both buttons wait for the next snapshot, not a redraw of the same one", () => {
   const c = content();
   const s = snap([task({ id: 7, state: "waiting", question: "Go?" })]);
   renderTasks(c, s, { ...options, onAnswer: () => {} });
@@ -257,7 +264,9 @@ test("after a click both buttons wait for the next snapshot", () => {
   button(row, "Accept")!.click();
   assert.equal(button(row, "Accept")!.disabled, true);
   assert.equal(button(row, "Deny")!.disabled, true);
-  renderTasks(c, s, { ...options, onAnswer: () => {} });
+  renderTasks(c, s, { ...options, onAnswer: () => {} }); // the ages ticking: same snapshot
+  assert.equal(button(row, "Accept")!.disabled, true);
+  renderTasks(c, snap([task({ id: 7, state: "waiting", question: "Go?" })]), { ...options, onAnswer: () => {} });
   assert.equal(button(row, "Accept")!.disabled, false);
   assert.equal(button(row, "Deny")!.disabled, false);
 });

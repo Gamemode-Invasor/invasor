@@ -295,6 +295,16 @@ class Manifests(SteamCase):
             paths.appmanifest("../620")
 
 
+    def test_installed_appids_from_every_library(self):
+        other = self.library("SD")
+        self.write_libraries(("path", self.root), ("path", other))
+        (self.root / "steamapps" / "appmanifest_620.acf").write_text("x")
+        (other / "steamapps" / "appmanifest_570.acf").write_text("x")
+        (other / "steamapps" / "appmanifest_bad.acf").write_text("x")
+        (other / "steamapps" / "libraryfolders.acf").write_text("x")
+        self.assertEqual(paths.installed_appids(), {"620", "570"})
+
+
 class Shortcuts(SteamCase):
     def write(self, account, data):
         f = self.root / "userdata" / account / "config" / "shortcuts.vdf"

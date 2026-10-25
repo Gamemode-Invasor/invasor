@@ -147,19 +147,25 @@ export function onButton(el: HTMLElement, fn: (button: string) => boolean | void
   });
 }
 
+/** Sent to the top layer when ui.choose wants to draw over a dialog drawn with `yields`. */
+export const YIELD_EVENT = "invasor:yield";
+
 /**
  * Draw the modal dialog of ui.choose in `host` and resolve the chosen `value`, or null on B, on
  * `invasor:dismiss` (the panel/window closing) or when `signal` aborts (closed from outside: the
  * question went away). `cancel` adds a first button that resolves null; without it the dialog has
- * only `choices` and starts on the first of them. The caller checks that no other .modal is open.
+ * only `choices` and starts on the first of them. `onBack` hears B (told apart from being closed).
+ * `yields` marks it as one that steps aside for a ui.choose (its owner listens for YIELD_EVENT).
+ * The caller checks that no other .modal is open.
  */
 export function drawChoice<T>(host: HTMLElement, message: string, choices: { label: string; value: T }[],
-                              o: { cancel?: string; signal?: AbortSignal } = {}): Promise<T | null> {
+                              o: { cancel?: string; signal?: AbortSignal; onBack?: () => void; yields?: boolean } = {}): Promise<T | null> {
   const previous = host.querySelector<HTMLElement>(".nav-focus");
   return new Promise((resolve) => {
     if (o.signal?.aborted) return resolve(null);
     const modal = document.createElement("div");
     modal.className = "modal";
+    if (o.yields) modal.dataset.yields = "";
     const box = document.createElement("div");
     box.className = "modal-box";
     const text = document.createElement("p");
@@ -193,7 +199,7 @@ export function drawChoice<T>(host: HTMLElement, message: string, choices: { lab
       refocus(order[Math.min(order.length - 1, Math.max(0, at + by))]);
     };
     onButton(modal, (b) => {
-      if (b === "B") return done(null), true;
+      if (b === "B") return o.onBack?.(), done(null), true;
       if (b === "LEFT") return step(-1), true;
       if (b === "RIGHT") return step(1), true;
       if (["L1", "R1", "L2", "R2"].includes(b)) return true; // no tab switching under a dialog
@@ -752,6 +758,8 @@ export const ui = {
     if (!Array.isArray(choices) || choices.length === 0) throw new Error(`ui.choose "${message}": choices is empty`);
     const host = topLayer?.() ?? null;
     if (!host) return Promise.resolve(null);
+    // A dialog that can wait (a task's question) steps aside for this one and comes back after it.
+    if (host.querySelector(":scope > .modal[data-yields]")) host.dispatchEvent(new CustomEvent(YIELD_EVENT));
     // One dialog at a time: a second one would leave the pad driving the first.
     if (host.querySelector(":scope > .modal")) {
       console.warn("[invasor] ui.confirm/choose: a dialog is already open, answering cancel");

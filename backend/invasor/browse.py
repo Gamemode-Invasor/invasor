@@ -28,12 +28,13 @@ def _exts(ext):
     return tuple(e.lower() for e in ext)
 
 
-def listdir(path=None, *, files=False, ext=None, hidden=False, name_of=lambda appid: None, limit=LIMIT):
+def listdir(path=None, *, files=False, ext=None, hidden=False, names_of=lambda appids: {}, limit=LIMIT):
     """{"path", "parent", "dirs": [{"name", "label"}], "files": [{"name"}], "error"}.
 
     Hidden entries left out unless `hidden`, folders before files (only listed with `files`, filtered by `ext`), each sorted
     case-insensitively, at most `limit` entries in all. Links are followed; broken ones and special files are
-    skipped. A folder that can't be read comes back with "error" and nothing listed.
+    skipped. A folder that can't be read comes back with "error" and nothing listed. In compatdata/shadercache
+    `names_of(appids)` gives {appid: game name} for the numbered folders, all in one call.
     """
     exts = _exts(ext)
     folder = _folder(path)
@@ -55,9 +56,12 @@ def listdir(path=None, *, files=False, ext=None, hidden=False, name_of=lambda ap
     except OSError as e:
         out["error"] = e.strerror or str(e)
         return out
-    appids = folder.name in APPID_FOLDERS
-    for name in sorted(dirs, key=str.lower)[:limit]:
-        game = name_of(name) if appids and name.isascii() and name.isdigit() else None
+    shown = sorted(dirs, key=str.lower)[:limit]
+    games = {}
+    if folder.name in APPID_FOLDERS:
+        games = names_of([n for n in shown if n.isascii() and n.isdigit()]) or {}
+    for name in shown:
+        game = games.get(name)
         out["dirs"].append({"name": name, "label": f"{name} - {game}" if game else name})
     out["files"] = [{"name": n} for n in sorted(names, key=str.lower)[: max(0, limit - len(out["dirs"]))]]
     return out

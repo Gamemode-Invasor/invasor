@@ -136,12 +136,12 @@ def _overlay_methods(game, watcher, cfg, injector, steam):
         """One folder for ctx.pickPath: any folder the user can read (their machine, their
         choice; the module checks the path it gets). Numbered folders in compatdata/shadercache
         are labelled with their game."""
-        def name_of(appid):
+        def names_of(appids):
             try:
-                return (game.info(appid) or {}).get("name")
+                return game.names(appids)
             except Exception:
-                return None
-        return browse.listdir(path, files=_flag("files", files), ext=ext, hidden=_flag("hidden", hidden), name_of=name_of)
+                return {}
+        return browse.listdir(path, files=_flag("files", files), ext=ext, hidden=_flag("hidden", hidden), names_of=names_of)
 
     def pads():
         return [{"device": dev, "name": name, "kind": kind} for dev, name, kind in gamepad.pads()]

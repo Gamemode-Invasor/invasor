@@ -336,7 +336,7 @@ class CtxDownloadArguments(CtxHttpBase):
     def test_bad_urls_never_reach_the_network(self):
         for bad in ("http://x.example/a", "file:///etc/passwd", "ftp://x.example/a", "javascript:alert(1)",
                     "x.example/a", "", None, 5, b"https://x.example/a", "https://x.example/" + "a" * 2048,
-                    "https://x.example/a\nb", "https://x.example/\x00", "https://x.example/\x7f"):
+                    "https://x.example/a\nb", "https://[abc/file", "https://x.example/\x00", "https://x.example/\x7f"):
             with self.subTest(url=bad):
                 with self.assertRaises(InvalidArgument):
                     self.ctx.http.download(bad, self.dest, checksum=("sha256", SHA256))

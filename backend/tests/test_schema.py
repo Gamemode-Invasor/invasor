@@ -52,6 +52,12 @@ class Manifest(unittest.TestCase):
             ({"api": 1, "name": "M", "version": "1", "order": "1"}, "order"),
             ({"api": 1, "name": "M", "version": "1", "extra": 1}, r"unknown key\(s\): extra"),
             ({"api": True, "name": "M", "version": "1"}, "api"),
+            ({"api": 1, "name": "Invasor", "version": "1"}, "name: .*core's own name"),
+            ({"api": 1, "name": " invasor ", "version": "1"}, "name: .*core's own name"),
+            ({"api": 1, "name": "M", "version": "1", "tab": "INVASOR"}, "tab: .*core's own name"),
+            ({"api": 1, "name": "Inva\u200bsor", "version": "1"}, "name: .*core's own name"),
+            ({"api": 1, "name": "\uff29nvasor", "version": "1"}, "name: .*core's own name"),
+            ({"api": 1, "name": "In vasor\u202e", "version": "1"}, "name: .*core's own name"),
         ]
         for data, msg in cases:
             with self.subTest(data=data), self.assertRaisesRegex(schema.SchemaError, msg):

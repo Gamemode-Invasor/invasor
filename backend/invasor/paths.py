@@ -151,6 +151,20 @@ def appmanifest(appid):
     return None
 
 
+def installed_appids():
+    """The appids (str) of the Steam games installed in any library: one look at each."""
+    out = set()
+    for lib in libraries():
+        try:
+            names = os.listdir(lib)
+        except OSError:
+            continue
+        for n in names:
+            if n.startswith("appmanifest_") and n.endswith(".acf") and n[12:-4].isascii() and n[12:-4].isdigit():
+                out.add(n[12:-4])
+    return out
+
+
 def shortcut_files():
     """Every account's config/shortcuts.vdf that exists."""
     return [f for f in (a / "config" / "shortcuts.vdf" for a in userdata(all=True)) if f.is_file()]

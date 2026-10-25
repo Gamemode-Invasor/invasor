@@ -707,32 +707,50 @@ class Smoke:
         sup = body.get("result") if st == 200 else None
         self.check("ctx.steam.supports: five features, each a bool",
                    isinstance(sup, dict) and len(sup) == 5 and all(isinstance(v, bool) for v in sup.values()), (st, body))
+        st, body = await self.api("steam_supports_async", feature="demo")
+        self.check("ctx.steam.supports_async: the same answer", st == 200 and body.get("result") == sup, (st, body))
         st, body = await self.api("steam_language", feature="demo")
         code = (body.get("result") or {}).get("code") if st == 200 else None
         self.check("ctx.steam_language: a 2-letter code", isinstance(code, str) and len(code) == 2, (st, body))
         st, body = await self.api("steam_folders", feature="demo")
-        self.check("ctx.paths: Steam's root is found", st == 200 and (body.get("result") or {}).get("root") is not None, (st, body))
-        st, body = await self.api("unpack_sample", feature="demo")
-        self.check("ctx.archive: unpack_sample gives 3 files", st == 200 and len((body.get("result") or {}).get("files", [])) == 3, (st, body))
+        folders = (body.get("result") or {}) if st == 200 else {}
+        self.check("ctx.paths: Steam's root is found", folders.get("root") is not None, (st, body))
+        self.check("ctx.paths.shortcuts: a count", isinstance(folders.get("shortcuts"), int), (st, body))
+        game = folders.get("game")
+        if game:  # only with a Steam game running or selected
+            self.check("ctx.paths: the game's compatdata / shadercache / appmanifest", game.get("compatdata") and game.get("shadercache")
+                       and "appmanifest" in game, game)
+        for method in ("unpack_sample", "unpack_sample_async"):
+            st, body = await self.api(method, feature="demo")
+            self.check(f"ctx.archive: {method} gives 3 files", st == 200 and len((body.get("result") or {}).get("files", [])) == 3, (st, body))
+        # Network: GitHub's answer, or a clean 503 (offline, rate limit).
+        for method in ("latest_release", "latest_release_async"):
+            st, body = await self.api(method, feature="demo")
+            self.check(f"ctx.http.get_json: {method} gives a tag, or a clean 503",
+                       (st == 200 and isinstance((body.get("result") or {}).get("tag"), str)) or st == 503, (st, body))
+        st, body = await self.api("download_sample_async", feature="demo", checked=True)
+        self.check("ctx.http.download_async: the checked sample, or a clean 503",
+                   (st == 200 and body["result"]["sha256"] == "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986") or st == 503, (st, body))
         if not self.steam_shortcut:
             print("  skipped: --steam-shortcut not given (Demo's shortcut in Steam)")
         else:
-            appid = None
-            try:
-                st, body = await self.api("steam_shortcut_add", feature="demo")
-                appid = (body.get("result") or {}).get("appid") if st == 200 else None
-                self.check("ctx.steam.add_to: Demo's shortcut added, with its appid", isinstance(appid, int), (st, body))
-                st, body = await self.api("steam_shortcut_options", feature="demo")
-                self.check("ctx.steam.launch_options: reads DEMO=1", st == 200 and body["result"]["options"] == "DEMO=1 %command%", (st, body))
-                st, body = await self.api("steam_shortcut_options", feature="demo", line="DEMO=2 %command%")
-                self.check("ctx.steam.set_launch_options: DEMO=2, verified", st == 200 and body["result"].get("verified") is True
-                           and body["result"]["options"] == "DEMO=2 %command%", (st, body))
-                st, body = await self.api("steam_shortcut_remove", feature="demo")
-                self.check("ctx.steam.remove_shortcut: removed", st == 200 and body["result"].get("removed") is True, (st, body))
-                appid = None if st == 200 else appid
-            finally:
-                if appid is not None:
-                    await self.api("steam_shortcut_remove", feature="demo")
+            for twin in ("", "_async"):  # the plain methods, then their `async def` twins
+                appid = None
+                try:
+                    st, body = await self.api("steam_shortcut_add" + twin, feature="demo")
+                    appid = (body.get("result") or {}).get("appid") if st == 200 else None
+                    self.check(f"ctx.steam.add_to{twin}: Demo's shortcut added, with its appid", isinstance(appid, int), (st, body))
+                    st, body = await self.api("steam_shortcut_options" + twin, feature="demo")
+                    self.check(f"ctx.steam.launch_options{twin}: reads DEMO=1", st == 200 and body["result"]["options"] == "DEMO=1 %command%", (st, body))
+                    st, body = await self.api("steam_shortcut_options" + twin, feature="demo", line="DEMO=2 %command%")
+                    self.check(f"ctx.steam.set_launch_options{twin}: DEMO=2, verified", st == 200 and body["result"].get("verified") is True
+                               and body["result"]["options"] == "DEMO=2 %command%", (st, body))
+                    st, body = await self.api("steam_shortcut_remove" + twin, feature="demo")
+                    self.check(f"ctx.steam.remove_shortcut{twin}: removed", st == 200 and body["result"].get("removed") is True, (st, body))
+                    appid = None if st == 200 else appid
+                finally:
+                    if appid is not None:
+                        await self.api("steam_shortcut_remove", feature="demo")
         # Every notification button: Steam's own sounds, with the toast of the answer.
         for label in ["Default (Steam decides)", *(f"Sound: {s}" for s in SOUNDS)]:
             await self.goto(label, limit=6)
@@ -745,7 +763,7 @@ class Smoke:
             ("Steam info (backend)", '"available"'),
             ("Steam info (async method)", '"available"'),
         ):
-            await self.goto(label, limit=6)
+            await self.goto(label, limit=12)
             st = await self.press("A", wait=1.5)
             self.check(f"call: {label}", want in (st["toast"] or ""), st)
         await self.goto("Steam info (from here)", limit=6)
@@ -1010,7 +1028,8 @@ class Smoke:
         # with B and answered in the Tasks panel, or answered elsewhere (core.task_answer: it closes by itself).
         question = "Demo asks: is this fine?"
         for how, accept in (("dialog", True), ("tasks", True), ("elsewhere", False)):
-            call = asyncio.create_task(self.api("ask_task", feature="demo"))
+            # The last round goes through the `async def` twin (t.ask_async).
+            call = asyncio.create_task(self.api("ask_task_async" if how == "elsewhere" else "ask_task", feature="demo"))
             waiting = None
             for _ in range(25):
                 await asyncio.sleep(0.2)
@@ -1044,8 +1063,8 @@ class Smoke:
                 await self.press("SELECT", wait=0.5)
                 t = await self.tasks_state()
                 row = next((r for r in t["rows"] if r["state"] == "waiting"), None)
-                self.check("ask: its row waits, shows the question, with Accept and Deny",
-                           row is not None and row["question"] == question and row["answers"] == ["Accept", "Deny"], t)
+                self.check("ask: its row waits, shows the question, with Deny and Accept",
+                           row is not None and row["question"] == question and row["answers"] == ["Deny", "Accept"], t)
                 st = await self.goto("Accept", limit=6)
                 if st["label"] == "Accept":
                     await self.press("A", wait=0.5)

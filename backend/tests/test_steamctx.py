@@ -465,7 +465,7 @@ class OpenUrl(Base):
         for bad in ("steam://install/620", "steam://openurl/https://x.org", "file:///etc/passwd", "javascript:alert(1)",
                     "ftp://x.org/a", "data:text/html,hi", "https://", "http:///path", "x.org/a", "",
                     "https://x.org/a\nb", "https://x.org/\x00", "https://x.org/\x7f", "https://x.org/\r",
-                    "https://x.org/\t", "https://x.org/" + "a" * 2048, None, 5, b"https://x.org"):
+                    "https://x.org/\t", "http://[::1", "https://x.org/" + "a" * 2048, None, 5, b"https://x.org"):
             with self.subTest(url=bad), self.assertRaises(InvalidArgument):
                 self.ctx.steam.open_url(bad)
         self.assertEqual((self.fake.calls, self.fake.expressions, self.ran), ([], [], []))
@@ -596,6 +596,13 @@ class AddToPrincipal(Base):
         self.assertIn("My Game", text)
         self.assertTrue(self.wait_shown(), "no notification")
         self.assertEqual(self.ran, [])
+
+    def test_a_signed_appid_from_addshortcut_is_made_unsigned(self):
+        self.fake.next_appid = 3000000000 - 2**32  # as shortcuts.vdf stores it
+        res = self.ctx.steam.add_to("My Game", self.exe)
+        self.assertEqual(res, {"appid": 3000000000, "existed": False})
+        self.assertEqual(self.owners(), {"3000000000": {"module": "good", "exe": self.exe}})
+        self.ctx.steam.remove_shortcut(3000000000)
 
     def test_a_failing_set_call_still_leaves_it_removable(self):
         # AddShortcut worked, SetShortcutName didn't: the shortcut is there, and this module owns it.

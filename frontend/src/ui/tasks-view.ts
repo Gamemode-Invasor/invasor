@@ -102,6 +102,8 @@ interface Row {
   ask: HTMLElement;
   question: HTMLElement;
   buttons: HTMLButtonElement[];
+  /** The snapshot on screen when Accept / Deny was pressed: the buttons stay off until another one comes. */
+  sentWith: TasksSnapshot | null;
 }
 
 interface Group {
@@ -117,6 +119,8 @@ interface View {
   onClear: (() => void) | undefined;
   onAnswer: ((id: number, accept: boolean) => void) | undefined;
   rows: Map<number, Row>;
+  /** The snapshot drawn last (a redraw of the same one, e.g. the ages ticking, isn't news). */
+  shown: TasksSnapshot | null;
 }
 
 const views = new WeakMap<HTMLElement, View>();
@@ -137,7 +141,7 @@ function build(content: HTMLElement): View {
   clear.className = "tasks-clear";
   clear.textContent = "Clear recent";
   clear.hidden = true;
-  const view: View = { empty, groups, clear, onClear: undefined, onAnswer: undefined, rows: new Map() };
+  const view: View = { empty, groups, clear, onClear: undefined, onAnswer: undefined, rows: new Map(), shown: null };
   clear.addEventListener("click", () => view.onClear?.());
   content.append(empty, groups.active.title, groups.active.list, groups.recent.title, groups.recent.list, clear);
   return view;
@@ -160,11 +164,13 @@ function newRow(view: View, id: number): Row {
   const when = el("div", "task-when");
   const ask = el("div", "task-ask");
   const question = el("div", "task-question");
-  const buttons = (["Accept", "Deny"] as const).map((name) => {
+  // Deny first, as in the question's dialog: the safe answer is where the ring lands.
+  const buttons = (["Deny", "Accept"] as const).map((name) => {
     const b = document.createElement("button");
     b.textContent = name;
     b.addEventListener("click", () => {
       buttons.forEach((x) => (x.disabled = true)); // until the next snapshot says how it went
+      made.sentWith = view.shown;
       view.onAnswer?.(id, name === "Accept");
     });
     return b;
@@ -172,7 +178,8 @@ function newRow(view: View, id: number): Row {
   ask.append(question, ...buttons);
   ask.hidden = true;
   row.append(head, bar, text, ask, when);
-  return { el: row, label, owner, state, bar, fill, text, when, ask, question, buttons };
+  const made: Row = { el: row, label, owner, state, bar, fill, text, when, ask, question, buttons, sentWith: null };
+  return made;
 }
 
 // Only writes what changed, so a screen that updates every second doesn't restart animations or lose its scroll.
@@ -180,7 +187,7 @@ function setText(node: HTMLElement, value: string) {
   if (node.textContent !== value) node.textContent = value;
 }
 
-function fillRow(row: Row, task: TaskInfo, { now, nameOf }: RenderOptions) {
+function fillRow(row: Row, task: TaskInfo, snapshot: TasksSnapshot, { now, nameOf }: RenderOptions) {
   row.el.dataset.state = task.state;
   setText(row.label, task.label);
   setText(row.owner, nameOf(task.module));
@@ -198,7 +205,7 @@ function fillRow(row: Row, task: TaskInfo, { now, nameOf }: RenderOptions) {
   const waiting = task.state === "waiting";
   setText(row.question, waiting ? String(task.question ?? "") : "");
   row.ask.hidden = !waiting;
-  for (const b of row.buttons) b.disabled = false;
+  for (const b of row.buttons) b.disabled = row.sentWith === snapshot;
   const live = task.state === "running" || waiting;
   setText(row.when, live ? "" : relativeTime(task.finished ?? task.updated, now));
   row.when.hidden = live;
@@ -218,7 +225,7 @@ export function renderTasks(content: HTMLElement, snapshot: TasksSnapshot, optio
       live.add(task.id);
       let row = view.rows.get(task.id);
       if (!row) view.rows.set(task.id, (row = newRow(view, task.id)));
-      fillRow(row, task, options);
+      fillRow(row, task, snapshot, options);
       wanted.push(row.el);
     }
     // Put them in order, moving only what isn't where it should be.
@@ -235,6 +242,7 @@ export function renderTasks(content: HTMLElement, snapshot: TasksSnapshot, optio
     }
   }
   view.empty.hidden = live.size > 0;
+  view.shown = snapshot;
   view.onClear = options.onClear;
   view.onAnswer = options.onAnswer;
   view.clear.hidden = !snapshot.recent.length;

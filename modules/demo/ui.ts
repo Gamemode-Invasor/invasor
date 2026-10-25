@@ -29,6 +29,9 @@ let statsTimer: number | undefined;
 let unsubscribeSpace: (() => void) | null = null;
 const forms: SettingsForm[] = []; // every settings form on screen, to reset them all
 let controlsForm: SettingsForm | null = null;
+// The Steam section's calls go to the backend's plain methods, or with this on to their `async def` twins.
+let steamAsync = false;
+const steamMethod = (name: string) => (steamAsync ? `${name}_async` : name);
 
 function showGame(game: GameState) {
   const name = (g: GameState["running"]) => (g ? (g.name ?? g.appid) : "—");
@@ -383,13 +386,20 @@ export default defineModule({
             }),
             callButton(ctx, "Ask me (dialog / Tasks)", async () =>
               ((await ctx.call<{ accepted: boolean }>("ask_task")).accepted ? "Accepted" : "Denied")),
+            callButton(ctx, "Ask me (async method)", async () =>
+              ((await ctx.call<{ accepted: boolean }>("ask_task_async")).accepted ? "Accepted" : "Denied")),
           ]),
           ui.section("Calls", [
-            callButton(ctx, "Who am I", async () => JSON.stringify(await ctx.call("whoami"))),
+            callButton(ctx, "Who am I", async () => JSON.stringify({ ui: ctx.id, backend: await ctx.call("whoami") })),
             callButton(ctx, "Steam folders", async () => JSON.stringify(await ctx.call("steam_folders"))),
             callButton(ctx, "Unpack sample", async () => JSON.stringify(await ctx.call("unpack_sample"))),
+            callButton(ctx, "Unpack sample (async method)", async () => JSON.stringify(await ctx.call("unpack_sample_async"))),
             callButton(ctx, "Download (checked)", async () => JSON.stringify(await ctx.call("download_sample", { checked: true }))),
             callButton(ctx, "Download (asks you)", async () => JSON.stringify(await ctx.call("download_sample", { checked: false }))),
+            callButton(ctx, "Download (asks you, async method)", async () =>
+              JSON.stringify(await ctx.call("download_sample_async", { checked: false }))),
+            callButton(ctx, "Newest release (get_json)", async () => JSON.stringify(await ctx.call("latest_release"))),
+            callButton(ctx, "Newest release (async method)", async () => JSON.stringify(await ctx.call("latest_release_async"))),
             callButton(ctx, "Notify", async () => {
               await ctx.call("notify", { title: "Demo", body: "A notification from Demo's backend" });
               return "Notification sent";
@@ -431,22 +441,24 @@ export default defineModule({
           ]),
           // ctx.steam: changes to the user's Steam, only on a Demo shortcut of its own (never a real game).
           ui.section("Steam (ctx.steam)", [
-            callButton(ctx, "What this Steam supports", async () => JSON.stringify(await ctx.call("steam_supports"))),
+            // The same calls through the backend's `async def` twins (ctx.steam.*_async).
+            ui.toggle({ label: "Use the async methods", value: false, onChange: (on) => void (steamAsync = on) }),
+            callButton(ctx, "What this Steam supports", async () => JSON.stringify(await ctx.call(steamMethod("steam_supports")))),
             callButton(ctx, "Steam language", async () => JSON.stringify(await ctx.call("steam_language"))),
             steamButton(ctx, "Add the Demo shortcut", "add_to", "add it in Steam: Games > Add a Non-Steam Game",
-              async () => JSON.stringify(await ctx.call("steam_shortcut_add"))),
+              async () => JSON.stringify(await ctx.call(steamMethod("steam_shortcut_add")))),
             steamButton(ctx, "Its launch options", "launch_options", "see them in the shortcut's Properties",
-              async () => JSON.stringify(await ctx.call("steam_shortcut_options"))),
+              async () => JSON.stringify(await ctx.call(steamMethod("steam_shortcut_options")))),
             steamButton(ctx, "Set them to DEMO=2", "set_launch_options", "type DEMO=2 %command% in its Properties",
-              async () => JSON.stringify(await ctx.call("steam_shortcut_options", { line: "DEMO=2 %command%" }))),
+              async () => JSON.stringify(await ctx.call(steamMethod("steam_shortcut_options"), { line: "DEMO=2 %command%" }))),
             steamButton(ctx, "Remove the Demo shortcut", "remove_shortcut", "remove it in Steam: Manage > Remove non-Steam game",
               async () => {
                 if (!(await ui.confirm("Remove the Demo shortcut from Steam?", { ok: "Remove" }))) return "Cancelled";
-                return JSON.stringify(await ctx.call("steam_shortcut_remove"));
+                return JSON.stringify(await ctx.call(steamMethod("steam_shortcut_remove")));
               }),
             steamButton(ctx, "Open Invasor's page", "open_url", "visit github.com/Gamemode-Invasor/invasor",
               async () => {
-                await ctx.call("open_url");
+                await ctx.call(steamMethod("open_url"));
                 return "Opened";
               }),
           ]),

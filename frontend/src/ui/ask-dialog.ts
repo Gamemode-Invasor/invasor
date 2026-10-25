@@ -1,10 +1,11 @@
 // A task that asks (t.ask, or ctx.http.download without a checksum) also shows its question as a
 // dialog where the user is, so pressing "Download" in a module's tab doesn't leave them wondering.
 // The Tasks panel stays the source of truth: the dialog answers through the same core.task_answer,
-// closes by itself when the task stops waiting (answered elsewhere, timed out, module unloaded), and
-// B or closing the panel only puts it off (it shows again when the panel opens), never answers Deny.
+// closes by itself when the question stops waiting (answered elsewhere, timed out, module unloaded),
+// steps aside for a module's own ui.confirm and comes back after it, and B only puts it off until
+// the panel opens again: it never answers Deny by itself.
 
-import { drawChoice } from "./controls";
+import { YIELD_EVENT, drawChoice } from "./controls";
 import type { TaskInfo, TasksSnapshot } from "./tasks-view";
 
 export interface AskDialog {
@@ -14,6 +15,8 @@ export interface AskDialog {
   panelOpened(): void;
   /** Something changed whether it may show (the Tasks panel opened or closed): hide or show. */
   refresh(): void;
+  /** The answer to task `id` didn't reach the backend: offer its question again. */
+  retry(id: number): void;
   destroy(): void;
 }
 
@@ -28,6 +31,10 @@ interface AskDeps {
   onAnswer(id: number, accept: boolean): void;
 }
 
+// A question is its task, when it started waiting and its text: the same task may ask again (even
+// the same words), and that is a new question. While a task waits its `updated` doesn't move.
+const keyOf = (t: TaskInfo) => `${t.id}\n${t.updated}\n${t.question}`;
+
 const waitingOf = (snapshot: TasksSnapshot) =>
   snapshot.active
     .filter((t) => t.state === "waiting" && t.question)
@@ -35,9 +42,9 @@ const waitingOf = (snapshot: TasksSnapshot) =>
 
 export function createAskDialog({ host, canShow, nameOf, onAnswer }: AskDeps): AskDialog {
   let waiting: TaskInfo[] = [];
-  const putOff = new Set<number>(); // B or the panel closing: not again until the panel opens
-  const answered = new Set<number>(); // sent, until the backend's push says it's no longer waiting
-  let current: { id: number; stop: AbortController } | null = null;
+  const putOff = new Set<string>(); // B: not again until the panel opens
+  const answered = new Set<string>(); // sent, until the backend says it no longer waits
+  let current: { key: string; stop: AbortController } | null = null;
   let watcher: MutationObserver | null = null;
   let destroyed = false;
 
@@ -48,33 +55,46 @@ export function createAskDialog({ host, canShow, nameOf, onAnswer }: AskDeps): A
 
   function show() {
     if (current || destroyed || !canShow()) return;
-    const task = waiting.find((t) => !putOff.has(t.id) && !answered.has(t.id));
+    const task = waiting.find((t) => !putOff.has(keyOf(t)) && !answered.has(keyOf(t)));
     const where = task ? host() : null;
     if (!task || !where) return;
     // One dialog at a time: wait for the one open (a module's ui.confirm, say) to close.
     if (where.querySelector(":scope > .modal")) {
       if (!watcher) {
         watcher = new MutationObserver(() => {
-          if (where.querySelector(":scope > .modal")) return;
+          if (where.isConnected && where.querySelector(":scope > .modal")) return;
           unwatch();
           show();
         });
         watcher.observe(where, { childList: true });
+        // A big window that closes with its dialog open takes `where` away: look again at the top layer.
+        if (where.parentElement) watcher.observe(where.parentElement, { childList: true });
       }
       return;
     }
     unwatch();
+    const key = keyOf(task);
     const stop = new AbortController();
-    current = { id: task.id, stop };
+    current = { key, stop };
+    let back = false;
+    const stepAside = () => stop.abort();
+    where.addEventListener(YIELD_EVENT, stepAside);
     const choices = [{ label: "Deny", value: false }, { label: "Accept", value: true }];
-    void drawChoice(where, `${nameOf(task.module)}: ${task.question}`, choices, { signal: stop.signal }).then((answer) => {
+    void drawChoice(where, `${nameOf(task.module)}: ${task.question}`, choices, {
+      signal: stop.signal,
+      yields: true,
+      onBack: () => (back = true),
+    }).then((answer) => {
+      where.removeEventListener(YIELD_EVENT, stepAside);
       current = null;
       if (answer !== null) {
-        answered.add(task.id);
+        answered.add(key);
         onAnswer(task.id, answer);
-      } else if (!stop.signal.aborted) {
-        putOff.add(task.id);
+      } else if (back) {
+        putOff.add(key);
       }
+      // Closed any other way (its window closed, the question went, a module's dialog came first):
+      // shown again where the user is, if it still waits.
       show();
     });
   }
@@ -82,13 +102,17 @@ export function createAskDialog({ host, canShow, nameOf, onAnswer }: AskDeps): A
   return {
     update(snapshot) {
       waiting = waitingOf(snapshot);
-      const ids = new Set(waiting.map((t) => t.id));
-      for (const set of [putOff, answered]) for (const id of set) if (!ids.has(id)) set.delete(id);
-      if (current && !ids.has(current.id)) current.stop.abort(); // its .then shows the next one
+      const keys = new Set(waiting.map(keyOf));
+      for (const set of [putOff, answered]) for (const key of set) if (!keys.has(key)) set.delete(key);
+      if (current && !keys.has(current.key)) current.stop.abort(); // its .then shows the next one
       else show();
     },
     panelOpened() {
       putOff.clear();
+      show();
+    },
+    retry(id) {
+      for (const key of answered) if (key.startsWith(`${id}\n`)) answered.delete(key);
       show();
     },
     refresh() {

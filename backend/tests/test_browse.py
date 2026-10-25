@@ -178,14 +178,22 @@ class Listdir(unittest.TestCase):
                 d = self.root / parent
                 for n in ["123", "456", "12a", "0"]:
                     (d / n).mkdir(parents=True)
-                r = browse.listdir(str(d), name_of=games.get)
+                r = browse.listdir(str(d), names_of=lambda appids: {a: games[a] for a in appids if a in games})
                 labels = {e["name"]: e["label"] for e in r["dirs"]}
                 self.assertEqual(labels, {"0": "0", "123": "123 - Some Game", "456": "456", "12a": "12a"})
+
+    def test_names_are_asked_once_for_the_whole_folder(self):
+        d = self.root / "compatdata"
+        for n in ["1", "2", "3", "x"]:
+            (d / n).mkdir(parents=True)
+        calls = []
+        browse.listdir(str(d), names_of=lambda appids: calls.append(sorted(appids)) or {})
+        self.assertEqual(calls, [["1", "2", "3"]])
 
     def test_no_labels_outside_compatdata(self):
         d = self.root / "other"
         (d / "123").mkdir(parents=True)
-        r = browse.listdir(str(d), name_of=lambda appid: "Some Game")
+        r = browse.listdir(str(d), names_of=lambda appids: {a: "Some Game" for a in appids})
         self.assertEqual(r["dirs"], [{"name": "123", "label": "123"}])
 
     def test_default_labels_are_the_name(self):
@@ -200,6 +208,9 @@ class FakeGame:
 
     def info(self, appid):
         return self._info(appid)
+
+    def names(self, appids):
+        return {a: n for a in appids if (n := (self._info(a) or {}).get("name"))}
 
 
 def run(value):
