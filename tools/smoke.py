@@ -835,18 +835,20 @@ class Smoke:
         print(" Settings")
         await self.unfold("Manage Invasor")
         await self.goto("Check for updates")
-        await self.press("A", wait=0.5)  # asks GitHub: no release yet, or up to date, are both fine
+        await self.press("A", wait=0.5)  # asks GitHub: no release yet, up to date, or a pre-release ahead of stable
+        ANSWERS = ("Couldn't check", "up to date", "The stable version is")
         # Its answer redraws the section (the button under the ring is replaced): wait for it, whatever it takes
         # (a fixed wait made the next steps race against it), then let the ring settle.
         for _ in range(40):
             updates = await self.js(f"""(() => [...{SR}.querySelectorAll('.section')].find(s => s.textContent.startsWith('Manage Invasor'))
               ?.textContent ?? '')()""")
-            if "Couldn't check" in updates or "up to date" in updates:
+            if any(t in updates for t in ANSWERS):
                 break
             await asyncio.sleep(0.5)
         await asyncio.sleep(0.6)
-        self.check("Manage Invasor: shows the installed version, and says it couldn't check or that it's up to date",
-                   "Installed:" in updates and ("Couldn't check" in updates or "up to date" in updates), updates[:160])
+        self.check("Manage Invasor: shows the installed version, and says it couldn't check, that it's up to date "
+                   "or (on a pre-release) which the stable version is",
+                   "Installed:" in updates and any(t in updates for t in ANSWERS), updates[:160])
         st = await self.unfold("Controller")
         st = await self.goto("Open/close panel")
         before_cfg = CONFIG_FILE.read_text() if CONFIG_FILE.exists() else ""
