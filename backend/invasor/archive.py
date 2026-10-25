@@ -2,6 +2,7 @@
 as a sequence of entries (zipfile, or tarfile; 7z and tar.zst go through bsdtar as a tar stream)
 and the core writes each entry itself, so the same rules hold for all of them: nothing outside
 the destination, no links unless asked, no devices, bounded in files and bytes."""
+import asyncio
 import contextlib
 import lzma
 import os
@@ -16,6 +17,7 @@ import zipfile
 import zlib
 from pathlib import Path
 
+from . import calls
 from .schema import InvalidArgument, Unavailable
 
 CHUNK = 1 << 20
@@ -191,6 +193,7 @@ def extract(archive, dest, *, only_top=None, single_root=False, max_bytes=2 << 3
 def _write_all(entries, tmp, only_top, max_bytes, max_files, symlinks, cancel):
     root = os.path.realpath(tmp)
     written, dirs = set(), {""}  # explicit entries; every folder there is
+    links = []
     total = 0
     it = iter(entries)
     while True:
@@ -198,6 +201,11 @@ def _write_all(entries, tmp, only_top, max_bytes, max_files, symlinks, cancel):
         try:
             raw, kind, mode, opener = next(it)
         except StopIteration:
+            # A later link can change where an earlier one points (y -> x/up/.., then x/up -> ..):
+            # only once all are written can each be resolved for real.
+            for link in links:
+                if not _inside(link, root):
+                    raise InvalidArgument(f"link pointing outside the archive: {os.path.relpath(link, tmp)!r}")
             return written
         except DAMAGE as e:
             raise _Damaged(f"the archive is damaged: {e}") from None
@@ -216,7 +224,7 @@ def _write_all(entries, tmp, only_top, max_bytes, max_files, symlinks, cancel):
         if len(written) > max_files:
             raise InvalidArgument(f"the archive holds more than {max_files} files")
         parent, _, _ = name.rpartition("/")
-        _make_dirs(tmp, parent, dirs, written, name)
+        _make_dirs(tmp, parent, dirs, written, name, max_files)
         path = os.path.join(tmp, name)
         if kind == "dir":
             if name not in dirs:
@@ -233,11 +241,12 @@ def _write_all(entries, tmp, only_top, max_bytes, max_files, symlinks, cancel):
                 if not target or "\0" in target or target.startswith("/") or where == ".." or where.startswith("../"):
                     raise InvalidArgument(f"link pointing outside the archive: {name!r} -> {target!r}")
                 os.symlink(target, path)
+                links.append(path)
                 continue
             total = _copy(src, path, 0o755 if mode & 0o111 else 0o644, total, max_bytes, cancel, name)
 
 
-def _make_dirs(tmp, parent, dirs, written, name):
+def _make_dirs(tmp, parent, dirs, written, name, max_files):
     """Create the missing folders above an entry (7z may list a file before its folder)."""
     parts = parent.split("/") if parent else []
     for i in range(len(parts)):
@@ -246,6 +255,8 @@ def _make_dirs(tmp, parent, dirs, written, name):
             continue
         if sub in written:
             raise InvalidArgument(f"{name!r} is inside {sub!r}, which isn't a folder")
+        if len(dirs) > max_files:
+            raise InvalidArgument(f"the archive holds more than {max_files} folders")
         os.mkdir(os.path.join(tmp, sub))
         os.chmod(os.path.join(tmp, sub), 0o755)
         dirs.add(sub)
@@ -309,3 +320,38 @@ def swap_dir(new, target):
         shutil.rmtree(new, ignore_errors=True)
     return target
 
+
+class _Either:
+    """Set when either event is: the module's own cancel, or its ctx being retired."""
+
+    def __init__(self, *events):
+        self._events = [e for e in events if e is not None]
+
+    def is_set(self):
+        return any(e.is_set() for e in self._events)
+
+
+class ModuleArchive:
+    """`ctx.archive`: extract() and swap_dir() for a module. They stop when the module is unloaded.
+    The plain methods block: call them from a plain (threaded) method; in `async def`, the `_async` twins."""
+
+    def __init__(self, ctx):
+        self._ctx = ctx
+
+    def extract(self, archive, dest, *, cancel=None, **options):
+        """See extract() above; it also stops (Unavailable) when the module is unloaded."""
+        calls.check(self._ctx, "ctx.archive.extract()")
+        return extract(archive, dest, cancel=_Either(cancel, self._ctx._stopped), **options)
+
+    def swap_dir(self, new, target):
+        """See swap_dir() above."""
+        calls.check(self._ctx, "ctx.archive.swap_dir()")
+        return swap_dir(new, target)
+
+    async def extract_async(self, archive, dest, **options):
+        """The same as extract(), for `async def` methods."""
+        return await asyncio.to_thread(self.extract, archive, dest, **options)
+
+    async def swap_dir_async(self, new, target):
+        """The same as swap_dir(), for `async def` methods."""
+        return await asyncio.to_thread(self.swap_dir, new, target)

@@ -943,6 +943,87 @@ class SwapDir(unittest.TestCase):
         self.assertEqual(os.listdir(self.home), [])
         self.assertTrue((self.new / "f.txt").exists())
 
+class LinkChains(Case):
+    """Links that each stay inside on their own but, together, point outside."""
+
+    def link(self, name, target):
+        return dict(name=name, kind=tarfile.SYMTYPE, linkname=target)
+
+    def test_a_chain_through_an_earlier_link_is_refused(self):
+        p = self.tar([self.link("x/up", ".."), self.link("y", "x/up/.."), ("x/k.txt", tarfile.REGTYPE, b"k")])
+        with self.assertRaises(InvalidArgument):
+            archive.extract(p, self.dest, symlinks="inside")
+        self.assertFalse(self.dest.exists())
+        self.assertEqual(os.listdir(self.box), [])
+
+    def test_a_later_link_that_makes_an_earlier_one_point_outside_is_refused(self):
+        p = self.tar([self.link("y", "z/.."), self.link("z", "x/up"), self.link("x/up", ".."), ("x/k.txt", tarfile.REGTYPE, b"k")])
+        with self.assertRaises(InvalidArgument):
+            archive.extract(p, self.dest, symlinks="inside")
+        self.assertEqual(os.listdir(self.box), [])
+
+    def test_links_that_stay_inside_still_work(self):
+        p = self.tar([("lib/real.so", tarfile.REGTYPE, b"x"), self.link("lib/link.so", "real.so"), self.link("top", "lib")])
+        archive.extract(p, self.dest, symlinks="inside")
+        self.assertEqual((self.dest / "top" / "link.so").read_bytes(), b"x")
+
+
+class ImplicitFolders(Case):
+    def test_folders_made_for_deep_files_count_too(self):
+        p = self.tar([("a/b/c/d/e/f.txt", tarfile.REGTYPE, b"x")])
+        with self.assertRaises(InvalidArgument):
+            archive.extract(p, self.dest, max_files=3)
+        archive.extract(p, self.box / "ok", max_files=6)
+
+
+class ModuleArchive(Case):
+    """ctx.archive: the same, stopped when the module is unloaded, refused on the event loop."""
+
+    class Ctx:
+        def __init__(self):
+            self._stopped = threading.Event()
+
+        @property
+        def _dead(self):
+            return self._stopped.is_set()
+
+    def setUp(self):
+        super().setUp()
+        self.ctx = self.Ctx()
+        self.mod = archive.ModuleArchive(self.ctx)
+        self.archive = self.zip({"top/a.txt": b"a"})
+
+    def test_extract_and_swap(self):
+        top = self.mod.extract(self.archive, self.dest, single_root=True)
+        self.assertEqual(self.mod.swap_dir(top, self.box / "final"), self.box / "final")
+        self.assertEqual((self.box / "final" / "a.txt").read_bytes(), b"a")
+
+    def test_unloaded_module_is_refused(self):
+        self.ctx._stopped.set()
+        with self.assertRaises(Unavailable):
+            self.mod.extract(self.archive, self.dest)
+        with self.assertRaises(Unavailable):
+            self.mod.swap_dir(self.work, self.box / "final")
+
+    def test_unloading_stops_a_running_extract(self):
+        # The module's own cancel and the ctx's retirement both count.
+        own = threading.Event()
+        self.ctx._stopped.set()
+        with mock.patch.object(type(self.ctx), "_dead", property(lambda s: False)):  # passed the check, then unloaded
+            with self.assertRaises(Unavailable):
+                self.mod.extract(self.archive, self.dest, cancel=own)
+        self.assertFalse(self.dest.exists())
+
+    def test_on_the_event_loop_it_is_refused_and_the_async_twin_works(self):
+        import asyncio
+
+        async def run():
+            with self.assertRaises(Unavailable):
+                self.mod.extract(self.archive, self.dest)
+            return await self.mod.extract_async(self.archive, self.dest, single_root=True)
+
+        self.assertEqual(asyncio.run(run()), self.dest / "top")
+
 
 if __name__ == "__main__":
     unittest.main()
