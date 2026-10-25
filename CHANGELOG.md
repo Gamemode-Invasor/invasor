@@ -7,6 +7,8 @@ their dates are listed for reference. The notes of the release being prepared li
 
 ## 0.3.0 (unreleased)
 
+Pre-releases: rc1 (2026-10-25).
+
 ### New
 
 - **Steam's folders for modules: `ctx.paths`.** `steam_root()`, `libraries()` (every `steamapps` folder, from `libraryfolders.vdf` plus SD cards and USB drives under `/run/media`), `userdata()` (the account in use: `loginusers.vdf`'s `MostRecent` user, else the newest login, else the only account; `all=True` lists every account), `grid_dir()`, and a game's `compatdata(appid)` / `shadercache(appid)` in the library that holds it. Read only; `Unavailable` when Steam's folder or the account can't be found. Needs `min_core` 0.3.0. Demo has a "Steam folders" button
