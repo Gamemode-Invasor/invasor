@@ -15,7 +15,6 @@ import os
 import re
 import ssl
 import tempfile
-import threading
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -23,6 +22,7 @@ from urllib.parse import urlsplit
 
 from . import __version__
 from .schema import InvalidArgument, Unavailable
+from .steam import notify_later
 from .tasks import Task
 
 log = logging.getLogger("invasor.http")
@@ -254,12 +254,5 @@ class ModuleHttp:
     def _notify_question(self):
         # STEAM TOUCHPOINT (see docs/API-Steam.md, 2.3): a toast so the user knows a question waits.
         # A thread of its own: notify_sync() waits for Steam. Never fatal.
-        steam = self._ctx._steam
-        if steam is None:
-            return
-        def show():
-            try:
-                steam.notify_sync(f"{self._ctx.id} needs an answer", "Open Invasor's Tasks panel", "")
-            except Exception as e:
-                self._ctx.log.info("question notification not shown: %s", e)
-        threading.Thread(target=show, name="invasor-ask-notify", daemon=True).start()
+        notify_later(self._ctx._steam, f"{self._ctx.id} needs an answer", "Open Invasor's Tasks panel",
+                     self._ctx.log, "question", "invasor-ask-notify")
