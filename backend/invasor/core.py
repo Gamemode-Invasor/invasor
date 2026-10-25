@@ -5,7 +5,7 @@ import platform
 import shutil
 import subprocess
 
-from . import __version__, config, gamepad, install, modpool
+from . import __version__, browse, config, gamepad, install, modpool
 from .market import Market
 from .updater import Updater, run_detached
 from .schema import InvalidArgument, Unavailable
@@ -132,6 +132,17 @@ def _overlay_methods(game, watcher, cfg, injector, steam):
         config.save(cfg, **{key: value})
         return prefs()
 
+    def browse_path(path=None, files=False, ext=None, hidden=False):
+        """One folder for ctx.pickPath: any folder the user can read (their machine, their
+        choice; the module checks the path it gets). Numbered folders in compatdata/shadercache
+        are labelled with their game."""
+        def name_of(appid):
+            try:
+                return (game.info(appid) or {}).get("name")
+            except Exception:
+                return None
+        return browse.listdir(path, files=_flag("files", files), ext=ext, hidden=_flag("hidden", hidden), name_of=name_of)
+
     def pads():
         return [{"device": dev, "name": name, "kind": kind} for dev, name, kind in gamepad.pads()]
 
@@ -147,6 +158,7 @@ def _overlay_methods(game, watcher, cfg, injector, steam):
         "game": game_state,
         "steam_call": steam_call,
         "notify": notify,
+        "browse_path": browse_path,
     }
 
 
