@@ -102,6 +102,7 @@ How it can fail:
   shows. If the achievement message changes, the notification may show without some text. Nothing else is affected.
   The update check (Invasor release and Market module versions) shows its notifications the same way, once Steam has started: if Steam's UI is not ready it retries later without marking them as announced.
   `ctx.task()` uses the same notification (when it starts and ends, unless `notify=False`): a failure there is only logged and the task itself goes on, so the Tasks panel is unaffected.
+  `ctx.http.download()` without a checksum shows one too ("<module> needs an answer", body "Open Invasor's Tasks panel", `notify_sync` in a thread of its own) while the user is asked: if it fails there is just no toast (logged), and the dot on the handle and the Tasks panel still show the question.
 
 ### 2.4 Inside the injected windows
 
