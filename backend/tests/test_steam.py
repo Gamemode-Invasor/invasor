@@ -158,5 +158,52 @@ class Notify(unittest.IsolatedAsyncioTestCase):
             self.bridge.notify_sync("t")
 
 
+class Run(unittest.IsolatedAsyncioTestCase):
+    """run(): a fixed JS snippet of the core's own, evaluated as is in SharedJSContext."""
+
+    async def asyncSetUp(self):
+        self.calls, self.answer = [], {"any": ["shape"]}
+
+        async def evaluate(expression, timeout):
+            self.calls.append(expression)
+            if isinstance(self.answer, Exception):
+                raise self.answer
+            return self.answer
+
+        self.bridge = SteamBridge(evaluate)
+        self.bridge.loop = asyncio.get_running_loop()
+
+    async def test_the_expression_goes_through_as_is(self):
+        js = "(() => typeof SteamClient.Apps.AddShortcut)()"
+        self.assertEqual(await self.bridge.run(js), {"any": ["shape"]})
+        self.assertEqual(self.calls, [js])
+        self.answer = None
+        self.assertIsNone(await self.bridge.run("null"))
+
+    async def test_failures_are_unavailable(self):
+        for answer in (RuntimeError("JS threw"), ConnectionError("no Steam"), asyncio.TimeoutError(), Unavailable("gone")):
+            self.answer = answer
+            with self.subTest(answer=answer), self.assertRaises(Unavailable):
+                await self.bridge.run("1")
+
+    async def test_sync_variant_from_threads_but_not_from_the_loop(self):
+        self.assertEqual(await asyncio.to_thread(self.bridge.run_sync, "1"), {"any": ["shape"]})
+        with self.assertRaises(RuntimeError):
+            self.bridge.run_sync("1")
+
+    async def test_a_run_steam_never_answers_is_unavailable(self):
+        async def hang(expression, timeout):
+            await asyncio.sleep(60)
+
+        self.bridge._evaluate = hang
+        with self.assertRaisesRegex(Unavailable, "didn't answer"):
+            await asyncio.to_thread(self.bridge.run_sync, "1", timeout=-4.9)
+
+    def test_not_ready_is_unavailable(self):
+        bridge = SteamBridge(lambda e, t: None)
+        with self.assertRaises(Unavailable):
+            bridge.run_sync("1")
+
+
 if __name__ == "__main__":
     unittest.main()

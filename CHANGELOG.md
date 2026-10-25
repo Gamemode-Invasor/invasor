@@ -5,6 +5,37 @@ their dates are listed for reference. The notes of the release being prepared li
 
 ---
 
+## 0.3.0 (unreleased)
+
+Pre-releases: rc1 (2026-10-25).
+
+### New
+
+- **Steam's folders for modules: `ctx.paths`.** `steam_root()`, `libraries()` (every `steamapps` folder, from `libraryfolders.vdf` plus SD cards and USB drives under `/run/media`), `userdata()` (the account in use: `loginusers.vdf`'s `MostRecent` user, else the newest login, else the only account; `all=True` lists every account), `grid_dir()`, and a game's `compatdata(appid)` / `shadercache(appid)` in the library that holds it. Read only; `Unavailable` when Steam's folder or the account can't be found. Needs `min_core` 0.3.0. Demo has a "Steam folders" button
+- **Steam's VDF files for modules: `ctx.vdf`.** `loads_text` for text VDF (`libraryfolders.vdf`, `appmanifest_<appid>.acf`, `loginusers.vdf`…), `loads_binary` (`shortcuts.vdf`) and `get(node, *path, default=None)`, which ignores the case of the keys. Read only. `VDFError` is now an `InvalidArgument`. Needs `min_core` 0.3.0
+- **Unpacking archives for modules: `ctx.archive`.** `extract(archive, dest, …)` unpacks zip, tar (plain, `.gz`, `.xz`, `.bz2`), 7z and `tar.zst` (these two through `bsdtar`, which SteamOS ships) with the same rules for all: into a temporary folder next to `dest` and renamed into place, nothing outside it, links only with `symlinks="inside"`, no devices or hard links, modes normalised, limits on files and bytes really written. `swap_dir(new, target)` replaces a folder in one rename. Needs `min_core` 0.3.0. Demo has an "Unpack sample" button
+- **Downloads for modules: `ctx.http`.** `download(url, dest, …)` and `get_json(url)`, with `_async` twins for `async def`. https only, and a redirect that leaves https is refused; with a `checksum` (sha256 or sha512) a file that doesn't match never reaches `dest`; without one the user is asked first in the Tasks panel (and a Steam notification says so), unless `user_chose=True` for a file the user just picked (at most 100 MB, logged). Written next to `dest` and renamed at the end, never executable; stops when the module is unloaded. Not a sandbox: `urllib` still works, unchecked. Needs `min_core` 0.3.0. Demo has "Download (checked)" and "Download (asks you)" buttons
+- **Tasks that ask: `t.ask(question)`.** A task can wait for the user's answer: it shows as waiting (new `"waiting"` state, with its question) with Accept / Deny in the Tasks panel, and the dot on the handle shows it first; no answer in 10 minutes is a no. The `task` event also fires when a task starts waiting
+- **Changing the user's Steam: `ctx.steam`.** `supports(name)`, `open_url(url)` (Steam's browser), `add_to(name, exe, …)` (a non-Steam shortcut: `{"appid", "existed"}`), `remove_shortcut(appid)` (only one this module added, still pointing to the same exe), `launch_options(appid)` and `set_launch_options(appid, line)` (read back: `{"applied", "verified"}`), with `_async` twins for `async def`. Only on a user action; every change is logged and shown as a Steam notification. `add_to` and `open_url` fall back to `steam://` links through gio/xdg-open; removing and launch options have no fallback, so check `supports()` and keep a plan B. Needs `min_core` 0.3.0. Demo has a "Steam (ctx.steam)" section that works on a Demo shortcut of its own
+- **Steam's language: `ctx.steam_language(raw=False)`.** A short code (`"en"`, `"es"`…) or, with `raw=True`, Steam's own name, read from `~/.steam/registry.vdf`. Needs `min_core` 0.3.0. Demo has a "Steam language" button
+- **Copying and picking files in a module's UI: `ctx.copy` and `ctx.pickPath`.** `ctx.copy(text)` copies to the clipboard (with a fallback that gives Steam its focus back) and answers whether it worked; `ctx.pickPath({...})` opens a file or folder picker window and answers the real path, or `null`. Options: files or a folder, endings (`ext`), where it opens, the choose button's label, hidden entries. Needs `min_core` 0.3.0. Demo has a "Files" section
+
+### Fixes
+
+- **A module's `ctx` follows the same rules everywhere once it's retired.** `steam_call` and `notify` raise `Unavailable` after the module is unloaded, like everything new; `game_data(appid)` refuses a bad appid with `InvalidArgument` (it was a bare `ValueError`, and accepted `0`)
+- **What the user reads can't be bent.** Control characters and bidi overrides in a task's label, text or question become spaces, so a question can't break into lines or pass for another; URLs with control characters are refused by `ctx.http` too (one check for `ctx.http` and `ctx.steam.open_url`); `ctx.steam.add_to` refuses an `exe` or `start_dir` with control characters (they could add lines to the fallback's `.desktop`)
+
+### Internal
+
+- The game context finds Steam's libraries with `paths.py` (`libraryfolders.vdf` read with the text VDF reader instead of a regex), so games in a library on an SD card or USB drive under `/run/media` have their name too
+- The updater unpacks its package with `archive.py`, the same rules for every format; the module zip installer is unchanged
+- The updater, the Market and `tools/gen_market.py` download through `http.py`: a redirect that leaves https is refused before it's followed (it was only checked after), a failed download leaves no partial file, and `gen_market`'s GitHub token is no longer sent on a redirect to another host
+- `steam.notify_later` shows a notification from a thread of its own, never fatal: shared by task toasts, the download question and `ctx.steam`
+- `core.browse_path` lists one folder for `ctx.pickPath`: real paths, folders first, game names next to numbered `compatdata` / `shadercache` folders, at most 1000 entries
+- One reader of `shortcuts.vdf` and one appmanifest lookup (`paths.py`) for the game context and `ctx.steam`; game names come from the text VDF reader instead of a regex
+
+---
+
 ## 0.2.2 (2026-10-22)
 
 ### Fixes

@@ -13,19 +13,16 @@ truncated download, not a compromised GitHub account.
 import asyncio
 import hashlib
 import hmac
-import json
 import logging
 import re
 import shutil
-import ssl
 import subprocess
-import tarfile
 import tempfile
 import urllib.error
-import urllib.request
 from pathlib import Path
 
-from . import __version__, config
+from . import __version__, config, http
+from . import archive as archives
 from .version import parse_version
 from .schema import InvalidArgument, Unavailable
 
@@ -35,9 +32,7 @@ REPO = "Gamemode-Invasor/invasor"
 RELEASE_URL = f"https://api.github.com/repos/{REPO}/releases/latest"  # stable channel: never a pre-release
 RELEASES_URL = f"https://api.github.com/repos/{REPO}/releases?per_page=30"  # beta channel: pre-releases too
 DOWNLOAD_PREFIX = f"https://github.com/{REPO}/releases/download/"
-USER_AGENT = f"invasor/{__version__}"  # GitHub's API refuses requests without one
-TIMEOUT = 20
-MAX_JSON = 1 << 20
+GITHUB_HEADERS = {"Accept": "application/vnd.github+json"}
 MAX_PACKAGE = 64 << 20
 MAX_UNPACKED = 256 << 20
 
@@ -60,45 +55,14 @@ rm -rf "$2"
 """
 
 
-def _opener():
-    return urllib.request.build_opener(urllib.request.HTTPSHandler(context=ssl.create_default_context()))
-
-
-def _request(url):
-    return urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"})
-
-
 def fetch_json(url):
-    with _opener().open(_request(url), timeout=TIMEOUT) as r:
-        data = r.read(MAX_JSON + 1)
-    if len(data) > MAX_JSON:
-        raise ValueError("answer too large")
-    return json.loads(data)
+    return http.fetch_json(url, headers=GITHUB_HEADERS)
 
 
 def download(url, dest, limit, progress=None):
-    """Save url (https only) at dest, giving up past `limit` bytes. `progress(done, total)`,
-    if given, hears how many bytes are in so far (total is None when the server doesn't say)."""
-    if not url.startswith("https://"):
-        raise ValueError(f"not an https URL: {url}")
-    size = 0
-    with _opener().open(_request(url), timeout=TIMEOUT) as r:
-        if not r.geturl().startswith("https://"):  # a redirect may leave https
-            raise ValueError(f"redirected to a non-https URL: {r.geturl()}")
-        total = None
-        if progress:
-            try:
-                total = int(r.headers.get("Content-Length") or 0) or None
-            except ValueError:
-                pass
-        with open(dest, "wb") as f:
-            while chunk := r.read(1 << 16):
-                size += len(chunk)
-                if size > limit:
-                    raise ValueError("download too large")
-                f.write(chunk)
-                if progress:
-                    progress(size, total)
+    """Save url (https only) at dest, giving up past `limit` bytes (see http.save: a failure
+    leaves no partial file). `progress(done, total)`, if given, hears how many bytes are in so far."""
+    http.save(url, dest, limit=limit, progress=progress, headers=GITHUB_HEADERS)
 
 
 def verify_sha256(path, sha_text, what):
@@ -132,28 +96,15 @@ def launch(root, workdir):
 
 
 def safe_extract(archive, dest, root_name):
-    """Unpack the package under dest/<root_name>: only plain files and folders, nothing
-    outside that folder (no absolute paths, .., links or devices), bounded in size."""
-    total = 0
-    with tarfile.open(archive, "r:gz") as tar:
-        members = tar.getmembers()
-        for m in members:
-            parts = Path(m.name).parts
-            if m.name.startswith("/") or ".." in parts or not parts or parts[0] != root_name:
-                raise ValueError(f"unsafe path in the package: {m.name!r}")
-            if not (m.isfile() or m.isdir()):
-                raise ValueError(f"unexpected entry in the package: {m.name!r}")
-            total += m.size
-            if total > MAX_UNPACKED:
-                raise ValueError("package too large once unpacked")
-        for m in members:
-            m.mode = 0o755 if (m.isdir() or m.mode & 0o100) else 0o644
-            m.uid = m.gid = 0
-            m.uname = m.gname = ""
-        # Python 3.12+ (and the security releases of 3.9-3.11) have extraction filters: use the strictest.
-        extra = {"filter": "data"} if hasattr(tarfile, "data_filter") else {}
-        tar.extractall(dest, members, **extra)
-    return Path(dest) / root_name
+    """Unpack the package under dest/<root_name>: only plain files and folders in that single
+    folder (no absolute paths, .., links or devices), bounded in size (see archive.py)."""
+    unpacked = Path(dest) / ".unpacked"
+    top = archives.extract(archive, unpacked, single_root=True, max_bytes=MAX_UNPACKED)
+    if top.name != root_name:
+        raise InvalidArgument(f"the package holds {top.name!r}, not {root_name!r}")
+    root = top.rename(Path(dest) / root_name)
+    unpacked.rmdir()
+    return root
 
 
 class Updater:
@@ -267,7 +218,7 @@ class Updater:
                 task.update(0.9, "Unpacking")
             try:
                 root = safe_extract(tarball, work, f"invasor-{version}")
-            except (ValueError, tarfile.TarError, OSError) as e:
+            except (ValueError, OSError) as e:
                 raise InvalidArgument(f"the update package is invalid: {e}") from None
             self._check_contents(root, version)
             log.info("updating %s -> %s", self.current, version)

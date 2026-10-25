@@ -161,7 +161,7 @@ python3 tools/check_module.py modules/<id>
 Everything Invasor takes from the Steam client is listed here. Each point is marked `STEAM TOUCHPOINT` in
 the code. After a Steam update, `tools/smoke.py` checks all of them in a minute.
 The details, how each one can fail and a comparison with Decky Loader: [docs/API-Steam.md](docs/API-Steam.md).
-Modules can also show a notification the way Steam shows an achievement (`ctx.notify`), react to games and Steam (`ctx.events`) and report the progress of long operations (`ctx.task`, shown in the Tasks panel).
+Modules can also show a notification the way Steam shows an achievement (`ctx.notify`), react to games and Steam (`ctx.events`), report the progress of long operations (`ctx.task`, shown in the Tasks panel), add shortcuts and set launch options in Steam on a user action (the backend's `ctx.steam`), and download files, asking the user first when there is no checksum (`ctx.http`, with a notification saying a question waits).
 
 | Touchpoint | Used for | If Valve changes it |
 |---|---|---|
@@ -173,7 +173,10 @@ Modules can also show a notification the way Steam shows an achievement (`ctx.no
 | `vgp_onbuttondown` events and their button numbers (Select is 13, Start 14) | gamepad navigation in the panel, and Select / Start for the Tasks / Settings panels | the panel opens (L3+R3) but isn't navigable with the pad (Tasks and Settings open with their header buttons); touch and F10 still work |
 | `window.screenX` / `innerWidth` of Steam's windows | fitting the panel in Quick Access | it falls back to the learned width (348px) |
 | CSS class `.gpfocus` | returning focus after physical-keyboard typing | focus isn't returned; nothing else changes |
-| `SteamClient` (optional), in this window or in `SharedJSContext` | `ctx.steam.safeCall` / `ctx.steam_call` for modules (e.g. Artwork's live refresh), and `User.StartRestart` for ⚙ Settings › Manage Invasor › Restart Steam | calls fail cleanly (503); modules fall back (Artwork: the new art shows after restarting Steam) |
+| `SteamClient` (optional), in this window or in `SharedJSContext` | the UI's `ctx.steam.safeCall` / the backend's `ctx.steam_call` for modules (e.g. Artwork's live refresh), and `User.StartRestart` for ⚙ Settings › Manage Invasor › Restart Steam | calls fail cleanly (503); modules fall back (Artwork: the new art shows after restarting Steam) |
+| `SteamClient.Apps`: `AddShortcut`, `SetShortcutName` / `StartDir` / `LaunchOptions`, `RemoveShortcut`, `SetAppLaunchOptions`, `RegisterForAppDetails` | the backend's `ctx.steam`: adding and removing non-Steam shortcuts, reading and setting launch options | `ctx.steam.supports()` says `False` and the module shows its plan B; adding falls back to the `steam://addnonsteamgame` link |
+| `SteamClient.URL.ExecuteSteamURL` (`steam://openurl/…`, `steam://addnonsteamgame/…`, which needs `/tmp/addnonsteamgamefile`) | `ctx.steam.open_url`, and adding a shortcut without `AddShortcut` | it opens the link with `gio` / `xdg-open` in the user's session; if that fails too, `Unavailable` (503) |
+| Files on disk: `userdata/*/config/shortcuts.vdf`, `libraryfolders.vdf`, `loginusers.vdf`, `~/.steam/registry.vdf` | shortcut names, and checking what `ctx.steam` did; Steam's libraries and account folder (`ctx.paths`); Steam's language (`ctx.steam_language`) | names or folders are missing, `ctx.paths` raises `Unavailable`, the language is `"en"` |
 
 ## Tests
 

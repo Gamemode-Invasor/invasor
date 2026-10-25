@@ -130,6 +130,33 @@ export interface ModuleCtx {
    * settling into place). Returns an unsubscribe function. ui.windowButton uses it.
    */
   onSpaceChange(cb: (canOpen: boolean) => void): () => void;
+  /**
+   * Put text on the clipboard. Resolves false (never rejects) if it couldn't, or if the
+   * text is over 1 MB. Needs Invasor 0.3.0 (`"min_core": "0.3.0"` in module.json).
+   */
+  copy(text: string): Promise<boolean>;
+  /**
+   * Let the user pick a file or folder in a big window. Resolves its absolute path, or
+   * null if they closed it (or there's no room: see openWindow). One per module at a
+   * time: a new one closes the last (which resolves null). Any folder the user can read
+   * is listed, so check the path you get. Needs Invasor 0.3.0 (`min_core`).
+   */
+  pickPath(options: PickPathOptions): Promise<string | null>;
+}
+
+export interface PickPathOptions {
+  /** The window's title. */
+  title: string;
+  /** True: list files and pick one by pressing it. False (default): pick a folder with chooseLabel. */
+  files?: boolean;
+  /** With files: only these endings, e.g. [".dll"] (case-insensitive). */
+  ext?: string[];
+  /** True: also list hidden files and folders (names starting with "."). Default false. */
+  hidden?: boolean;
+  /** Absolute folder where it opens; missing or gone: the home folder. */
+  start?: string;
+  /** The folder mode's button. Default "Choose this folder". */
+  chooseLabel?: string;
 }
 
 // ---------- pages, tabs and windows ----------

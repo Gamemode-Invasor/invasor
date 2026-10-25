@@ -24,6 +24,7 @@ __pycache__/
 *.corrupt
 frontend/.tsconfig.module.json
 *.zip
+!modules/demo/assets/sample.zip
 *.tar.gz
 *.tar.gz.sha256
 release/

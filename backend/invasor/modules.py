@@ -20,7 +20,11 @@ import shutil
 import sys
 import threading
 
-from . import __version__, checkmod, config, schema, steam, tomlio
+from . import __version__, checkmod, config, schema, steam, tomlio, vdf
+from . import archive
+from .http import ModuleHttp
+from . import steamctx
+from . import paths as steam_paths
 from .schema import Unavailable
 from .storage import JsonStore
 from .tasks import TaskRegistry
@@ -195,6 +199,10 @@ class ModuleContext:
 
     # Read/write TOML config files without losing anything (see tomlio.py).
     toml = tomlio
+    # Steam's folders: library, account, compatdata... (see paths.py).
+    paths = steam_paths
+    # Steam's VDF files, read only (see vdf.py).
+    vdf = vdf
 
     def __init__(self, module_id, path, game, settings, steam=None, forms=None, tasks=None):
         self.id = module_id
@@ -202,7 +210,7 @@ class ModuleContext:
         self.path = path
         self.game = game  # context.GameContext: .selected / .running
         self.log = logging.getLogger(f"invasor.mod.{module_id}")
-        self._dead = False  # set when the module is unloaded: its callbacks no longer start
+        self._stopped = threading.Event()  # set when the module is unloaded: see _dead
         self._terminal = False  # the context of uninstall(): nothing is left to react to Steam
         self.settings = ContextSettings(settings, self)
         # Free-form storage for whatever isn't a user setting (caches, state…).
@@ -210,7 +218,25 @@ class ModuleContext:
         self._steam = steam
         self._tasks = tasks
         self.events = Events(self)
+        # Downloads over https (see http.py).
+        self.http = ModuleHttp(self)
+        # Unpack zip/tar/7z archives safely and swap folders in place (see archive.py).
+        self.archive = archive.ModuleArchive(self)
+        # Shortcuts, launch options and web pages in the user's Steam (see steamctx.py).
+        self.steam = steamctx.ModuleSteam(self)
         self._warned_steam_start = False
+
+    @property
+    def _dead(self):
+        """The module was unloaded: its callbacks no longer start, its downloads stop."""
+        return self._stopped.is_set()
+
+    @_dead.setter
+    def _dead(self, value):
+        if value:
+            self._stopped.set()
+        else:
+            self._stopped.clear()
 
     def _is_alive(self):
         return not self._dead
@@ -229,14 +255,12 @@ class ModuleContext:
         """SteamClient.<path>(*args), evaluated in Steam's SharedJSContext. For plain
         (threaded) methods. Raises schema.Unavailable when Steam or that function
         isn't there: always have a plan B. Example: steam_call("Apps.SetShortcutName", appid, name)."""
-        if self._steam is None:
-            raise Unavailable("SteamClient bridge not configured")
+        self._bridge()
         return self._steam.call_sync(path, *args, timeout=timeout)
 
     async def steam_call_async(self, path, *args, timeout=15):
         """The same as steam_call(), for `async def` methods."""
-        if self._steam is None:
-            raise Unavailable("SteamClient bridge not configured")
+        self._bridge()
         return await self._steam.call(path, args, timeout)
 
     def notify(self, title, body="", icon="", timeout=15, sound=""):
@@ -244,15 +268,25 @@ class ModuleContext:
         icon: an https URL or data:image/…;base64; sound: "trophy", "message", "toast", "chat",
         "mention", "friend", "online", "ingame" or "none"; omitted: Steam decides). For plain (threaded) methods. Raises
         InvalidArgument for bad input and Unavailable when Steam can't show it: have a plan B."""
-        if self._steam is None:
-            raise Unavailable("SteamClient bridge not configured")
+        self._bridge()
         return self._steam.notify_sync(title, body, icon, timeout=timeout, sound=sound)
 
     async def notify_async(self, title, body="", icon="", timeout=15, sound=""):
         """The same as notify(), for `async def` methods."""
+        self._bridge()
+        return await self._steam.notify(title, body, icon, timeout, sound)
+
+    def _bridge(self):
+        """Unavailable when there's no Steam bridge, or once this module is unloaded."""
+        if self._dead:
+            raise Unavailable("this module was unloaded: it can't call Steam anymore")
         if self._steam is None:
             raise Unavailable("SteamClient bridge not configured")
-        return await self._steam.notify(title, body, icon, timeout, sound)
+
+    def steam_language(self, raw=False):
+        """Steam's language as a short code ("en", "es"...; "en" when unknown), or raw=True as
+        Steam names it ("spanish"...; "" when unknown). Read from disk: fast, no Steam call."""
+        return steamctx.language(raw)
 
     def task(self, label, notify=True, sound="toast"):
         """A long operation that others can watch: `with ctx.task("Downloading X") as t:` then
@@ -281,19 +315,12 @@ class ModuleContext:
         if self._steam is None or (phase == "end" and self._dead):
             return
         body = view["text"] if phase == "end" else ""
-        def show():
-            try:
-                self._steam.notify_sync(view["label"], body, "", sound=sound)
-            except Exception as e:
-                self.log.info("task notification not shown: %s", e)
-        threading.Thread(target=show, name="invasor-task-notify", daemon=True).start()
+        steam.notify_later(self._steam, view["label"], body, self.log, "task", "invasor-task-notify", sound)
 
     def game_data(self, appid):
         """Free-form storage for this module and one game."""
         # appid ends up in a file path: only plain numbers, never "../something".
-        appid = str(appid)
-        if not (appid.isascii() and appid.isdigit()):
-            raise ValueError(f"invalid appid {appid!r}")
+        appid = steam_paths.appid_str(appid)
         return JsonStore(DATA_DIR / self.id / "games" / f"{appid}.json", self._is_alive)
 
 

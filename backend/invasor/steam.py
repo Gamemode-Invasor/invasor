@@ -10,6 +10,7 @@ import concurrent.futures
 import json
 import re
 import struct
+import threading
 
 from .schema import InvalidArgument, Unavailable
 
@@ -140,6 +141,19 @@ def check_notification(title, body="", icon="", sound=""):
     return title, body, icon, SOUNDS.get(sound)
 
 
+def notify_later(bridge, title, body, log, what, thread_name, sound=""):
+    """bridge.notify_sync(title, body) in a daemon thread (it waits for Steam), never fatal:
+    a failure is one INFO line about `what` in `log`. Nothing when there's no bridge."""
+    if bridge is None:
+        return
+    def show():
+        try:
+            bridge.notify_sync(title, body, "", sound=sound)
+        except Exception as e:
+            log.info("%s notification not shown: %s", what, e)
+    threading.Thread(target=show, name=thread_name, daemon=True).start()
+
+
 class SteamBridge:
     def __init__(self, evaluate_shared):
         self._evaluate = evaluate_shared  # async (expression, timeout) -> value
@@ -165,6 +179,20 @@ class SteamBridge:
         if not isinstance(res, dict) or res.get("missing"):
             raise Unavailable(f"SteamClient.{path} isn't available")
         return res.get("value")
+
+    async def run(self, expression, timeout=DEFAULT_TIMEOUT):
+        """The value of a JS expression evaluated in SharedJSContext. Only the core builds these
+        expressions, with every value in them json.dumps-ed. Unavailable if Steam isn't there."""
+        try:
+            return await self._evaluate(expression, timeout)
+        except Unavailable:
+            raise
+        except Exception as e:
+            raise Unavailable(f"Steam couldn't run it: {e}") from None
+
+    def run_sync(self, expression, timeout=DEFAULT_TIMEOUT):
+        """run() for plain (threaded) methods."""
+        return self._sync(self.run(expression, timeout), timeout)
 
     async def notify(self, title, body="", icon="", timeout=DEFAULT_TIMEOUT, sound=""):
         """Show a notification as Steam shows an achievement, with the chosen

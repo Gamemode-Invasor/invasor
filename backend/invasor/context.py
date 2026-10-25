@@ -13,43 +13,25 @@ import os
 import re
 from pathlib import Path
 
-from . import cef, cef_flag, vdf
+from . import cef, paths, schema, vdf
 
 log = logging.getLogger("invasor.context")
 
 POLL_INTERVAL = 3
-STEAM_ROOT = None  # Steam's folder if set (tests); else found as the installer and cef_flag find it
 # STEAM TOUCHPOINT: SharedJSContext's URL shows the library route (no game shown if it changes).
 ROUTE_APP = re.compile(r"/routes/library/app/(\d+)")
-VDF_PATH = re.compile(r'"path"\s+"([^"]+)"')
-VDF_NAME = re.compile(r'"name"\s+"([^"]*)"')
-
-
-def _steam_root():
-    """Steam's folder: ~/.steam/steam or ~/.local/share/Steam (cef_flag.steam_dir), whichever exists."""
-    return STEAM_ROOT or cef_flag.steam_dir() or Path.home() / ".local/share/Steam"
-
-
-def _library_dirs():
-    root = _steam_root()
-    dirs = [root]
-    try:
-        text = (root / "steamapps/libraryfolders.vdf").read_text(errors="replace")
-        dirs += [Path(p.replace("\\\\", "\\")) for p in VDF_PATH.findall(text)]
-    except OSError:
-        pass
-    return list(dict.fromkeys(dirs))
 
 
 def _app_name(appid):
-    for lib in _library_dirs():
-        try:
-            text = (lib / f"steamapps/appmanifest_{appid}.acf").read_text(errors="replace")
-        except OSError:
-            continue
-        if m := VDF_NAME.search(text):
-            return m.group(1)
-    return None
+    """An installed Steam game's name, from its appmanifest, or None."""
+    try:
+        manifest = paths.appmanifest(appid)
+        if manifest is None:
+            return None
+        name = vdf.get(vdf.loads_text(manifest.read_text(errors="replace")), "AppState", "name")
+    except (OSError, schema.InvalidArgument, schema.Unavailable):
+        return None
+    return name if isinstance(name, str) else None
 
 
 _shortcuts_cache = {"key": None, "names": {}, "exes": {}}
@@ -63,7 +45,10 @@ def _shortcut_exes():
 
 def _shortcut_names():
     """{appid: name} for non-Steam shortcuts of every local Steam user, re-read only when files change."""
-    files = sorted((_steam_root() / "userdata").glob("*/config/shortcuts.vdf"))
+    try:
+        files = paths.shortcut_files()
+    except schema.Unavailable:
+        files = []
     key = []
     for f in files:
         try:
@@ -72,23 +57,10 @@ def _shortcut_names():
             pass
     if key == _shortcuts_cache["key"]:
         return _shortcuts_cache["names"]
-    names, exes = {}, {}
-    for f, _ in key:
-        try:
-            shortcuts = vdf.loads_binary(Path(f).read_bytes()).get("shortcuts", {})
-        except (OSError, vdf.VDFError) as e:
-            log.warning("cannot read %s: %s", f, e)
-            continue
-        for entry in shortcuts.values():
-            # Keys are "AppName"/"appname" depending on who wrote the file.
-            low = {k.lower(): v for k, v in entry.items()}
-            if "appid" in low:
-                appid = str(low["appid"] & 0xFFFFFFFF)
-                names[appid] = low.get("appname")
-                if isinstance(low.get("exe"), str):
-                    exes[appid] = low["exe"].strip().strip('"')
-    _shortcuts_cache.update(key=key, names=names, exes=exes)
-    return names
+    found = paths.shortcuts(Path(f) for f, _ in key)
+    _shortcuts_cache.update(key=key, names={a: s["name"] for a, s in found.items()},
+                            exes={a: s["exe"] for a, s in found.items() if s["exe"]})
+    return _shortcuts_cache["names"]
 
 
 # (pid, start time, command name) -> the AppID in that process's environment, or None. A process's

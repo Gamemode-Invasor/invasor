@@ -23,12 +23,14 @@ interface TasksDeps {
   onOpen?(): void;
   /** The "Clear recent" button was pressed. */
   onClear?(): void;
+  /** Accept or Deny was pressed on a waiting task. */
+  onAnswer?(id: number, accept: boolean): void;
 }
 
-export function createTasksPanel({ stage, panel, nav, nameOf, onOpen, onClear }: TasksDeps): TasksPanel {
+export function createTasksPanel({ stage, panel, nav, nameOf, onOpen, onClear, onAnswer }: TasksDeps): TasksPanel {
   let latest: TasksSnapshot = EMPTY_TASKS;
   let ticker: ReturnType<typeof setInterval> | undefined;
-  const draw = () => renderTasks(cover.content, latest, { now: Date.now() / 1000, nameOf, onClear });
+  const draw = () => renderTasks(cover.content, latest, { now: Date.now() / 1000, nameOf, onClear, onAnswer });
   const stopTicker = () => {
     clearInterval(ticker);
     ticker = undefined;
