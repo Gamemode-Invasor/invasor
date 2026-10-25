@@ -7,7 +7,7 @@ their dates are listed for reference. The notes of the release being prepared li
 
 ## 0.3.0 (unreleased)
 
-Pre-releases: rc1 (2026-10-25).
+Pre-releases: rc1 (2026-10-25), rc2 (2026-10-26).
 
 ### New
 
