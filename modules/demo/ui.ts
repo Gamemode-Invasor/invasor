@@ -416,6 +416,17 @@ export default defineModule({
               return kind === null ? "Cancelled" : ctx.call("fail", { kind });
             }),
           ]),
+          // ctx.copy and ctx.pickPath: the clipboard and the file/folder picker (core 0.3.0).
+          ui.section("Files", [
+            callButton(ctx, "Copy a line", async () => ((await ctx.copy("DEMO=1 %command%")) ? "Copied" : "Couldn't copy it")),
+            // Not callButton: it would be disabled when the window closes and hands the ring back to it.
+            ui.button({ label: "Pick a file", onClick: async () => ctx.toast((await ctx.pickPath({ title: "Pick a file", files: true })) ?? "Cancelled") }),
+            ui.button({ label: "Pick a folder", onClick: async () => ctx.toast((await ctx.pickPath({ title: "Pick a folder" })) ?? "Cancelled") }),
+            ui.button({
+              label: "Pick (hidden too)",
+              onClick: async () => ctx.toast((await ctx.pickPath({ title: "Pick a file", files: true, hidden: true })) ?? "Cancelled"),
+            }),
+          ]),
           // ctx.steam: changes to the user's Steam, only on a Demo shortcut of its own (never a real game).
           ui.section("Steam (ctx.steam)", [
             callButton(ctx, "What this Steam supports", async () => JSON.stringify(await ctx.call("steam_supports"))),
