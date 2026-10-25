@@ -69,7 +69,7 @@ def authenticated_fetch(token):
         headers = dict(updater.GITHUB_HEADERS)
         if token and url.startswith("https://api.github.com/"):
             headers["Authorization"] = f"Bearer {token}"
-        return http.fetch_json(url, limit=updater.MAX_JSON, headers=headers)
+        return http.fetch_json(url, headers=headers)
 
     return fetch
 

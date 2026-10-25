@@ -90,7 +90,6 @@ export interface RenderOptions {
 }
 
 interface Row {
-  id: number;
   el: HTMLElement;
   label: HTMLElement;
   owner: HTMLElement;
@@ -163,7 +162,6 @@ function newRow(view: View, id: number): Row {
   const question = el("div", "task-question");
   const buttons = (["Accept", "Deny"] as const).map((name) => {
     const b = document.createElement("button");
-    b.className = `task-${name.toLowerCase()}`;
     b.textContent = name;
     b.addEventListener("click", () => {
       buttons.forEach((x) => (x.disabled = true)); // until the next snapshot says how it went
@@ -174,7 +172,7 @@ function newRow(view: View, id: number): Row {
   ask.append(question, ...buttons);
   ask.hidden = true;
   row.append(head, bar, text, ask, when);
-  return { id, el: row, label, owner, state, bar, fill, text, when, ask, question, buttons };
+  return { el: row, label, owner, state, bar, fill, text, when, ask, question, buttons };
 }
 
 // Only writes what changed, so a screen that updates every second doesn't restart animations or lose its scroll.

@@ -5,7 +5,7 @@ import type { ModuleCtx, PickPathOptions, WindowHandle } from "../module-api";
 import { ui } from "./controls";
 
 /** One folder, as core.browse_path lists it. */
-export interface Dir {
+interface Dir {
   path: string;
   parent: string | null;
   dirs: { name: string; label: string }[];
@@ -13,7 +13,7 @@ export interface Dir {
   error: string | null;
 }
 
-export type ListDir = (args: { path?: string; files: boolean; ext?: string[]; hidden: boolean }) => Promise<Dir>;
+type ListDir = (args: { path?: string; files: boolean; ext?: string[]; hidden: boolean }) => Promise<Dir>;
 
 const join = (dir: string, name: string) => (dir === "/" ? "/" : dir + "/") + name;
 const errorText = (e: unknown) => (e as Error)?.message ?? String(e);

@@ -33,7 +33,6 @@ RELEASE_URL = f"https://api.github.com/repos/{REPO}/releases/latest"  # stable c
 RELEASES_URL = f"https://api.github.com/repos/{REPO}/releases?per_page=30"  # beta channel: pre-releases too
 DOWNLOAD_PREFIX = f"https://github.com/{REPO}/releases/download/"
 GITHUB_HEADERS = {"Accept": "application/vnd.github+json"}
-MAX_JSON = 1 << 20
 MAX_PACKAGE = 64 << 20
 MAX_UNPACKED = 256 << 20
 
@@ -57,7 +56,7 @@ rm -rf "$2"
 
 
 def fetch_json(url):
-    return http.fetch_json(url, limit=MAX_JSON, headers=GITHUB_HEADERS)
+    return http.fetch_json(url, headers=GITHUB_HEADERS)
 
 
 def download(url, dest, limit, progress=None):
