@@ -7,6 +7,7 @@ ends (the `task` event of the module event bus). A task may also stop to ask the
 question (Task.ask, answered with TaskRegistry.answer). It never persists anything and never
 starts a thread, so with no task open it costs nothing.
 """
+import asyncio
 import logging
 import math
 import threading
@@ -14,6 +15,7 @@ import time
 from collections import deque
 from numbers import Real
 
+from . import calls
 from .schema import InvalidArgument, Unavailable
 
 log = logging.getLogger("invasor.tasks")
@@ -23,6 +25,7 @@ MAX_TEXT = 256
 MAX_ACTIVE = 32  # a module that never ends its tasks can't make the registry grow without end
 MAX_RECENT = 20
 ASK_TIMEOUT = 600  # seconds a question waits for the user before it counts as a no
+MAX_ASK_TIMEOUT = 3600
 
 
 def _text(value, what):
@@ -87,10 +90,17 @@ class Task:
         """Ask the user `question` (Accept / Deny in the Tasks panel) and wait for the answer:
         True for Accept; False for Deny, after `timeout` seconds, if the task ends meanwhile (its
         module unloaded, say) or isn't running. While it waits, update() is ignored.
-        It blocks: never call it from the event loop's thread (a plain, threaded method is fine)."""
+        It blocks (Unavailable on the event loop's thread): in `async def`, ask_async()."""
+        calls.not_on_loop("t.ask()")
         if not isinstance(question, str) or not question.strip():
             raise InvalidArgument("a question needs some text")
+        if isinstance(timeout, bool) or not isinstance(timeout, Real) or not 0 < timeout <= MAX_ASK_TIMEOUT:
+            raise InvalidArgument(f"timeout must be a number of seconds, more than 0 and up to {MAX_ASK_TIMEOUT}")
         return self._registry._ask(self, question.strip()[:MAX_TEXT], timeout)
+
+    async def ask_async(self, question, timeout=ASK_TIMEOUT):
+        """The same as ask(), for `async def` code."""
+        return await asyncio.to_thread(self.ask, question, timeout)
 
     def progress(self, low, high, text=""):
         """A `callback(done, total)` that maps a transfer onto the `low`..`high` stretch of the bar."""

@@ -20,7 +20,7 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from . import __version__
+from . import __version__, calls
 from .schema import InvalidArgument, Unavailable
 from .steam import notify_later
 from .tasks import Task
@@ -160,15 +160,6 @@ def _limit(max_bytes, user_chose):
     return max_bytes
 
 
-def _not_on_loop(name):
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return
-    raise Unavailable(f"ctx.http.{name}() waits for the network: call it from a plain (threaded) method, "
-                      f"or use {name}_async() in `async def`")
-
-
 def _network(what, error):
     if isinstance(error, urllib.error.HTTPError):
         error.close()  # it holds the server's answer open
@@ -247,9 +238,7 @@ class ModuleHttp:
         return await asyncio.to_thread(self.get_json, url, **options)
 
     def _check_call(self, name):
-        _not_on_loop(name)
-        if self._ctx._dead:
-            raise Unavailable("this module was unloaded: it can't download anymore")
+        calls.check(self._ctx, f"ctx.http.{name}()")
 
     def _notify_question(self):
         # STEAM TOUCHPOINT (see docs/API-Steam.md, 2.3): a toast so the user knows a question waits.

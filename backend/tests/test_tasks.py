@@ -442,3 +442,27 @@ class Asking(unittest.TestCase):
             with self.assertRaises(InvalidArgument):
                 api["task_answer"]("1", True)
             self.task.done()
+
+
+class AskRules(unittest.TestCase):
+    def setUp(self):
+        self.registry = TaskRegistry()
+        self.task = self.registry.start("good", "Downloading")
+
+    def test_bad_timeouts_are_refused(self):
+        for bad in (0, -1, 3601, True, "10", None, float("nan")):
+            with self.assertRaises(InvalidArgument, msg=repr(bad)):
+                self.task.ask("Now?", timeout=bad)
+        self.assertEqual(self.task.state, "running")
+
+    def test_on_the_event_loop_it_is_refused_and_ask_async_works(self):
+        async def run():
+            with self.assertRaises(Unavailable):
+                self.task.ask("Now?")
+            waiting = asyncio.ensure_future(self.task.ask_async("Now?"))
+            while self.task.state != "waiting":
+                await asyncio.sleep(0.005)
+            self.registry.answer(self.task.id, True)
+            return await waiting
+
+        self.assertIs(asyncio.run(run()), True)

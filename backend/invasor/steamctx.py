@@ -22,7 +22,7 @@ import urllib.parse
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from . import config, paths, vdf
+from . import calls, config, paths, vdf
 from .schema import InvalidArgument, Unavailable
 from .steam import notify_later
 from .storage import JsonStore
@@ -448,15 +448,7 @@ class ModuleSteam:
 
     # ---------- internals ----------
     def _check_call(self, name):
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            pass
-        else:
-            raise Unavailable(f"ctx.steam.{name}() waits for Steam: call it from a plain (threaded) method, "
-                              f"or use {name}_async() in `async def`")
-        if self._ctx._dead:
-            raise Unavailable("this module was unloaded: it can't change Steam anymore")
+        calls.check(self._ctx, f"ctx.steam.{name}()")
         if self._ctx._steam is None:
             raise Unavailable("SteamClient bridge not configured")
 

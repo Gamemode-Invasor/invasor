@@ -203,8 +203,6 @@ class ModuleContext:
     paths = steam_paths
     # Steam's VDF files, read only (see vdf.py).
     vdf = vdf
-    # Unpack zip/tar/7z archives safely and swap folders in place (see archive.py).
-    archive = archive
 
     def __init__(self, module_id, path, game, settings, steam=None, forms=None, tasks=None):
         self.id = module_id
@@ -222,6 +220,8 @@ class ModuleContext:
         self.events = Events(self)
         # Downloads over https (see http.py).
         self.http = ModuleHttp(self)
+        # Unpack zip/tar/7z archives safely and swap folders in place (see archive.py).
+        self.archive = archive.ModuleArchive(self)
         # Shortcuts, launch options and web pages in the user's Steam (see steamctx.py).
         self.steam = steamctx.ModuleSteam(self)
         self._warned_steam_start = False
