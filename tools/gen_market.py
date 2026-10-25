@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 sys.dont_write_bytecode = True
 
-from invasor import market, updater  # noqa: E402
+from invasor import http, market, updater  # noqa: E402
 
 CARD_KEYS = ("id", "version", "tag", "name", "description", "author", "min_core")
 
@@ -66,14 +66,10 @@ def build_catalog(repos, entry, now):
 
 def authenticated_fetch(token):
     def fetch(url):
-        req = updater._request(url)
+        headers = dict(updater.GITHUB_HEADERS)
         if token and url.startswith("https://api.github.com/"):
-            req.add_header("Authorization", f"Bearer {token}")
-        with updater._opener().open(req, timeout=updater.TIMEOUT) as r:
-            data = r.read(updater.MAX_JSON + 1)
-        if len(data) > updater.MAX_JSON:
-            raise ValueError("answer too large")
-        return json.loads(data)
+            headers["Authorization"] = f"Bearer {token}"
+        return http.fetch_json(url, limit=updater.MAX_JSON, headers=headers)
 
     return fetch
 

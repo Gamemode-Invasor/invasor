@@ -13,18 +13,15 @@ truncated download, not a compromised GitHub account.
 import asyncio
 import hashlib
 import hmac
-import json
 import logging
 import re
 import shutil
-import ssl
 import subprocess
 import tempfile
 import urllib.error
-import urllib.request
 from pathlib import Path
 
-from . import __version__, config
+from . import __version__, config, http
 from . import archive as archives
 from .version import parse_version
 from .schema import InvalidArgument, Unavailable
@@ -35,8 +32,7 @@ REPO = "Gamemode-Invasor/invasor"
 RELEASE_URL = f"https://api.github.com/repos/{REPO}/releases/latest"  # stable channel: never a pre-release
 RELEASES_URL = f"https://api.github.com/repos/{REPO}/releases?per_page=30"  # beta channel: pre-releases too
 DOWNLOAD_PREFIX = f"https://github.com/{REPO}/releases/download/"
-USER_AGENT = f"invasor/{__version__}"  # GitHub's API refuses requests without one
-TIMEOUT = 20
+GITHUB_HEADERS = {"Accept": "application/vnd.github+json"}
 MAX_JSON = 1 << 20
 MAX_PACKAGE = 64 << 20
 MAX_UNPACKED = 256 << 20
@@ -60,45 +56,14 @@ rm -rf "$2"
 """
 
 
-def _opener():
-    return urllib.request.build_opener(urllib.request.HTTPSHandler(context=ssl.create_default_context()))
-
-
-def _request(url):
-    return urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/vnd.github+json"})
-
-
 def fetch_json(url):
-    with _opener().open(_request(url), timeout=TIMEOUT) as r:
-        data = r.read(MAX_JSON + 1)
-    if len(data) > MAX_JSON:
-        raise ValueError("answer too large")
-    return json.loads(data)
+    return http.fetch_json(url, limit=MAX_JSON, headers=GITHUB_HEADERS)
 
 
 def download(url, dest, limit, progress=None):
-    """Save url (https only) at dest, giving up past `limit` bytes. `progress(done, total)`,
-    if given, hears how many bytes are in so far (total is None when the server doesn't say)."""
-    if not url.startswith("https://"):
-        raise ValueError(f"not an https URL: {url}")
-    size = 0
-    with _opener().open(_request(url), timeout=TIMEOUT) as r:
-        if not r.geturl().startswith("https://"):  # a redirect may leave https
-            raise ValueError(f"redirected to a non-https URL: {r.geturl()}")
-        total = None
-        if progress:
-            try:
-                total = int(r.headers.get("Content-Length") or 0) or None
-            except ValueError:
-                pass
-        with open(dest, "wb") as f:
-            while chunk := r.read(1 << 16):
-                size += len(chunk)
-                if size > limit:
-                    raise ValueError("download too large")
-                f.write(chunk)
-                if progress:
-                    progress(size, total)
+    """Save url (https only) at dest, giving up past `limit` bytes (see http.save: a failure
+    leaves no partial file). `progress(done, total)`, if given, hears how many bytes are in so far."""
+    http.save(url, dest, limit=limit, progress=progress, headers=GITHUB_HEADERS)
 
 
 def verify_sha256(path, sha_text, what):
