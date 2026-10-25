@@ -102,7 +102,8 @@ def grid_dir():
     return userdata() / "config" / "grid"
 
 
-def _appid(appid):
+def appid_str(appid):
+    """appid (an int, or a string of digits, from 1 to 2**32-1) as a string; else InvalidArgument."""
     if isinstance(appid, bool) or not isinstance(appid, (int, str)):
         raise InvalidArgument(f"appid must be a number, not {appid!r}")
     if isinstance(appid, str):
@@ -117,7 +118,7 @@ def _appid(appid):
 def _game_dir(kind, appid):
     """<library>/<kind>/<appid>: the library where it exists, else the one holding the game,
     else the main library."""
-    appid = _appid(appid)
+    appid = appid_str(appid)
     libs = libraries()
     for lib in libs:
         if (lib / kind / appid).is_dir():

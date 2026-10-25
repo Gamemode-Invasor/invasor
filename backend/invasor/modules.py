@@ -23,6 +23,7 @@ import threading
 from . import __version__, checkmod, config, schema, steam, tomlio, vdf
 from . import archive
 from .http import ModuleHttp
+from . import steamctx
 from . import paths as steam_paths
 from .schema import Unavailable
 from .storage import JsonStore
@@ -221,6 +222,8 @@ class ModuleContext:
         self.events = Events(self)
         # Downloads over https (see http.py).
         self.http = ModuleHttp(self)
+        # Shortcuts, launch options and web pages in the user's Steam (see steamctx.py).
+        self.steam = steamctx.ModuleSteam(self)
         self._warned_steam_start = False
 
     @property
@@ -277,6 +280,11 @@ class ModuleContext:
             raise Unavailable("SteamClient bridge not configured")
         return await self._steam.notify(title, body, icon, timeout, sound)
 
+    def steam_language(self, raw=False):
+        """Steam's language as a short code ("en", "es"...; "en" when unknown), or raw=True as
+        Steam names it ("spanish"...; "" when unknown). Read from disk: fast, no Steam call."""
+        return steamctx.language(raw)
+
     def task(self, label, notify=True, sound="toast"):
         """A long operation that others can watch: `with ctx.task("Downloading X") as t:` then
         `t.update(fraction, "text")` (fraction from 0 to 1, or None if unknown); leaving the block
@@ -304,12 +312,7 @@ class ModuleContext:
         if self._steam is None or (phase == "end" and self._dead):
             return
         body = view["text"] if phase == "end" else ""
-        def show():
-            try:
-                self._steam.notify_sync(view["label"], body, "", sound=sound)
-            except Exception as e:
-                self.log.info("task notification not shown: %s", e)
-        threading.Thread(target=show, name="invasor-task-notify", daemon=True).start()
+        steam.notify_later(self._steam, view["label"], body, self.log, "task", "invasor-task-notify", sound)
 
     def game_data(self, appid):
         """Free-form storage for this module and one game."""
