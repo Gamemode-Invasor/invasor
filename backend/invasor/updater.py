@@ -19,13 +19,13 @@ import re
 import shutil
 import ssl
 import subprocess
-import tarfile
 import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 from . import __version__, config
+from . import archive as archives
 from .version import parse_version
 from .schema import InvalidArgument, Unavailable
 
@@ -132,28 +132,15 @@ def launch(root, workdir):
 
 
 def safe_extract(archive, dest, root_name):
-    """Unpack the package under dest/<root_name>: only plain files and folders, nothing
-    outside that folder (no absolute paths, .., links or devices), bounded in size."""
-    total = 0
-    with tarfile.open(archive, "r:gz") as tar:
-        members = tar.getmembers()
-        for m in members:
-            parts = Path(m.name).parts
-            if m.name.startswith("/") or ".." in parts or not parts or parts[0] != root_name:
-                raise ValueError(f"unsafe path in the package: {m.name!r}")
-            if not (m.isfile() or m.isdir()):
-                raise ValueError(f"unexpected entry in the package: {m.name!r}")
-            total += m.size
-            if total > MAX_UNPACKED:
-                raise ValueError("package too large once unpacked")
-        for m in members:
-            m.mode = 0o755 if (m.isdir() or m.mode & 0o100) else 0o644
-            m.uid = m.gid = 0
-            m.uname = m.gname = ""
-        # Python 3.12+ (and the security releases of 3.9-3.11) have extraction filters: use the strictest.
-        extra = {"filter": "data"} if hasattr(tarfile, "data_filter") else {}
-        tar.extractall(dest, members, **extra)
-    return Path(dest) / root_name
+    """Unpack the package under dest/<root_name>: only plain files and folders in that single
+    folder (no absolute paths, .., links or devices), bounded in size (see archive.py)."""
+    unpacked = Path(dest) / ".unpacked"
+    top = archives.extract(archive, unpacked, single_root=True, max_bytes=MAX_UNPACKED)
+    if top.name != root_name:
+        raise InvalidArgument(f"the package holds {top.name!r}, not {root_name!r}")
+    root = top.rename(Path(dest) / root_name)
+    unpacked.rmdir()
+    return root
 
 
 class Updater:
@@ -267,7 +254,7 @@ class Updater:
                 task.update(0.9, "Unpacking")
             try:
                 root = safe_extract(tarball, work, f"invasor-{version}")
-            except (ValueError, tarfile.TarError, OSError) as e:
+            except (ValueError, OSError) as e:
                 raise InvalidArgument(f"the update package is invalid: {e}") from None
             self._check_contents(root, version)
             log.info("updating %s -> %s", self.current, version)
