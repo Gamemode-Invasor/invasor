@@ -1022,8 +1022,11 @@ class Smoke:
                 continue
             pressed = False
             if accept:
-                await asyncio.sleep(0.4)
-                t = await self.tasks_state()
+                for _ in range(15):  # task changes reach the panel at most once a second (taskpush.min_gap)
+                    t = await self.tasks_state()
+                    if t["handle"] == "waiting":
+                        break
+                    await asyncio.sleep(0.2)
                 self.check("ask: the handle shows a task is waiting", t["handle"] == "waiting", t)
                 await self.press("SELECT", wait=0.5)
                 t = await self.tasks_state()
