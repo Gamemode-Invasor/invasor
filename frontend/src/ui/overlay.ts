@@ -2,6 +2,7 @@ import type { Api } from "../api";
 import type { KitRegistry } from "../kit";
 import type { GameState, ModuleCtx, ModuleDef, WindowHandle } from "../module-api";
 import { hasApi, safeCall, steamAvailable } from "../steam";
+import { copyText } from "./clipboard";
 import { setTopLayer, ui } from "./controls";
 import { attachGamepadNav } from "./gamepad-nav";
 import css from "./overlay.css";
@@ -18,6 +19,7 @@ import { createTasksPanel } from "./tasks-panel";
 import { EMPTY_TASKS, marker, parseSnapshot, summarize, type TasksSnapshot } from "./tasks-view";
 import { NO_ROOM, esc, safe } from "./util";
 import { openBigWindow } from "./window";
+import { pickPath } from "./pick-path";
 
 // The overlay lives in its own shadow root: Steam's CSS can't restyle it and ours
 // can't leak into Steam, so class-name churn on Valve's side doesn't affect us.
@@ -333,6 +335,8 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
         set.add(cb);
         return () => void set.delete(cb);
       },
+      copy: (text) => copyText(text),
+      pickPath: (o) => pickPath(ctx, (a) => api.call("core", "browse_path", a), o),
     };
     return ctx;
   }
