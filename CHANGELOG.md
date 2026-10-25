@@ -16,6 +16,7 @@ their dates are listed for reference. The notes of the release being prepared li
 - **Tasks that ask: `t.ask(question)`.** A task can wait for the user's answer: it shows as waiting (new `"waiting"` state, with its question) with Accept / Deny in the Tasks panel, and the dot on the handle shows it first; no answer in 10 minutes is a no. The `task` event also fires when a task starts waiting
 - **Changing the user's Steam: `ctx.steam`.** `supports(name)`, `open_url(url)` (Steam's browser), `add_to(name, exe, …)` (a non-Steam shortcut: `{"appid", "existed"}`), `remove_shortcut(appid)` (only one this module added, still pointing to the same exe), `launch_options(appid)` and `set_launch_options(appid, line)` (read back: `{"applied", "verified"}`), with `_async` twins for `async def`. Only on a user action; every change is logged and shown as a Steam notification. `add_to` and `open_url` fall back to `steam://` links through gio/xdg-open; removing and launch options have no fallback, so check `supports()` and keep a plan B. Needs `min_core` 0.3.0. Demo has a "Steam (ctx.steam)" section that works on a Demo shortcut of its own
 - **Steam's language: `ctx.steam_language(raw=False)`.** A short code (`"en"`, `"es"`…) or, with `raw=True`, Steam's own name, read from `~/.steam/registry.vdf`. Needs `min_core` 0.3.0. Demo has a "Steam language" button
+- **Copying and picking files in a module's UI: `ctx.copy` and `ctx.pickPath`.** `ctx.copy(text)` copies to the clipboard (with a fallback that gives Steam its focus back) and answers whether it worked; `ctx.pickPath({...})` opens a file or folder picker window and answers the real path, or `null`. Options: files or a folder, endings (`ext`), where it opens, the choose button's label, hidden entries. Needs `min_core` 0.3.0. Demo has a "Files" section
 
 ### Internal
 
@@ -23,6 +24,7 @@ their dates are listed for reference. The notes of the release being prepared li
 - The updater unpacks its package with `archive.py`, the same rules for every format; the module zip installer is unchanged
 - The updater, the Market and `tools/gen_market.py` download through `http.py`: a redirect that leaves https is refused before it's followed (it was only checked after), a failed download leaves no partial file, and `gen_market`'s GitHub token is no longer sent on a redirect to another host
 - `steam.notify_later` shows a notification from a thread of its own, never fatal: shared by task toasts, the download question and `ctx.steam`
+- `core.browse_path` lists one folder for `ctx.pickPath`: real paths, folders first, game names next to numbered `compatdata` / `shadercache` folders, at most 1000 entries
 
 ---
 
