@@ -147,6 +147,66 @@ export function onButton(el: HTMLElement, fn: (button: string) => boolean | void
   });
 }
 
+/**
+ * Draw the modal dialog of ui.choose in `host` and resolve the chosen `value`, or null on B, on
+ * `invasor:dismiss` (the panel/window closing) or when `signal` aborts (closed from outside: the
+ * question went away). `cancel` adds a first button that resolves null; without it the dialog has
+ * only `choices` and starts on the first of them. The caller checks that no other .modal is open.
+ */
+export function drawChoice<T>(host: HTMLElement, message: string, choices: { label: string; value: T }[],
+                              o: { cancel?: string; signal?: AbortSignal } = {}): Promise<T | null> {
+  const previous = host.querySelector<HTMLElement>(".nav-focus");
+  return new Promise((resolve) => {
+    if (o.signal?.aborted) return resolve(null);
+    const modal = document.createElement("div");
+    modal.className = "modal";
+    const box = document.createElement("div");
+    box.className = "modal-box";
+    const text = document.createElement("p");
+    text.textContent = message;
+    const done = (answer: T | null) => {
+      if (!modal.isConnected) return;
+      host.removeEventListener("invasor:dismiss", dismiss);
+      o.signal?.removeEventListener("abort", dismiss);
+      modal.remove();
+      // Give the ring back to whatever opened the dialog.
+      if (previous?.isConnected) host.dispatchEvent(new CustomEvent("invasor:refocus", { detail: previous, bubbles: true }));
+      resolve(answer);
+    };
+    const hint = o.cancel === undefined ? "A choose · B later" : "A choose · B cancel";
+    const order = [
+      ...(o.cancel === undefined ? [] : [ui.button({ label: o.cancel, onClick: () => done(null), hint })]),
+      ...choices.map((c) => ui.button({ label: c.label, onClick: () => done(c.value), hint })),
+    ];
+    const buttons = document.createElement("div");
+    buttons.className = order.length > 2 ? "modal-buttons stacked" : "modal-buttons";
+    buttons.append(...order);
+    box.append(text, buttons);
+    modal.appendChild(box);
+    const dismiss = () => done(null);
+    host.addEventListener("invasor:dismiss", dismiss);
+    o.signal?.addEventListener("abort", dismiss);
+    // bubbles: the navigation listens higher up (on the stage holding panel and windows).
+    const refocus = (el: HTMLElement) => host.dispatchEvent(new CustomEvent("invasor:refocus", { detail: el, bubbles: true }));
+    const step = (by: number) => {
+      const at = order.findIndex((b) => b.classList.contains("nav-focus"));
+      refocus(order[Math.min(order.length - 1, Math.max(0, at + by))]);
+    };
+    onButton(modal, (b) => {
+      if (b === "B") return done(null), true;
+      if (b === "LEFT") return step(-1), true;
+      if (b === "RIGHT") return step(1), true;
+      if (["L1", "R1", "L2", "R2"].includes(b)) return true; // no tab switching under a dialog
+    });
+    // Cover exactly what's visible of the host, even if it's scrolled.
+    modal.style.top = `${host.scrollTop}px`;
+    modal.style.height = `${host.clientHeight}px`;
+    host.appendChild(modal);
+    // Start on the first button (Cancel, or the first choice): the safe one.
+    refocus(order[0]);
+  });
+}
+
 function asControl<T>(el: HTMLElement, get: () => T, set: (v: T) => void, setDisabled: Control<T>["setDisabled"]): Control<T> {
   return Object.assign(el, { get, set, setDisabled });
 }
@@ -697,53 +757,7 @@ export const ui = {
       console.warn("[invasor] ui.confirm/choose: a dialog is already open, answering cancel");
       return Promise.resolve(null);
     }
-    const previous = host.querySelector<HTMLElement>(".nav-focus");
-    return new Promise((resolve) => {
-      const modal = document.createElement("div");
-      modal.className = "modal";
-      const box = document.createElement("div");
-      box.className = "modal-box";
-      const text = document.createElement("p");
-      text.textContent = message;
-      const done = (answer: T | null) => {
-        if (!modal.isConnected) return;
-        host.removeEventListener("invasor:dismiss", dismiss);
-        modal.remove();
-        // Give the ring back to whatever opened the dialog.
-        if (previous?.isConnected) host.dispatchEvent(new CustomEvent("invasor:refocus", { detail: previous, bubbles: true }));
-        resolve(answer);
-      };
-      const hint = "A choose · B cancel";
-      const order = [
-        ui.button({ label: o.cancel ?? "Cancel", onClick: () => done(null), hint }),
-        ...choices.map((c) => ui.button({ label: c.label, onClick: () => done(c.value), hint })),
-      ];
-      const buttons = document.createElement("div");
-      buttons.className = order.length > 2 ? "modal-buttons stacked" : "modal-buttons";
-      buttons.append(...order);
-      box.append(text, buttons);
-      modal.appendChild(box);
-      const dismiss = () => done(null);
-      host.addEventListener("invasor:dismiss", dismiss);
-      // bubbles: the navigation listens higher up (on the stage holding panel and windows).
-      const refocus = (el: HTMLElement) => host.dispatchEvent(new CustomEvent("invasor:refocus", { detail: el, bubbles: true }));
-      const step = (by: number) => {
-        const at = order.findIndex((b) => b.classList.contains("nav-focus"));
-        refocus(order[Math.min(order.length - 1, Math.max(0, at + by))]);
-      };
-      onButton(modal, (b) => {
-        if (b === "B") return done(null), true;
-        if (b === "LEFT") return step(-1), true;
-        if (b === "RIGHT") return step(1), true;
-        if (["L1", "R1", "L2", "R2"].includes(b)) return true; // no tab switching under a dialog
-      });
-      // Cover exactly what's visible of the host, even if it's scrolled.
-      modal.style.top = `${host.scrollTop}px`;
-      modal.style.height = `${host.clientHeight}px`;
-      host.appendChild(modal);
-      // Start on Cancel: the safe choice for destructive actions.
-      refocus(order[0]);
-    });
+    return drawChoice(host, message, choices, { cancel: o.cancel ?? "Cancel" });
   },
 
   /**

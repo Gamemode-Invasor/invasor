@@ -7,7 +7,7 @@
 - game: info() and shortcut_exe() in whoami; ctx.id and ctx.path (the module's folder) too;
 - Steam folders: ctx.paths (root, libraries, account, artwork) and ctx.vdf (libraryfolders.vdf) in steam_folders;
 - archives: ctx.archive.extract and swap_dir in unpack_sample (assets/sample.zip -> its data folder);
-- downloads: ctx.http.download in download_sample, with a checksum or asking the user in the Tasks panel;
+- downloads: ctx.http.download in download_sample, with a checksum or asking the user (a dialog and the Tasks panel);
 - Steam: notify (with an icon, a timeout and a sound) / notify_async, steam_call / steam_call_async, always with a plan B;
 - Steam changes: ctx.steam.add_to / launch_options / set_launch_options / remove_shortcut on a
   Demo shortcut of its own (never a real game), open_url, supports() for the plan B, and
@@ -16,7 +16,7 @@
 - plain and `async def` methods, a background thread stopped in teardown();
 - ctx.events: counts the Steam starts it has seen and notes the last game started, stopped or selected;
 - ctx.task: a long operation that reports its progress (slow_task), seen from anywhere in core.tasks(),
-  and t.ask in ask_task (a question answered with Accept / Deny in the Tasks panel);
+  and t.ask in ask_task (a question answered with Accept / Deny in a dialog or in the Tasks panel);
 - upgrade() when a new version loads, uninstall() undoing what it left outside its folder;
 - a helper file imported as `from . import helpers`.
 """
@@ -176,7 +176,7 @@ SAMPLE_SHA256 = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb3698
 def download_sample(checked=True):
     """Download Invasor's LICENSE next to ctx.data as LICENSE.txt. With checked=True its sha256 is
     known, so it just downloads; with checked=False there is none and the core asks the user first
-    (Tasks panel). A plain method: ctx.http.download blocks while it waits."""
+    (a dialog and the Tasks panel). A plain method: ctx.http.download blocks while it waits."""
     data = ctx.data.path.parent
     data.mkdir(parents=True, exist_ok=True)
     checksum = ("sha256", SAMPLE_SHA256) if checked else None
@@ -209,7 +209,7 @@ def slow_task(seconds=5, fail=False):
 
 
 def ask_task(question="Demo asks: is this fine?"):
-    """A task that asks the user (Accept / Deny in the Tasks panel) and waits for the answer.
+    """A task that asks the user (Accept / Deny in a dialog or in the Tasks panel) and waits for the answer.
     A plain method: t.ask blocks while it waits."""
     if not isinstance(question, str) or not question.strip() or len(question) > 256:
         raise ctx.InvalidArgument("question must be some text, at most 256 characters")

@@ -11,7 +11,7 @@ button and sound, ui.choose, ui.form), the stats line, windows opened with a han
 standalone ui.number and Control.get(), the keyboard's show/hide key, a custom control, the
 Settings tab, installing a module zip and its upgrade/uninstall hooks, backend
 validation of settings and the isolation of a broken module UI, a task that asks (Accept /
-Deny in the Tasks panel), core.browse_path, ctx.pickPath, ctx.copy, and Demo's read-only
+Deny in a dialog and in the Tasks panel), core.browse_path, ctx.pickPath, ctx.copy, and Demo's read-only
 ctx.steam / ctx.paths calls. Needs Steam running with CEF debugging, the invasor service
 installed and the "demo" module enabled.
 
@@ -61,6 +61,7 @@ STATE = f"""(() => {{
     listOpen: !!list && !list.hidden,
     keyboard: !!f?.querySelector('.kbd'),
     modal: !!r.querySelector('.modal'),
+    modalText: r.querySelector('.modal p')?.textContent ?? null,
     toast: r.querySelector('.toast:not([hidden])')?.textContent ?? null,
     about: (top.querySelector('.pane:not([hidden])') ?? top.querySelector('.content'))?.querySelector('.section:last-of-type')?.textContent ?? '',
     scroll: Math.round(top.querySelector('.content').scrollTop),
@@ -1005,7 +1006,10 @@ class Smoke:
         t = await self.tasks_state()
         self.check("tasks: looking at it clears the dot", t["handle"] == "" and t["button"] == "", t)
         # A task that asks (Demo's ask_task): it waits for Accept / Deny; the call answers when the user does.
-        for accept in (True, False):
+        # With the panel open the question also shows as a dialog: answered there (A on Accept), put off
+        # with B and answered in the Tasks panel, or answered elsewhere (core.task_answer: it closes by itself).
+        question = "Demo asks: is this fine?"
+        for how, accept in (("dialog", True), ("tasks", True), ("elsewhere", False)):
             call = asyncio.create_task(self.api("ask_task", feature="demo"))
             waiting = None
             for _ in range(25):
@@ -1015,24 +1019,33 @@ class Smoke:
                                 if x["label"] == "Demo: a question" and x["state"] == "waiting"), None)
                 if waiting:
                     break
-            self.check(f"ask: the task waits with its question ({'Accept' if accept else 'Deny'})",
-                       waiting is not None and waiting["question"] == "Demo asks: is this fine?", waiting)
+            self.check(f"ask: the task waits with its question ({how})",
+                       waiting is not None and waiting["question"] == question, waiting)
             if waiting is None:
                 call.cancel()  # nothing to answer: don't wait for its timeout
                 continue
+            for _ in range(15):  # task changes reach the panel at most once a second (taskpush.min_gap)
+                t, st = await self.tasks_state(), await self.state()
+                if t["handle"] == "waiting" and st["modal"]:
+                    break
+                await asyncio.sleep(0.2)
+            self.check(f"ask: the handle shows it and a dialog asks, with the module's name, on Deny ({how})",
+                       t["handle"] == "waiting" and st["modalText"] == f"Demo: {question}" and st["label"] == "Deny", (t, st))
             pressed = False
-            if accept:
-                for _ in range(15):  # task changes reach the panel at most once a second (taskpush.min_gap)
-                    t = await self.tasks_state()
-                    if t["handle"] == "waiting":
-                        break
-                    await asyncio.sleep(0.2)
-                self.check("ask: the handle shows a task is waiting", t["handle"] == "waiting", t)
+            if how == "dialog":
+                st = await self.press("RIGHT")
+                if st["label"] == "Accept":
+                    await self.press("A", wait=0.5)
+                    pressed = True
+            elif how == "tasks":
+                st = await self.press("B", wait=0.4)
+                t = await self.tasks_state()
+                self.check("ask: B puts the dialog off without answering", not st["modal"] and st["open"] and t["handle"] == "waiting", (st, t))
                 await self.press("SELECT", wait=0.5)
                 t = await self.tasks_state()
                 row = next((r for r in t["rows"] if r["state"] == "waiting"), None)
                 self.check("ask: its row waits, shows the question, with Accept and Deny",
-                           row is not None and row["question"] == "Demo asks: is this fine?" and row["answers"] == ["Accept", "Deny"], t)
+                           row is not None and row["question"] == question and row["answers"] == ["Accept", "Deny"], t)
                 st = await self.goto("Accept", limit=6)
                 if st["label"] == "Accept":
                     await self.press("A", wait=0.5)
@@ -1041,13 +1054,19 @@ class Smoke:
                 st, body = await self.api("task_answer", id=waiting["id"], accept=accept)
                 self.check("ask: core.task_answer answers it", st == 200 and body["result"]["answered"], (st, body))
             st, body = await call
-            self.check(f"ask: the call gets accepted={accept}" + (" (A on Accept)" if pressed else ""),
+            self.check(f"ask: the call gets accepted={accept} ({how}" + (", A on Accept)" if pressed else ")"),
                        st == 200 and body.get("result") == {"accepted": accept}, (st, body))
+            for _ in range(15):
+                st = await self.state()
+                if not st["modal"]:
+                    break
+                await asyncio.sleep(0.2)
+            self.check(f"ask: no dialog is left ({how})", not st["modal"], st)
             _, body = await self.api("tasks")
             last = next((x for x in (body.get("result") or {}).get("recent", []) if x["label"] == "Demo: a question"), None)
             self.check("ask: the task ends done", (last or {}).get("state") == "done", last)
-        if (await self.tasks_state())["open"]:
-            await self.press("SELECT", wait=0.4)
+            if (await self.tasks_state())["open"]:
+                await self.press("SELECT", wait=0.4)
         # Clear recent: the ones that ended are in the list (Demo's two tasks); A on the button forgets them.
         await self.press("SELECT", wait=0.5)
         t = await self.tasks_state()

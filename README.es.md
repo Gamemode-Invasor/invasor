@@ -164,7 +164,7 @@ python3 tools/check_module.py modules/<id>
 Aquí está todo lo que Invasor toma del cliente de Steam. Cada punto está marcado `STEAM TOUCHPOINT` en el
 código. Tras una actualización de Steam, `tools/smoke.py` los comprueba todos en un minuto.
 El detalle, cómo puede fallar cada uno y una comparativa con Decky Loader (en inglés): [docs/API-Steam.md](docs/API-Steam.md).
-Los módulos también pueden mostrar una notificación como las de los logros de Steam (`ctx.notify`), reaccionar a los juegos y a Steam (`ctx.events`), informar del progreso de operaciones largas (`ctx.task`, que se ve en el panel Tasks), añadir accesos directos y poner opciones de lanzamiento en Steam cuando lo pide el usuario (el `ctx.steam` del backend), y descargar archivos, preguntando antes al usuario si no hay checksum (`ctx.http`, con una notificación que avisa de que hay una pregunta).
+Los módulos también pueden mostrar una notificación como las de los logros de Steam (`ctx.notify`), reaccionar a los juegos y a Steam (`ctx.events`), informar del progreso de operaciones largas (`ctx.task`, que se ve en el panel Tasks), añadir accesos directos y poner opciones de lanzamiento en Steam cuando lo pide el usuario (el `ctx.steam` del backend), y descargar archivos, preguntando antes al usuario si no hay checksum (`ctx.http`: un diálogo sobre el panel, y una notificación que avisa de que hay una pregunta).
 
 | Punto | Para qué | Si Valve lo cambia |
 |---|---|---|

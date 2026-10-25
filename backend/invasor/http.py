@@ -2,7 +2,7 @@
 
 open_url / fetch_json / save are what the updater and the Market use. ModuleHttp is `ctx.http`,
 what a module gets: the same, with its arguments checked, and a download that the user must allow
-(in the Tasks panel) unless the module knows the file's checksum or the user just chose it.
+(a dialog in the open panel, and the Tasks panel) unless the module knows the file's checksum or the user just chose it.
 """
 import asyncio
 import contextlib
@@ -172,7 +172,7 @@ class ModuleHttp:
         """Save the https `url` at `dest` (a file in a folder that exists; one already there is
         replaced only once the download is complete): {"path", "size", "sha256", "sha512"}.
         - checksum: ("sha256" or "sha512", hex). A file that doesn't match it is not kept
-          (InvalidArgument). Without it the user is asked in the Tasks panel first, unless:
+          (InvalidArgument). Without it the user is asked first (a dialog, and the Tasks panel), unless:
         - user_chose=True: the user just picked this very file (an image, say). Capped at 100 MB.
         - max_bytes: the most it may take (1 GiB by default, 100 MB with user_chose).
         - task: a ctx.task() of this module to show the progress and the question in; without
@@ -236,5 +236,5 @@ class ModuleHttp:
     def _notify_question(self):
         # STEAM TOUCHPOINT (see docs/API-Steam.md, 2.3): a toast so the user knows a question waits.
         # A thread of its own: notify_sync() waits for Steam. Never fatal.
-        notify_later(self._ctx._steam, f"{self._ctx.id} needs an answer", "Open Invasor's Tasks panel",
+        notify_later(self._ctx._steam, f"{self._ctx.id} needs an answer", "Open Invasor to answer",
                      self._ctx.log, "question", "invasor-ask-notify")

@@ -21,13 +21,15 @@ interface TasksDeps {
   nameOf(owner: string): string;
   /** The panel was just opened (the user is about to see the tasks). */
   onOpen?(): void;
+  /** The panel was just closed. */
+  onClose?(): void;
   /** The "Clear recent" button was pressed. */
   onClear?(): void;
   /** Accept or Deny was pressed on a waiting task. */
   onAnswer?(id: number, accept: boolean): void;
 }
 
-export function createTasksPanel({ stage, panel, nav, nameOf, onOpen, onClear, onAnswer }: TasksDeps): TasksPanel {
+export function createTasksPanel({ stage, panel, nav, nameOf, onOpen, onClose, onClear, onAnswer }: TasksDeps): TasksPanel {
   let latest: TasksSnapshot = EMPTY_TASKS;
   let ticker: ReturnType<typeof setInterval> | undefined;
   const draw = () => renderTasks(cover.content, latest, { now: Date.now() / 1000, nameOf, onClear, onAnswer });
@@ -48,7 +50,10 @@ export function createTasksPanel({ stage, panel, nav, nameOf, onOpen, onClear, o
       ticker = setInterval(draw, REFRESH_MS); // the only timer: it exists while the panel is open
       onOpen?.();
     },
-    onClose: stopTicker,
+    onClose: () => {
+      stopTicker();
+      onClose?.();
+    },
   });
   draw();
   return {

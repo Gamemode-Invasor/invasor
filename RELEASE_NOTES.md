@@ -3,7 +3,7 @@ Pre-release of 0.3.0: more for modules, nothing removed. Modules that use the ne
 New for modules
 - Steam's folders and files: the Steam folder, every library (also on SD cards and USB drives), the account in use, a game's compatdata and shader cache, and a reader for Steam's VDF files
 - Unpacking zip, tar, 7z and tar.zst archives safely, the same rules for every format
-- Downloads over https: checked against a checksum, or the user is asked first in the Tasks panel (Accept / Deny)
+- Downloads over https: checked against a checksum, or the user is asked first (Accept / Deny, in a dialog over the panel and in the Tasks panel)
 - Tasks can ask the user a question; the handle's dot shows when one is waiting
 - Steam: add a non-Steam shortcut, remove the ones the module added, read and set launch options (read back afterwards to check Steam took them), open a web page in Steam, and Steam's language
 - In a module's page: copy text to the clipboard, and a file or folder picker window (hidden files on request)

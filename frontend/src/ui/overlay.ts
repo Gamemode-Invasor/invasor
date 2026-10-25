@@ -15,6 +15,7 @@ import { tabRowHTML } from "./tabbar";
 import { createTabHost, type TabSpec } from "./tabhost";
 import { topLayerOf, toastHostOf } from "./cover-panel";
 import { createSettingsPanel } from "./settings-panel";
+import { createAskDialog } from "./ask-dialog";
 import { createTasksPanel } from "./tasks-panel";
 import { EMPTY_TASKS, marker, parseSnapshot, summarize, type TasksSnapshot } from "./tasks-view";
 import { NO_ROOM, esc, safe } from "./util";
@@ -163,16 +164,27 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     onSelect: () => void (settingsPanel.isOpen() || tasksPanel.toggle()),
     onStart: () => void (tasksPanel.isOpen() || settingsPanel.toggle()),
   });
+  const nameOf = (owner: string) => (owner === "core" ? "Invasor" : moduleNames.get(owner) ?? owner);
+  // Accept / Deny, from the Tasks panel or the question's dialog. The backend says how the list is now.
+  const answerTask = (id: number, accept: boolean) => {
+    pushes++;
+    api.call("core", "task_answer", { id, accept }).then((v) => {
+      const snapshot = parseSnapshot(v);
+      if (snapshot && !destroyed) applyTasks(snapshot);
+    }).catch(() => toast("Couldn't send the answer", "error"));
+  };
   // Covers the panel on Select (or its "Tasks" button) and gives the pad back on Select or B.
   const tasksPanel = createTasksPanel({
     stage,
     panel,
     nav,
-    nameOf: (owner) => (owner === "core" ? "Invasor" : moduleNames.get(owner) ?? owner),
+    nameOf,
     onOpen: () => {
+      askDialog.refresh(); // the Tasks panel shows the question itself
       applyTasks(latestTasks); // what's on screen now counts as seen
       void refreshTasks(); // and make sure it's the latest
     },
+    onClose: () => askDialog.refresh(),
     onClear: () => {
       // The backend forgets the ones that ended and says how the list is now; the other window hears it from the push.
       pushes++;
@@ -181,13 +193,14 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
         if (snapshot && !destroyed) applyTasks(snapshot);
       }).catch(() => toast("Couldn't clear the list", "error"));
     },
-    onAnswer: (id, accept) => {
-      pushes++;
-      api.call("core", "task_answer", { id, accept }).then((v) => {
-        const snapshot = parseSnapshot(v);
-        if (snapshot && !destroyed) applyTasks(snapshot);
-      }).catch(() => toast("Couldn't send the answer", "error"));
-    },
+    onAnswer: answerTask,
+  });
+  // A waiting task's question, also as a dialog over the open panel (not under Tasks or Settings).
+  const askDialog = createAskDialog({
+    host: () => topLayerOf(stage, panel),
+    canShow: () => !panel.hidden && !tasksPanel.isOpen() && !settingsPanel.isOpen(),
+    nameOf,
+    onAnswer: answerTask,
   });
   const tasksBtn = $(".tasks-btn");
   tasksBtn.addEventListener("click", () => tasksPanel.toggle());
@@ -213,6 +226,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       else delete node.dataset.tasks;
     }
     tasksPanel.update(snapshot);
+    askDialog.update(snapshot);
   }
 
   async function refreshTasks() {
@@ -420,6 +434,8 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
         onHandleIcon: applyHandleIcon,
         openWindow: (spec) => settingsCtx().openWindow(spec),
       }),
+    onOpen: () => askDialog.refresh(),
+    onClose: () => askDialog.refresh(),
   });
 
   // With no module tabs the panel says so instead of showing nothing (not before the first list arrives).
@@ -652,6 +668,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
     100);
     void refreshStatus();
     nav.reset();
+    askDialog.panelOpened(); // a question waiting (or put off with B) shows now
     // Game first, so modules render with the current game already known.
     // The module list is read on every open: the other window (Library / Quick Access) may
     // have enabled, disabled or installed modules since. Unchanged tabs keep their state.
@@ -685,6 +702,7 @@ export function createOverlay(api: Api, version: string, role: string, kit: KitR
       destroyed = true;
       panel.dispatchEvent(new CustomEvent("invasor:dismiss")); // a pending ui.confirm/choose resolves
       for (const w of [...windows]) w.close();
+      askDialog.destroy();
       tasksPanel.destroy();
       settingsPanel.destroy();
       document.removeEventListener("visibilitychange", onSeenAgain);

@@ -97,7 +97,7 @@ class Task:
         self._registry._finish(self, "failed", _text(text, "text"))
 
     def ask(self, question, timeout=ASK_TIMEOUT):
-        """Ask the user `question` (Accept / Deny in the Tasks panel) and wait for the answer:
+        """Ask the user `question` (Accept / Deny in a dialog over the open panel, and in the Tasks panel) and wait for the answer:
         True for Accept; False for Deny, after `timeout` seconds, if the task ends meanwhile (its
         module unloaded, say) or isn't running. While it waits, update() is ignored.
         It blocks (Unavailable on the event loop's thread): in `async def`, ask_async()."""
