@@ -261,12 +261,13 @@ class ModuleSteam:
         {"appid", "existed"}. A shortcut to that exe already there is left as it is (existed True)."""
         self._check_call("add_to")
         name = _plain(name, "name", MAX_NAME)
-        if not isinstance(exe, str) or not os.path.isabs(exe) or not os.path.isfile(exe):
-            raise InvalidArgument("exe must be the absolute path of a file that exists")
+        if not isinstance(exe, str) or not os.path.isabs(exe) or CONTROL.search(exe) or not os.path.isfile(exe):
+            raise InvalidArgument("exe must be the absolute path of a file that exists, with no control characters")
         if start_dir is None:
             start_dir = os.path.dirname(exe)
-        elif not isinstance(start_dir, str) or not os.path.isabs(start_dir) or not os.path.isdir(start_dir):
-            raise InvalidArgument("start_dir must be the absolute path of a folder that exists")
+        elif not isinstance(start_dir, str) or not os.path.isabs(start_dir) or CONTROL.search(start_dir) \
+                or not os.path.isdir(start_dir):
+            raise InvalidArgument("start_dir must be the absolute path of a folder that exists, with no control characters")
         if launch_options is not None:
             _line(launch_options)
         same = [a for a, s in _shortcuts().items() if s["exe"] == exe]

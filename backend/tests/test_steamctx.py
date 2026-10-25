@@ -527,6 +527,16 @@ class OpenUrl(Base):
 # --- add_to ---------------------------------------------------------------------------------------
 
 class AddToArguments(Base):
+    def test_control_characters_in_real_paths_never_reach_steam(self):
+        # Real file and folder names may hold a newline: it would add lines to the fallback's .desktop.
+        exe = self.make_exe("two\nlines.sh")
+        folder = self.root / "dir\nname"
+        folder.mkdir()
+        for args, kw in ((("Game", exe), {}), (("Game", self.exe), {"start_dir": str(folder)})):
+            with self.subTest(args=args, kw=kw), self.assertRaises(InvalidArgument):
+                self.ctx.steam.add_to(*args, **kw)
+        self.assertEqual(self.fake.calls, [])
+
     def test_bad_arguments_never_reach_steam(self):
         folder = os.path.dirname(self.exe)
         bad = [
