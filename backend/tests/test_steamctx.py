@@ -251,8 +251,8 @@ class FakeSteam:
 
 
 def desktop_escape(path):
-    """Exec's quoting as the brief asks: double quotes, with \\ " $ ` escaped by a backslash."""
-    return '"' + "".join("\\" + c if c in '\\"$`' else c for c in path) + '"'
+    """Exec's quoting: double quotes, with \\ " $ ` escaped by a backslash and % doubled (field codes)."""
+    return '"' + "".join("\\" + c if c in '\\"$`' else "%%" if c == "%" else c for c in path) + '"'
 
 
 def desktop_unquote(value):
@@ -260,7 +260,7 @@ def desktop_unquote(value):
         return value
     out, it = [], iter(value[1:-1])
     for c in it:
-        out.append(next(it, "") if c == "\\" else c)
+        out.append(next(it, "") if c == "\\" else next(it, "") if c == "%" else c)  # %% is a %
     return "".join(out)
 
 
@@ -587,6 +587,14 @@ class AddToPrincipal(Base):
         self.assertTrue(self.wait_shown(), "no notification")
         self.assertEqual(self.ran, [])
 
+    def test_a_failing_set_call_still_leaves_it_removable(self):
+        # AddShortcut worked, SetShortcutName didn't: the shortcut is there, and this module owns it.
+        self.fake.throws.add("Apps.SetShortcutName")
+        with self.assertRaises(Unavailable):
+            self.ctx.steam.add_to("G", self.exe)
+        self.assertIn("3000000000", self.owners())
+        self.assertEqual(self.ctx.steam.remove_shortcut(3000000000), {"removed": True})
+
     def test_without_options_no_set_options_and_start_dir_as_given(self):
         start = self.root / "elsewhere"
         start.mkdir()
@@ -680,6 +688,12 @@ class AddToFallback(Base):
         self.marker.write_text("")
         self.ctx.steam.add_to("G", self.exe)
         self.assertTrue(self.marker.exists())
+
+    def test_a_percent_in_the_path_is_not_a_field_code(self):
+        exe = self.make_exe("100%f.sh")
+        self.ctx.steam.add_to("G", exe)
+        _, text, _ = self.desktop()
+        self.assertIn("Exec=" + '"' + self.root.as_posix() + '/games/100%%f.sh"', text.splitlines())
 
     def test_exec_and_name_escaping(self):
         exe = self.make_exe('we"ird $HOME `id` back\\slash.sh')

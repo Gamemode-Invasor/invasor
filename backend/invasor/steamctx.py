@@ -214,7 +214,7 @@ def _desktop_value(text, quote=False):
     if quote:
         for ch in '\\"$`':
             text = text.replace(ch, "\\" + ch)
-        return f'"{text}"'
+        return '"' + text.replace("%", "%%") + '"'  # %f, %u... would be field codes
     return text.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
 
 
@@ -277,7 +277,7 @@ class ModuleSteam:
             # AddShortcut may have run but not answered in time: never add it twice.
             appid = next((a for a, s in _shortcuts().items() if s["exe"] == exe), None) \
                 or self._add_fallback(name, exe, start_dir)
-        _owners().transform(lambda d: {**d, appid: {"module": self._ctx.id, "exe": exe}})
+        self._own(appid, exe)
         log.info("%s added %s to Steam as %r (appid %s)", self._ctx.id, exe, name, appid)
         self._notify("Added to Steam", name)
         return {"appid": int(appid), "existed": False}
@@ -293,12 +293,22 @@ class ModuleSteam:
         if isinstance(appid, bool) or not isinstance(appid, int) or appid <= 0:
             raise Unavailable("Steam didn't give the new shortcut's appid")
         appid = appid & 0xFFFFFFFF
-        # AddShortcut ignores name and options: these set them.
-        call("Apps.SetShortcutName", appid, name)
-        call("Apps.SetShortcutStartDir", appid, start_dir)
-        if options:
-            call("Apps.SetShortcutLaunchOptions", appid, options)
-        appid = str(appid)
+        # Recorded at once: if a call below fails, the shortcut is there and this module may remove it.
+        self._own(str(appid), exe)
+        try:
+            # AddShortcut ignores name and options: these set them.
+            call("Apps.SetShortcutName", appid, name)
+            call("Apps.SetShortcutStartDir", appid, start_dir)
+            if options:
+                call("Apps.SetShortcutLaunchOptions", appid, options)
+            self._finish_principal(str(appid), name, exe, options)
+        except BaseException:
+            if str(appid) not in _shortcuts():  # nothing was added after all: nothing to own
+                self._disown(str(appid))
+            raise
+        return str(appid)
+
+    def _finish_principal(self, appid, name, exe, options):
         def mine():
             s = _shortcuts().get(appid)
             return s if s and s["exe"] == exe else None
@@ -309,7 +319,6 @@ class ModuleSteam:
             if _wait_for(mine, 0) is None:
                 raise Unavailable("Steam didn't add the shortcut in time")
             log.warning("Steam added %s (appid %s) but not with the name/options asked", exe, appid)
-        return appid
 
     def _add_fallback(self, name, exe, start_dir):
         """The steam://addnonsteamgame link with a temporary .desktop file: the appid (str)."""
@@ -360,7 +369,7 @@ class ModuleSteam:
         self._ctx._steam.call_sync("Apps.RemoveShortcut", int(appid))
         if _wait_for(lambda: appid not in _shortcuts(), 5) is None:
             raise Unavailable("Steam didn't remove it in time")
-        _owners().transform(lambda d: {k: v for k, v in d.items() if k != appid})
+        self._disown(appid)
         log.info("%s removed the shortcut %r (appid %s) from Steam", self._ctx.id, shortcut["name"], appid)
         self._notify("Removed from Steam", shortcut["name"] or appid)
         return {"removed": True}
@@ -451,6 +460,12 @@ class ModuleSteam:
         calls.check(self._ctx, f"ctx.steam.{name}()")
         if self._ctx._steam is None:
             raise Unavailable("SteamClient bridge not configured")
+
+    def _own(self, appid, exe):
+        _owners().transform(lambda d: {**d, appid: {"module": self._ctx.id, "exe": exe}})
+
+    def _disown(self, appid):
+        _owners().transform(lambda d: {k: v for k, v in d.items() if k != appid})
 
     def _notify(self, title, body):
         notify_later(self._ctx._steam, title, body, self._ctx.log, "steam", "invasor-steam-notify")

@@ -75,13 +75,13 @@ def _current_account():
     users = users if isinstance(users, dict) else {}
     recent, newest, newest_time = None, None, -1
     for steamid, user in users.items():
-        if not (steamid.isascii() and steamid.isdigit()) or int(steamid) <= STEAMID64_BASE:
+        if not (steamid.isascii() and steamid.isdigit()) or len(steamid) > 20 or int(steamid) <= STEAMID64_BASE:
             continue
         account = str(int(steamid) - STEAMID64_BASE)
         if vdf.get(user, "MostRecent") == "1" and recent is None:
             recent = account
         stamp = vdf.get(user, "timestamp")
-        if isinstance(stamp, str) and stamp.isascii() and stamp.isdigit() and int(stamp) > newest_time:
+        if isinstance(stamp, str) and stamp.isascii() and stamp.isdigit() and len(stamp) <= 20 and int(stamp) > newest_time:
             newest, newest_time = account, int(stamp)
     for account in (recent, newest):
         if account is not None and (base / account).is_dir():
