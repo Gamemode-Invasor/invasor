@@ -15,7 +15,7 @@ HERE = Path(__file__).resolve().parents[1]
 # core this module sits in (modules/demo).
 sys.path.insert(0, str(Path(os.environ.get("INVASOR_CORE") or HERE.parents[1]) / "backend"))
 
-from invasor import schema, tomlio  # noqa: E402
+from invasor import paths, schema, tomlio, vdf  # noqa: E402
 from invasor.modules import Form, Settings  # noqa: E402
 from invasor.storage import JsonStore  # noqa: E402
 from invasor.tasks import TaskRegistry  # noqa: E402
@@ -46,6 +46,8 @@ class FakeCtx:
     InvalidArgument = schema.InvalidArgument
     Unavailable = schema.Unavailable
     toml = tomlio
+    paths = paths
+    vdf = vdf
     id = "demo"
     path = HERE
 
@@ -191,6 +193,23 @@ class Backend(unittest.TestCase):
         self.assertTrue(folder.exists())
         self.b.uninstall(self.ctx, True)
         self.assertFalse(folder.exists())
+
+    def test_steam_folders(self):
+        steam = self.folder / "Steam"
+        (steam / "steamapps").mkdir(parents=True)
+        (steam / "userdata/116437234/config").mkdir(parents=True)
+        (steam / "steamapps/libraryfolders.vdf").write_text(
+            f'"libraryfolders"\n{{\n\t"0"\n\t{{\n\t\t"path"\t\t"{steam}"\n\t}}\n}}\n')
+        with mock.patch.object(paths, "MEDIA_GLOBS", ()):
+            with mock.patch.object(paths, "STEAM_ROOT", self.folder / "nowhere"):
+                none = self.b.steam_folders()
+            with mock.patch.object(paths, "STEAM_ROOT", steam):
+                found = self.b.steam_folders()
+        self.assertIsNone(none["account"])
+        self.assertEqual(none["libraries"], [])
+        self.assertEqual(found, {"root": str(steam), "libraries": [str(steam / "steamapps")],
+                                 "account": str(steam / "userdata/116437234"),
+                                 "grid": str(steam / "userdata/116437234/config/grid"), "libraries_vdf_entries": 1})
 
     def test_profile_path_is_named_after_the_module_id(self):
         b = load_backend()

@@ -5,6 +5,7 @@
 - forms + toml: the "profile" form, stored by the module in a TOML file (saved with a validate=
   check that sees the new file before it replaces the old one);
 - game: info() and shortcut_exe() in whoami; ctx.id and ctx.path (the module's folder) too;
+- Steam folders: ctx.paths (root, libraries, account, artwork) and ctx.vdf (libraryfolders.vdf) in steam_folders;
 - Steam: notify (with an icon, a timeout and a sound) / notify_async, steam_call / steam_call_async, always with a plan B;
 - clean errors: InvalidArgument (400) and Unavailable (503);
 - plain and `async def` methods, a background thread stopped in teardown();
@@ -119,6 +120,30 @@ def whoami():
             "upgraded_from": ctx.data.load().get("upgraded_from")}
 
 
+def steam_folders():
+    """Where Steam keeps things. Each field is None when it can't be told (no Steam here, no account yet)."""
+    def found(get):
+        try:
+            return get()
+        except ctx.Unavailable:
+            return None
+
+    root = found(ctx.paths.steam_root)
+    account = found(ctx.paths.userdata)
+    grid = found(ctx.paths.grid_dir)
+    entries = 0
+    if root is not None:
+        try:
+            text = (root / "steamapps/libraryfolders.vdf").read_text(errors="replace")
+            folders = ctx.vdf.get(ctx.vdf.loads_text(text), "libraryfolders", default={})
+            entries = len(folders) if isinstance(folders, dict) else 0
+        except OSError:
+            pass
+    return {"root": str(root) if root else None, "libraries": [str(p) for p in found(ctx.paths.libraries) or []],
+            "account": str(account) if account else None, "grid": str(grid) if grid else None,
+            "libraries_vdf_entries": entries}
+
+
 def notify(title="Demo", body="", sound=""):
     ctx.notify(title, body, ICON, timeout=10, sound=sound)  # timeout: seconds to wait for Steam. No sound: Steam decides. InvalidArgument/Unavailable reach the UI as clean errors
     return {"ok": True}
@@ -220,6 +245,7 @@ def profile_set(key, value):
 
 METHODS = {
     "whoami": whoami,
+    "steam_folders": steam_folders,
     "notify": notify,
     "notify_async": notify_async,
     "steam_info": steam_info,
