@@ -20,7 +20,8 @@ import shutil
 import sys
 import threading
 
-from . import __version__, checkmod, config, schema, steam, tomlio
+from . import __version__, checkmod, config, schema, steam, tomlio, vdf
+from . import paths as steam_paths
 from .schema import Unavailable
 from .storage import JsonStore
 from .tasks import TaskRegistry
@@ -195,6 +196,10 @@ class ModuleContext:
 
     # Read/write TOML config files without losing anything (see tomlio.py).
     toml = tomlio
+    # Steam's folders: library, account, compatdata... (see paths.py).
+    paths = steam_paths
+    # Steam's VDF files, read only (see vdf.py).
+    vdf = vdf
 
     def __init__(self, module_id, path, game, settings, steam=None, forms=None, tasks=None):
         self.id = module_id

@@ -161,7 +161,7 @@ class SteamRoot(unittest.TestCase):
 
     def test_the_override_wins(self):
         root = temp_dir(self)
-        patch(self, "invasor.context.STEAM_ROOT", root)
+        patch(self, "invasor.paths.STEAM_ROOT", root)
         self.assertEqual(context._steam_root(), root)
 
 

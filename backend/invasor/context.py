@@ -13,32 +13,27 @@ import os
 import re
 from pathlib import Path
 
-from . import cef, cef_flag, vdf
+from . import cef, paths, schema, vdf
 
 log = logging.getLogger("invasor.context")
 
 POLL_INTERVAL = 3
-STEAM_ROOT = None  # Steam's folder if set (tests); else found as the installer and cef_flag find it
 # STEAM TOUCHPOINT: SharedJSContext's URL shows the library route (no game shown if it changes).
 ROUTE_APP = re.compile(r"/routes/library/app/(\d+)")
-VDF_PATH = re.compile(r'"path"\s+"([^"]+)"')
 VDF_NAME = re.compile(r'"name"\s+"([^"]*)"')
 
 
 def _steam_root():
-    """Steam's folder: ~/.steam/steam or ~/.local/share/Steam (cef_flag.steam_dir), whichever exists."""
-    return STEAM_ROOT or cef_flag.steam_dir() or Path.home() / ".local/share/Steam"
+    """Steam's folder (paths.root()), or where it would be."""
+    return paths.root() or Path.home() / ".local/share/Steam"
 
 
 def _library_dirs():
-    root = _steam_root()
-    dirs = [root]
+    """Every Steam library folder (the one holding steamapps/), the main one first."""
     try:
-        text = (root / "steamapps/libraryfolders.vdf").read_text(errors="replace")
-        dirs += [Path(p.replace("\\\\", "\\")) for p in VDF_PATH.findall(text)]
-    except OSError:
-        pass
-    return list(dict.fromkeys(dirs))
+        return [p.parent for p in paths.libraries()]
+    except schema.Unavailable:
+        return [_steam_root()]
 
 
 def _app_name(appid):
