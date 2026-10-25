@@ -30,7 +30,6 @@ log = logging.getLogger("invasor.http")
 USER_AGENT = f"invasor/{__version__}"  # GitHub's API refuses requests without one
 TIMEOUT = 20
 CHUNK = 1 << 16
-MAX_URL = 2048
 MAX_DOWNLOAD = 1 << 30
 MAX_USER_CHOSE = 100 << 20
 MAX_JSON = 1 << 20
@@ -126,12 +125,6 @@ def save(url, dest, *, limit, progress=None, stop=None, headers=None, checksum=N
     return result
 
 
-def _url(url):
-    if not isinstance(url, str) or len(url) > MAX_URL or not _https(url) or not urlsplit(url).hostname:
-        raise InvalidArgument(f"not an https URL (up to {MAX_URL} characters): {str(url)[:100]!r}")
-    return url
-
-
 def _dest(dest):
     try:
         dest = Path(dest)
@@ -187,7 +180,7 @@ class ModuleHttp:
         Unavailable when the user says no, the network fails or the module is unloaded meanwhile.
         The file is never executable."""
         self._check_call("download")
-        url, dest = _url(url), _dest(dest)
+        url, dest = calls.check_url(url, ("https",)), _dest(dest)
         checksum, limit = _checksum(checksum), _limit(max_bytes, user_chose)
         if not isinstance(user_chose, bool):
             raise InvalidArgument("user_chose must be True or False")
@@ -219,7 +212,7 @@ class ModuleHttp:
         """The JSON answer of the https `url` (at most `max_bytes`). InvalidArgument when it isn't
         JSON or is too large, Unavailable when the network fails."""
         self._check_call("get_json")
-        url = _url(url)
+        url = calls.check_url(url, ("https",))
         if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or not 0 < max_bytes <= MAX_DOWNLOAD:
             raise InvalidArgument(f"max_bytes must be a whole number from 1 to {MAX_DOWNLOAD}")
         try:

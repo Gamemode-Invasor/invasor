@@ -20,7 +20,6 @@ import tempfile
 import time
 import urllib.parse
 from pathlib import Path
-from urllib.parse import urlsplit
 
 from . import calls, config, paths, vdf
 from .schema import InvalidArgument, Unavailable
@@ -33,8 +32,8 @@ REGISTRY = Path.home() / ".steam/registry.vdf"
 # Without this file Steam shows a dialog (or does nothing) for a steam://addnonsteamgame link.
 MARKER = "/tmp/addnonsteamgamefile"
 POLL = 0.5
-MAX_URL, MAX_NAME, MAX_LINE = 2048, 256, 4096
-CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+MAX_NAME, MAX_LINE = 256, 4096
+CONTROL = calls.CONTROL
 BAD_LINE = re.compile(r"[\r\n\0]")
 OPENERS = (("gio", "open"), ("xdg-open",))
 DETAILS_TIMEOUT = 5000  # ms, on the JS side
@@ -203,13 +202,6 @@ def _line(line):
     return line
 
 
-def _url(url):
-    if not isinstance(url, str) or len(url) > MAX_URL or CONTROL.search(url) \
-            or urlsplit(url).scheme not in ("http", "https") or not urlsplit(url).hostname:
-        raise InvalidArgument(f"not an http(s) URL (up to {MAX_URL} characters): {str(url)[:100]!r}")
-    return url
-
-
 def _desktop_value(text, quote=False):
     if quote:
         for ch in '\\"$`':
@@ -247,7 +239,7 @@ class ModuleSteam:
     def open_url(self, url):
         """Open the http(s) `url` in Steam's browser (else the desktop's). Unavailable if neither can."""
         self._check_call("open_url")
-        url = _url(url)
+        url = calls.check_url(url, ("http", "https"))
         try:
             self._ctx._steam.call_sync("URL.ExecuteSteamURL", "steam://openurl/" + url)
             log.debug("%s opened %s in Steam", self._ctx.id, url)
