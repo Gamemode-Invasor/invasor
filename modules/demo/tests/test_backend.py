@@ -15,7 +15,7 @@ HERE = Path(__file__).resolve().parents[1]
 # core this module sits in (modules/demo).
 sys.path.insert(0, str(Path(os.environ.get("INVASOR_CORE") or HERE.parents[1]) / "backend"))
 
-from invasor import paths, schema, tomlio, vdf  # noqa: E402
+from invasor import archive, paths, schema, tomlio, vdf  # noqa: E402
 from invasor.modules import Form, Settings  # noqa: E402
 from invasor.storage import JsonStore  # noqa: E402
 from invasor.tasks import TaskRegistry  # noqa: E402
@@ -48,6 +48,7 @@ class FakeCtx:
     toml = tomlio
     paths = paths
     vdf = vdf
+    archive = archive
     id = "demo"
     path = HERE
 
@@ -210,6 +211,16 @@ class Backend(unittest.TestCase):
         self.assertEqual(found, {"root": str(steam), "libraries": [str(steam / "steamapps")],
                                  "account": str(steam / "userdata/116437234"),
                                  "grid": str(steam / "userdata/116437234/config/grid"), "libraries_vdf_entries": 1})
+
+    def test_unpack_sample(self):
+        first = self.b.unpack_sample()
+        (self.folder / "sample/stale.txt").write_text("from before")
+        again = self.b.unpack_sample()
+        self.assertEqual(first, again)
+        self.assertEqual(again, {"folder": str(self.folder / "sample"),
+                                 "files": ["README.txt", "hello.txt", "notes/list.txt"]})
+        self.assertFalse((self.folder / "sample/stale.txt").exists())
+        self.assertEqual(sorted(p.name for p in self.folder.iterdir() if p.name.startswith(".")), [])
 
     def test_profile_path_is_named_after_the_module_id(self):
         b = load_backend()

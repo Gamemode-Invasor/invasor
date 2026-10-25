@@ -6,6 +6,7 @@
   check that sees the new file before it replaces the old one);
 - game: info() and shortcut_exe() in whoami; ctx.id and ctx.path (the module's folder) too;
 - Steam folders: ctx.paths (root, libraries, account, artwork) and ctx.vdf (libraryfolders.vdf) in steam_folders;
+- archives: ctx.archive.extract and swap_dir in unpack_sample (assets/sample.zip -> its data folder);
 - Steam: notify (with an icon, a timeout and a sound) / notify_async, steam_call / steam_call_async, always with a plan B;
 - clean errors: InvalidArgument (400) and Unavailable (503);
 - plain and `async def` methods, a background thread stopped in teardown();
@@ -16,6 +17,7 @@
 """
 import os
 import shutil
+import tempfile
 import threading
 import time
 from pathlib import Path
@@ -144,6 +146,20 @@ def steam_folders():
             "libraries_vdf_entries": entries}
 
 
+def unpack_sample():
+    """Unpack assets/sample.zip next to ctx.data (its folder goes with a purge) and swap it in
+    as sample/: a second run replaces the first in one step. Returns the files unpacked."""
+    data = ctx.data.path.parent
+    data.mkdir(parents=True, exist_ok=True)
+    work = tempfile.mkdtemp(dir=data, prefix=".sample-")
+    try:
+        top = ctx.archive.extract(ctx.path / "assets/sample.zip", Path(work) / "unpacked", single_root=True)
+        target = ctx.archive.swap_dir(top, data / "sample")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return {"folder": str(target), "files": sorted(p.relative_to(target).as_posix() for p in target.rglob("*") if p.is_file())}
+
+
 def notify(title="Demo", body="", sound=""):
     ctx.notify(title, body, ICON, timeout=10, sound=sound)  # timeout: seconds to wait for Steam. No sound: Steam decides. InvalidArgument/Unavailable reach the UI as clean errors
     return {"ok": True}
@@ -246,6 +262,7 @@ def profile_set(key, value):
 METHODS = {
     "whoami": whoami,
     "steam_folders": steam_folders,
+    "unpack_sample": unpack_sample,
     "notify": notify,
     "notify_async": notify_async,
     "steam_info": steam_info,
