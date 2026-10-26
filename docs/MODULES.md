@@ -1,7 +1,6 @@
 # Writing an Invasor module
 
-This is the contract between Invasor and its modules, **module API 1**. A module that follows it works the same
-on every install. If it breaks, it breaks only its own tab, never the panel or the other modules.
+This is the contract between Invasor and its modules, **module API 1**. A module that follows it works the same on every install. If it breaks, it breaks only its own tab, never the panel or the other modules.
 
 > **License.** Invasor is GPL-3.0-or-later. The code examples in this document and the `modules/_example/` template
 > are MIT-licensed ([`LICENSES/MIT.txt`](../LICENSES/MIT.txt)): copy them into your module freely, whatever license
@@ -19,8 +18,7 @@ modules/<id>/
   tests/          optional: unittest files (test_*.py) for the module's Python code
 ```
 
-- **`<id>`** is the folder name: lowercase letters, digits, `-` and `_`. Folders starting with `_` or `.` are
-  templates and are never loaded. `core` is reserved.
+- **`<id>`** is the folder name: lowercase letters, digits, `-` and `_`. Folders starting with `_` or `.` are templates and are never loaded. `core` is reserved.
 - What you need depends on the module:
 
   | Kind of module | Files |
@@ -61,8 +59,7 @@ modules/<id>/
 | `settings` | no | The settings form (below). |
 | `forms` | no | Named forms whose values the module stores itself (section 3, at the end). |
 
-Any other key is an **error**: a typo never goes unnoticed. An invalid `module.json` means the module isn't
-loaded, and ⚙ Settings shows why (e.g. `settings[2].max: must be a number`).
+Any other key is an **error**: a typo never goes unnoticed. An invalid `module.json` means the module isn't loaded, and ⚙ Settings shows why (e.g. `settings[2].max: must be a number`).
 
 ## 3. Settings
 
@@ -107,8 +104,7 @@ Declared once in `module.json`. With that declaration:
 | `text` | string | `max_length` (default 256), `placeholder` | A opens the built-in keyboard |
 | `password` | string | same as `text`; `default` must be `""` | like `text`; shown as dots, the keyboard has a show/hide key |
 
-`password` only masks what is on screen: the value is stored as plain text in the module's `settings.json`
-and `ctx.settings.get` returns it as is. Don't use it as a condition (`when`/`disabled_when`).
+`password` only masks what is on screen: the value is stored as plain text in the module's `settings.json` and `ctx.settings.get` returns it as is. Don't use it as a condition (`when`/`disabled_when`).
 
 **Sections** have the form `{ "section": "Title", "open": true, "items": [fields…] }`. They:
 
@@ -117,16 +113,11 @@ and `ctx.settings.get` returns it as is. Don't use it as a condition (`when`/`di
 - `open` defaults to true;
 - take `when` too.
 
-**`when`** shows a field or a section only while other fields of the same form (the same `settings`, or the same
-`forms` entry) have the given values: `{"adaptive": true}`, or several keys, which must all match. A value can also
-be a list, matched by any of its values: `{"method": ["ls1", "mako"]}`. Each key must be a field of that form, other
-than the field itself, and each value must be one that field can take.
+**`when`** shows a field or a section only while other fields of the same form (the same `settings`, or the same `forms` entry) have the given values: `{"adaptive": true}`, or several keys, which must all match. A value can also be a list, matched by any of its values: `{"method": ["ls1", "mako"]}`. Each key must be a field of that form, other than the field itself, and each value must be one that field can take.
 
-**`disabled_when`** (fields only) works the same way, but the field stays on screen, disabled, and its hint says
-which option set it ("Set by Ultra performance"). Use it when another option decides this one's value.
+**`disabled_when`** (fields only) works the same way, but the field stays on screen, disabled, and its hint says which option set it ("Set by Ultra performance"). Use it when another option decides this one's value.
 
-Both only change what's on screen: a hidden or disabled field keeps its value, and the backend stores and validates
-it as usual. If one option changes others (e.g. a preset), do that in the module's backend.
+Both only change what's on screen: a hidden or disabled field keeps its value, and the backend stores and validates it as usual. If one option changes others (e.g. a preset), do that in the module's backend.
 
 ```json
 { "key": "multiplier", "type": "number", "label": "Multiplier", "min": 2, "max": 5, "default": 2,
@@ -138,14 +129,11 @@ it as usual. If one option changes others (e.g. a preset), do that in the module
 
 **How values are normalized:**
 
-- A number is clamped to `min..max` and snapped to the nearest step counted from `min` (halfway rounds up), with no
-  float noise (`0.1 + 0.2` is stored as `0.3`).
+- A number is clamped to `min..max` and snapped to the nearest step counted from `min` (halfway rounds up), with no float noise (`0.1 + 0.2` is stored as `0.3`).
 - An option must match exactly: `1` and `"1"` are different values.
-- A stored value that is no longer valid (the schema changed, or the file was edited by hand) reads as its
-  default, and the log says so.
+- A stored value that is no longer valid (the schema changed, or the file was edited by hand) reads as its default, and the log says so.
 
-**Forms the module stores itself.** Sometimes the values belong to someone else, for example another program's
-config file (Patito edits lsfg-vk's `conf.toml`). Declare them under `forms`, with the same field rules:
+**Forms the module stores itself.** Sometimes the values belong to someone else, for example another program's config file (Patito edits lsfg-vk's `conf.toml`). Declare them under `forms`, with the same field rules:
 
 ```json
 "forms": {
@@ -154,11 +142,8 @@ config file (Patito edits lsfg-vk's `conf.toml`). Declare them under `forms`, wi
 }
 ```
 
-- **In `backend.py`:** `ctx.forms["profile"].coerce(key, value)` validates one value (clamped, snapped…) or raises
-  `InvalidArgument`; `.clean(data)` gives every field a valid value; `.defaults()` gives the defaults. Where the
-  values are stored is up to the module.
-- **In `ui.ts`:** `await ui.form(ctx, "profile", { get, set })` draws the form exactly like `settingsForm`, with
-  `get()` returning every value and `set(key, value)` saving one and returning what was stored.
+- **In `backend.py`:** `ctx.forms["profile"].coerce(key, value)` validates one value (clamped, snapped…) or raises `InvalidArgument`; `.clean(data)` gives every field a valid value; `.defaults()` gives the defaults. Where the values are stored is up to the module.
+- **In `ui.ts`:** `await ui.form(ctx, "profile", { get, set })` draws the form exactly like `settingsForm`, with `get()` returning every value and `set(key, value)` saving one and returning what was stored.
 
 ## 4. `backend.py`
 
@@ -217,9 +202,7 @@ METHODS = {"apply": apply}   # what the UI can call: ctx.call("apply")
 
 **Notification sounds** (`sound` in `notify` / `notify_async`):
 
-Without `sound`, Steam decides (the achievement sound its toast always has). With it, Invasor
-asks Steam to play one of **Steam's own** sounds for that notification; there are no custom sounds.
-Steam still draws its usual toast; only the sound changes.
+Without `sound`, Steam decides (the achievement sound its toast always has). With it, Invasor asks Steam to play one of **Steam's own** sounds for that notification; there are no custom sounds. Steam still draws its usual toast; only the sound changes.
 
 | `sound` | Steam's sound | Game Mode (Big Picture) | Desktop client |
 |---|---|---|---|
@@ -234,72 +217,32 @@ Steam still draws its usual toast; only the sound changes.
 | `ingame` | friend in game | `ui_steam_smoother_friend_join` | silent |
 | `none` | no sound | silent | silent |
 
-- **Steam picks the file by interface.** The names are Steam's own sound numbers; Steam maps each to a
-  file depending on whether it is in Game Mode or the desktop client, and on the desktop most of them have
-  none. So the choice is only fully audible in Game Mode; a module that needs to be heard on the desktop
-  should use `trophy`/`toast` or leave `sound` out.
-- **Steam's settings still apply.** Nothing plays if the user turned off Steam's UI sounds or "play a
-  sound on toast", or if Steam's own toast setting hides the notification. `none` is always silent.
-- **One at a time.** Steam shows toasts one after another, and plays a sound when each one appears, so a
-  burst of notifications is heard in order.
+- **Steam picks the file by interface.** The names are Steam's own sound numbers; Steam maps each to a file depending on whether it is in Game Mode or the desktop client, and on the desktop most of them have none. So the choice is only fully audible in Game Mode; a module that needs to be heard on the desktop should use `trophy`/`toast` or leave `sound` out.
+- **Steam's settings still apply.** Nothing plays if the user turned off Steam's UI sounds or "play a sound on toast", or if Steam's own toast setting hides the notification. `none` is always silent.
+- **One at a time.** Steam shows toasts one after another, and plays a sound when each one appears, so a burst of notifications is heard in order.
 - **A name that isn't in the table** is `InvalidArgument` (HTTP 400), and the answer lists the valid names.
-- If Steam changes and the sound can't be set, the notification still shows with Steam's own sound
-  (see `docs/API-Steam.md`).
+- If Steam changes and the sound can't be set, the notification still shows with Steam's own sound (see `docs/API-Steam.md`).
 
 **Rules:**
 
-- **Several files.** `backend.py` is loaded as a package, so it can import its own files with relative
-  imports: `from . import helpers` loads `modules/<id>/helpers.py`. Each module's code is separate from the
-  others' (two modules can both have a `helpers.py`). Disabling a module drops its code; enabling it again
-  loads it afresh.
+- **Several files.** `backend.py` is loaded as a package, so it can import its own files with relative imports: `from . import helpers` loads `modules/<id>/helpers.py`. Each module's code is separate from the others' (two modules can both have a `helpers.py`). Disabling a module drops its code; enabling it again loads it afresh.
 - **Threads.**
-  - Plain functions in `METHODS` run in a worker thread, so they may block (downloads, subprocesses…).
-    Several calls can run at the same time.
+  - Plain functions in `METHODS` run in a worker thread, so they may block (downloads, subprocesses…). Several calls can run at the same time.
   - `async def` functions run in the service's event loop and **must not block**.
-  - `setup`, `teardown` and `on_change` callbacks may run in any thread and must return quickly. `setup`
-    (and `upgrade`, and importing `backend.py`) always runs in a worker thread, never in the event loop, so
-    `ctx.steam_call()` and `ctx.notify()` work there; together they get 20 seconds, after that the module
-    fails to load (it's torn down and the log says so).
-  - Event callbacks (`ctx.events`) get a thread of their own each time, so they may block. If Steam restarts
-    (or a game starts again) while one is still running, another one starts: guard it with a lock if that matters. When the module
-    is unloaded no new callback starts, and one still running is waited for up to 3 seconds before the
-    module's files or data are removed.
-  - For background work, start your own thread (daemon) in `setup` and stop it in `teardown`. `teardown`
-    gets 10 seconds (when the module is disabled, rescanned, replaced or the service stops); after that the
-    module is considered stopped anyway and the log says so.
-- **Arguments.** Methods get keyword arguments from the UI. If the arguments are wrong, the call fails with a
-  "bad arguments" error and your function is never called.
-- **Errors.** An exception (even `exit()`) becomes a rejected `ctx.call()` with its message. It is logged and
-  never takes the service down. If `setup` fails, `teardown` is called to release whatever it started, and the
-  module isn't loaded. `METHODS` is checked before `setup` runs.
-- **Upgrades.** The core remembers the version of each module it last loaded. When a different one loads (the
-  zip was replaced, Invasor updated a module it ships, or it was reinstalled with its data kept), `upgrade(context,
-  previous_version)` runs first, then `setup`. The core doesn't compare versions: a downgrade calls it too. If
-  `upgrade` raises, the module isn't loaded and the old version stays recorded, so it runs again next time. A
-  disabled module upgrades when it's enabled. The first load ever doesn't call it.
-- **Uninstall.** `teardown` also runs when the module is disabled, so it must never delete anything the user
-  would want back. Undo what the module left outside its folder (another program's config, files in Steam's
-  folders…) in `uninstall(context, purge)` instead. It runs only when the module is uninstalled: from ⚙ Settings
-  (also the ones shipped with Invasor, like Demo: they stay uninstalled across updates and ⚙ Settings can restore them), or for every module when
-  Invasor itself is uninstalled (`invasor-installation.sh --uninstall`, whose `--purge` becomes `purge`). It runs
-  after `teardown` and before its files are deleted, even if it's disabled (its code is imported without `setup`). `purge` is `True` when the user also
-  asked to delete its settings and data; the core then deletes `~/.config/invasor/modules/<id>/` itself. It has
-  10 seconds; an error, `exit()` or running out of time is logged and the module is uninstalled anyway. From a
-  terminal (`tools/install_module.py --uninstall`, uninstalling Invasor) the service is stopped and `steam_call`
-  raises `Unavailable`, so it needs its plan B here too.
-  `ctx.events.on` does nothing there (it's logged): nothing is left to react to. Uninstalling also
-  removes the module from the user's order and from the disabled list, so a reinstall starts enabled and last.
+  - `setup`, `teardown` and `on_change` callbacks may run in any thread and must return quickly. `setup` (and `upgrade`, and importing `backend.py`) always runs in a worker thread, never in the event loop, so `ctx.steam_call()` and `ctx.notify()` work there; together they get 20 seconds, after that the module fails to load (it's torn down and the log says so).
+  - Event callbacks (`ctx.events`) get a thread of their own each time, so they may block. If Steam restarts (or a game starts again) while one is still running, another one starts: guard it with a lock if that matters. When the module is unloaded no new callback starts, and one still running is waited for up to 3 seconds before the module's files or data are removed.
+  - For background work, start your own thread (daemon) in `setup` and stop it in `teardown`. `teardown` gets 10 seconds (when the module is disabled, rescanned, replaced or the service stops); after that the module is considered stopped anyway and the log says so.
+- **Arguments.** Methods get keyword arguments from the UI. If the arguments are wrong, the call fails with a "bad arguments" error and your function is never called.
+- **Errors.** An exception (even `exit()`) becomes a rejected `ctx.call()` with its message. It is logged and never takes the service down. If `setup` fails, `teardown` is called to release whatever it started, and the module isn't loaded. `METHODS` is checked before `setup` runs.
+- **Upgrades.** The core remembers the version of each module it last loaded. When a different one loads (the zip was replaced, Invasor updated a module it ships, or it was reinstalled with its data kept), `upgrade(context, previous_version)` runs first, then `setup`. The core doesn't compare versions: a downgrade calls it too. If `upgrade` raises, the module isn't loaded and the old version stays recorded, so it runs again next time. A disabled module upgrades when it's enabled. The first load ever doesn't call it.
+- **Uninstall.** `teardown` also runs when the module is disabled, so it must never delete anything the user would want back. Undo what the module left outside its folder (another program's config, files in Steam's folders…) in `uninstall(context, purge)` instead. It runs only when the module is uninstalled: from ⚙ Settings (also the ones shipped with Invasor, like Demo: they stay uninstalled across updates and ⚙ Settings can restore them), or for every module when Invasor itself is uninstalled (`invasor-installation.sh --uninstall`, whose `--purge` becomes `purge`). It runs after `teardown` and before its files are deleted, even if it's disabled (its code is imported without `setup`). `purge` is `True` when the user also asked to delete its settings and data; the core then deletes `~/.config/invasor/modules/<id>/` itself. It has 10 seconds; an error, `exit()` or running out of time is logged and the module is uninstalled anyway. From a terminal (`tools/install_module.py --uninstall`, uninstalling Invasor) the service is stopped and `steam_call` raises `Unavailable`, so it needs its plan B here too. `ctx.events.on` does nothing there (it's logged): nothing is left to react to. Uninstalling also removes the module from the user's order and from the disabled list, so a reinstall starts enabled and last.
 - **Steam's folders.** Use `ctx.paths` instead of hard-coding `~/.local/share/Steam` or `userdata/<id>`: Steam may live in `~/.steam/steam`, keep games in other libraries or on an SD card, and have several accounts.
 - **Archives.** Use `ctx.archive` rather than `tarfile`/`zipfile` `extractall`: it applies the same rules to every format and leaves `dest` untouched on error.
 - **Downloads.** Use `ctx.http` rather than `urllib`: it keeps to https, checks the checksum or asks the user, and never leaves a partial file. It isn't a sandbox: a module can still use `urllib`, but then nobody checks what it downloads.
 - **Changing the user's Steam.** Only on a user action, never on a timer or an event. For shortcuts and launch options use `ctx.steam` rather than `steam_call`: it checks the arguments, verifies what Steam did, logs it and tells the user. Keep a plan B for when it can't (`supports()` says so beforehand).
 - **Not a sandbox.** A module runs inside the Invasor service, with the user's permissions. `ctx.http`, `ctx.steam`, `ctx.archive` and `t.ask` are the safe, tested way to do those things, and what the user sees (questions, logs, notifications) comes from the core; but nothing stops a module from using `urllib`, `subprocess` or a raw `steam_call`, claiming `user_chose=True`, or answering its own question from its UI. Install only modules you trust: the Market lists the modules of the `Gamemode-Invasor` organisation (`repos.conf` in `invasor-workspace`); a zip from anywhere else is the user's call.
-- **After unload.** Once a module is unloaded (disabled, uninstalled, replaced, or its `setup` failed or timed
-  out) its `ctx` is retired: `ctx.settings.set`, `ctx.data` and `ctx.game_data` stores raise `Unavailable`
-  instead of saving, `ctx.task()`, `ctx.http` and `ctx.steam` raise `Unavailable` (the tasks it left open end as failed, and a download under way stops), and `ctx.settings.on_change` ignores new callbacks (logged). A thread left running by an old
-  instance can't bring back files that were purged, or callbacks the core already forgot. The `ctx` of `uninstall()` is retired the same way once it ends (or runs out of its 10 seconds), and a task it left open ends as failed.
-- **Tools.** Only the Python standard library is available. Don't `pip install` anything: the service must
-  keep working after system updates.
+- **After unload.** Once a module is unloaded (disabled, uninstalled, replaced, or its `setup` failed or timed out) its `ctx` is retired: `ctx.settings.set`, `ctx.data` and `ctx.game_data` stores raise `Unavailable` instead of saving, `ctx.task()`, `ctx.http` and `ctx.steam` raise `Unavailable` (the tasks it left open end as failed, and a download under way stops), and `ctx.settings.on_change` ignores new callbacks (logged). A thread left running by an old instance can't bring back files that were purged, or callbacks the core already forgot. The `ctx` of `uninstall()` is retired the same way once it ends (or runs out of its 10 seconds), and a task it left open ends as failed.
+- **Tools.** Only the Python standard library is available. Don't `pip install` anything: the service must keep working after system updates.
 
 ## 5. `ui.ts`
 
@@ -320,15 +263,8 @@ export default defineModule({
 });
 ```
 
-- **Showing in Quick Access.** `"no_qam": true` in module.json always hides the module there. For a condition the
-  module resolves itself (say, "only while the running game has some feature on"), define `showInQam(ctx)`: it
-  returns `false` to hide the tab in the Quick Access (···) panel, and may be async (ask your backend with
-  `ctx.call`, or read `ctx.game()`). Invasor asks when the panel opens and when the game changes, not in between.
-  Only an explicit `false` hides: an error, or an answer slower than 1.5 s, shows the tab. The library panel
-  ignores it. A hidden module keeps running (`onGameChange` still arrives once it has been shown); only its tab
-  is gone, and its page is built again when the tab comes back.
-- **Building.** Every page and sub-tab is built the first time it's shown, then kept with its state. An
-  exception there shows "Error in …" in that page only.
+- **Showing in Quick Access.** `"no_qam": true` in module.json always hides the module there. For a condition the module resolves itself (say, "only while the running game has some feature on"), define `showInQam(ctx)`: it returns `false` to hide the tab in the Quick Access (···) panel, and may be async (ask your backend with `ctx.call`, or read `ctx.game()`). Invasor asks when the panel opens and when the game changes, not in between. Only an explicit `false` hides: an error, or an answer slower than 1.5 s, shows the tab. The library panel ignores it. A hidden module keeps running (`onGameChange` still arrives once it has been shown); only its tab is gone, and its page is built again when the tab comes back.
+- **Building.** Every page and sub-tab is built the first time it's shown, then kept with its state. An exception there shows "Error in …" in that page only.
 - **What `ctx` gives:**
 
   | Member | Meaning |
@@ -347,28 +283,20 @@ export default defineModule({
 
 - **The `ui` kit.** It works with the gamepad and touch out of the box.
 
-  - **Settings form:** `await ui.settingsForm(ctx, { keys?, navHints? })` (`navHints: false` makes the hint bar show each field's own
-    `hint` alone, without the button help). It returns the form, its `controls` by key,
-    `reload()` and `reset()` (which stores every default). `await ui.form(ctx, name, store)` is the same for a
-    `forms` entry stored by the module (section 3).
-  - **Value controls:** `toggle`, `checkbox`, `slider`, `number`, `radio` (an option with `swatch: "#hex"` shows as a colour dot), `select`, `text` and `password`, for values
-    that aren't settings. Each returns a `Control` with:
+  - **Settings form:** `await ui.settingsForm(ctx, { keys?, navHints? })` (`navHints: false` makes the hint bar show each field's own `hint` alone, without the button help). It returns the form, its `controls` by key, `reload()` and `reset()` (which stores every default). `await ui.form(ctx, name, store)` is the same for a `forms` entry stored by the module (section 3).
+  - **Value controls:** `toggle`, `checkbox`, `slider`, `number`, `radio` (an option with `swatch: "#hex"` shows as a colour dot), `select`, `text` and `password`, for values that aren't settings. Each returns a `Control` with:
     - `get()`;
     - `set(v)`: shows a new value without calling `onChange`;
     - `setDisabled(on, reason)`: the control stays selectable and the hint shows `reason`.
   - **Actions:**
     - `button({ label, onClick })` returns `setLabel` and `setDisabled`;
     - `await ui.confirm(message, { ok, cancel })` starts on Cancel;
-    - `await ui.choose(message, [{ label, value }…], { cancel })` is the same with several answers: it returns
-      the chosen `value`, or `null` on Cancel. More than one answer stacks the buttons;
+    - `await ui.choose(message, [{ label, value }…], { cancel })` is the same with several answers: it returns the chosen `value`, or `null` on Cancel. More than one answer stacks the buttons;
     - `windowButton(ctx, { open })`.
-  - **Layout:** `section(title, children, { open })`, `info(text)`, `separator()`, and `image(src, { alt, maxHeight })`
-    for a preview image (grey box while loading, ⚠ if it fails).
+  - **Layout:** `section(title, children, { open })`, `info(text)`, `separator()`, and `image(src, { alt, maxHeight })` for a preview image (grey box while loading, ⚠ if it fails).
   - **Images:** `imageGrid({ items, aspect, columns, onActivate, activateLabel, onSelect })`. `activateLabel` is what A does in the hint bar ("open" by default). An item's `src` may be a short video (`.webm`/`.mp4`, or `video: true`), e.g. an animated thumbnail: it shows paused and plays only while its tile is highlighted.
 
-  The controls throw a clear error if they're misused, e.g. `select` with no options.
-  They follow the user's accent colour (⚙ Settings › Panel); a control you draw yourself should use the
-  CSS variables `var(--accent)`, `rgba(var(--accent-rgb), 0.15)` and `var(--accent-fg)` (text on the accent).
+  The controls throw a clear error if they're misused, e.g. `select` with no options. They follow the user's accent colour (⚙ Settings › Panel); a control you draw yourself should use the CSS variables `var(--accent)`, `rgba(var(--accent-rgb), 0.15)` and `var(--accent-fg)` (text on the accent).
 - **Button roles** (keep custom controls consistent with them):
 
   | Button | Role |
@@ -381,23 +309,16 @@ export default defineModule({
   | X | Fold/unfold the section |
   | Y | The control's special value |
 
-  For a control of your own, set `data-nav` and a `data-hint`, and listen to `invasor:button` on it, calling
-  `preventDefault()` for what you handle. `detail.button` is `"A"`, `"B"`, `"X"`, `"Y"`, `"UP"`, `"DOWN"`, `"LEFT"`, `"RIGHT"`,
-  `"L1"`, `"R1"`, `"L2"`, `"R2"`, `"SELECT"` and `"START"` (the core uses them to show the Tasks and Settings panels; take them first with `preventDefault()` if your control needs them)
-  or `"BTN_<n>"`.
-- **Imports.** Import only from `"invasor"`. Everything in `module-api.ts` is the contract; the rest of the
-  core can change.
+  For a control of your own, set `data-nav` and a `data-hint`, and listen to `invasor:button` on it, calling `preventDefault()` for what you handle. `detail.button` is `"A"`, `"B"`, `"X"`, `"Y"`, `"UP"`, `"DOWN"`, `"LEFT"`, `"RIGHT"`, `"L1"`, `"R1"`, `"L2"`, `"R2"`, `"SELECT"` and `"START"` (the core uses them to show the Tasks and Settings panels; take them first with `preventDefault()` if your control needs them) or `"BTN_<n>"`.
+- **Imports.** Import only from `"invasor"`. Everything in `module-api.ts` is the contract; the rest of the core can change.
 
 ## 6. Big windows ("expanded view")
 
 `ctx.openWindow({ title, render | tabs, onClose })` opens a window over the panel.
 
-- **Layout.** It covers almost the whole screen, with its own tabs (L1/R1) and sub-tabs (L2/R2). Its tabs
-  have the same `onShow`/`onHide` hooks as the panel's.
+- **Layout.** It covers almost the whole screen, with its own tabs (L1/R1) and sub-tabs (L2/R2). Its tabs have the same `onShow`/`onHide` hooks as the panel's.
 - **Closing.** B closes it.
-- **When there's no room.** That happens in Quick Access during a game, where only ~348px are visible.
-  `openWindow` returns `null` and tells the user to open it from the Library. `ui.windowButton(ctx, { open })`
-  handles this for you: it shows itself locked, with the reason.
+- **When there's no room.** That happens in Quick Access during a game, where only ~348px are visible. `openWindow` returns `null` and tells the user to open it from the Library. `ui.windowButton(ctx, { open })` handles this for you: it shows itself locked, with the reason.
 
 ## 7. Isolation: what can and can't break
 
@@ -426,67 +347,35 @@ A module doesn't have to live inside Invasor. Keep it in its own repository, nex
 ```
 
 - **Build** its UI with the core's kit: `node ~/Projects/invasor/frontend/build.mjs --module <id>`.
-- **Test:** the module's tests find the core through `$INVASOR_CORE`, which `check_module.py` sets for them. On
-  their own they look for `../invasor` next to the repository. See `patito/tests/test_backend.py` in the invasor-patito repository.
-- **Check and pack:** `python3 ~/Projects/invasor/tools/pack_module.py <id>`. It typechecks and builds `ui.ts`,
-  runs `check_module.py` (tests included) and writes `<id>-<version>.zip` with only what the console needs:
-  `module.json`, the Python files (also those of sub-packages, never `tests/`), `dist/ui.js`, README and LICENSE (the one at the root of your repository, if the
-  module folder has none), the files under `bin/` (programs the module runs) and under `assets/` (images and other data it ships).
-  Never the tests. The installer doesn't keep the executable bit: `chmod` a program in `bin/` before running it.
+- **Test:** the module's tests find the core through `$INVASOR_CORE`, which `check_module.py` sets for them. On their own they look for `../invasor` next to the repository. See `patito/tests/test_backend.py` in the invasor-patito repository.
+- **Check and pack:** `python3 ~/Projects/invasor/tools/pack_module.py <id>`. It typechecks and builds `ui.ts`, runs `check_module.py` (tests included) and writes `<id>-<version>.zip` with only what the console needs: `module.json`, the Python files (also those of sub-packages, never `tests/`), `dist/ui.js`, README and LICENSE (the one at the root of your repository, if the module folder has none), the files under `bin/` (programs the module runs) and under `assets/` (images and other data it ships). Never the tests. The installer doesn't keep the executable bit: `chmod` a program in `bin/` before running it.
 - **Install:**
-  - **On the console:** ⚙ Settings › Install module, then choose the zip, or open the Market (Library only) to install
-    from the organisation's repositories.
-    Choosing the zip only reads it: none of the module's code runs until you confirm. Then its `backend.py` is
-    imported in a separate process to check it, and what is installed is exactly the zip you were shown (a zip
-    that changed meanwhile is refused).
+  - **On the console:** ⚙ Settings › Install module, then choose the zip, or open the Market (Library only) to install from the organisation's repositories. Choosing the zip only reads it: none of the module's code runs until you confirm. Then its `backend.py` is imported in a separate process to check it, and what is installed is exactly the zip you were shown (a zip that changed meanwhile is refused).
   - **From a terminal:** `python3 ~/Projects/invasor/tools/install_module.py <id or zip>`.
 
-  Installed modules live in `~/.local/share/invasor/user-modules/<id>/`. Updating Invasor never touches that
-  folder. Uninstalling from ⚙ Settings runs the module's `uninstall()` and removes its files. The user chooses
-  whether to keep its settings and data (`~/.config/invasor/modules/<id>/`) in case it's installed again
-  (`--uninstall <id> --purge` from a terminal deletes them).
+  Installed modules live in `~/.local/share/invasor/user-modules/<id>/`. Updating Invasor never touches that folder. Uninstalling from ⚙ Settings runs the module's `uninstall()` and removes its files. The user chooses whether to keep its settings and data (`~/.config/invasor/modules/<id>/`) in case it's installed again (`--uninstall <id> --purge` from a terminal deletes them).
 
-**The Market.** ⚙ Settings › Install module › Open the Market lists the newest release of every module repository
-named in `repos.conf` of the `Gamemode-Invasor/invasor-workspace` repository (`main` branch; the core `invasor` line is
-skipped). The Beta update channel also offers pre-releases. For a repository to appear:
-- its release (tag `vX.Y.Z`) has the assets `<id>-<version>.zip` and `<id>-<version>.zip.sha256` (the `release.yml`
-  of section 8 publishes them);
-- `<id>/module.json` exists at that tag with the same `version`, and a `min_core` this Invasor meets (otherwise the
-  card is shown but can't be installed).
+**The Market.** ⚙ Settings › Install module › Open the Market lists the newest release of every module repository named in `repos.conf` of the `Gamemode-Invasor/invasor-workspace` repository (`main` branch; the core `invasor` line is skipped). The Beta update channel also offers pre-releases. For a repository to appear:
+- its release (tag `vX.Y.Z`) has the assets `<id>-<version>.zip` and `<id>-<version>.zip.sha256` (the `release.yml` of section 8 publishes them);
+- `<id>/module.json` exists at that tag with the same `version`, and a `min_core` this Invasor meets (otherwise the card is shown but can't be installed).
 
-The card is read from that `module.json`; no module code runs to show it. Installing downloads the zip from that
-release only, checks its sha256 and then does exactly what choosing the zip by hand does. The checksum catches a
-corrupt download, not a compromised account, so `repos.conf` is part of what the user trusts.
+The card is read from that `module.json`; no module code runs to show it. Installing downloads the zip from that release only, checks its sha256 and then does exactly what choosing the zip by hand does. The checksum catches a corrupt download, not a compromised account, so `repos.conf` is part of what the user trusts.
 
-**Where the list is read from.** A GitHub Action of the workspace repository (`.github/workflows/market.yml`) runs
-`tools/gen_market.py` every 12 hours, when `repos.conf` changes and on demand, and publishes the result as `market.json`
-on that repository's `market-data` branch. The app reads that one file (the newest stable release and the newest one
-pre-releases included, per repository; no URLs: the app rebuilds them inside the organisation's releases). So a new
-release shows up in the market within about twelve hours. If the file is missing, older than three days or invalid, the app
-asks GitHub repository by repository instead (about sixteen requests, of which about eight count against GitHub's
-limit of 60 an hour per IP), so the market keeps working without the Action. To run it by hand:
-`gh workflow run market.yml -R Gamemode-Invasor/invasor-workspace`.
+**Where the list is read from.** A GitHub Action of the workspace repository (`.github/workflows/market.yml`) runs `tools/gen_market.py` every 12 hours, when `repos.conf` changes and on demand, and publishes the result as `market.json` on that repository's `market-data` branch. The app reads that one file (the newest stable release and the newest one pre-releases included, per repository; no URLs: the app rebuilds them inside the organisation's releases). So a new release shows up in the market within about twelve hours. If the file is missing, older than three days or invalid, the app asks GitHub repository by repository instead (about sixteen requests, of which about eight count against GitHub's limit of 60 an hour per IP), so the market keeps working without the Action. To run it by hand: `gh workflow run market.yml -R Gamemode-Invasor/invasor-workspace`.
 
 **What the core checks before installing a zip**, refusing it with a clear message otherwise:
-- **The zip itself:** it is a real zip within the size limits, with no absolute paths, no `..` and no
-  symbolic links.
+- **The zip itself:** it is a real zip within the size limits, with no absolute paths, no `..` and no symbolic links.
 - **Its layout:** exactly one `<id>/` folder with a valid `module.json` for this module API.
 - **The id:** it isn't reserved (`core`, or a module shipped with Invasor).
 - **The code:**
   - a `ui.ts` comes with its built `dist/ui.js`;
   - `backend.py` imports cleanly, checked in a separate process, without running `setup()`.
 
-These checks keep a broken module from breaking Invasor; they don't make a module safe. A module is trusted code:
-its backend runs as your user and its UI runs inside Steam's window. Its `author` is whatever its `module.json`
-says. Install only modules from people you trust. A disabled module's UI is still injected (so enabling it
-needs no re-injection) and holds the same API token as the others: disabling stops its backend, not its UI code.
+These checks keep a broken module from breaking Invasor; they don't make a module safe. A module is trusted code: its backend runs as your user and its UI runs inside Steam's window. Its `author` is whatever its `module.json` says. Install only modules from people you trust. A disabled module's UI is still injected (so enabling it needs no re-injection) and holds the same API token as the others: disabling stops its backend, not its UI code.
 
-An installed module is loaded and its UI injected right away, with no restart. Reinstalling the same id replaces
-it after asking; if that fails half way, the previous version stays installed and loaded.
+An installed module is loaded and its UI injected right away, with no restart. Reinstalling the same id replaces it after asking; if that fails half way, the previous version stays installed and loaded.
 
-Module folders are read when the service starts. A folder added, removed, renamed or edited by hand (in
-`modules/` or `user-modules/`) is picked up with **⚙ Settings › Manage modules › Rescan modules**: every module is
-torn down and loaded again, and its UI injected, with no restart.
+Module folders are read when the service starts. A folder added, removed, renamed or edited by hand (in `modules/` or `user-modules/`) is picked up with **⚙ Settings › Manage modules › Rescan modules**: every module is torn down and loaded again, and its UI injected, with no restart.
 
 ## 9. Before distributing
 
@@ -500,9 +389,6 @@ python3 tools/check_module.py modules/<id>
 - `module.json`, with the same rules as the service;
 - that `ui.ts` is built and up to date;
 - that `backend.py` imports and has valid `METHODS`;
-- that the module's own tests in `tests/` pass. They run with `python3 -m unittest discover -s modules/<id>`, with
-  the module folder on the path: `import helpers` works there. Test `backend.py` itself by loading it as a
-  package; see `artwork/tests/test_backend.py` in the invasor-artwork repository.
+- that the module's own tests in `tests/` pass. They run with `python3 -m unittest discover -s modules/<id>`, with the module folder on the path: `import helpers` works there. Test `backend.py` itself by loading it as a package; see `artwork/tests/test_backend.py` in the invasor-artwork repository.
 
-A module folder with `module.json`, `backend.py` and `dist/ui.js` is self-contained, with no build step left:
-`tools/pack_module.py` zips exactly that (section 8).
+A module folder with `module.json`, `backend.py` and `dist/ui.js` is self-contained, with no build step left: `tools/pack_module.py` zips exactly that (section 8).

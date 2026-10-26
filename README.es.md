@@ -2,16 +2,11 @@
 
 [English](README.md) · **Español**
 
-Panel propio dentro de la interfaz de mando de Steam (**Game Mode y Big Picture**; no
-en el cliente de escritorio) con módulos, en la línea de Decky Loader, pero pensado
-para **durar sin depender de Steam**:
+Panel propio dentro de la interfaz de mando de Steam (**Game Mode y Big Picture**; no en el cliente de escritorio) con módulos, en la línea de Decky Loader, pero pensado para **durar sin depender de Steam**:
 
-- No usa componentes, webpack ni React internos de Steam. La interfaz vive en su
-  propio shadow DOM, con su propio teclado y sus propios controles.
-- Del cliente de Steam solo usa lo imprescindible: la inyección por el depurador
-  CEF y los eventos de mando `vgp_*`. Todo lo demás tiene alternativa propia.
-- Backend con la **librería estándar de Python**, sin `pip` ni venv. Corre como
-  servicio de **usuario** y nunca necesita root.
+- No usa componentes, webpack ni React internos de Steam. La interfaz vive en su propio shadow DOM, con su propio teclado y sus propios controles.
+- Del cliente de Steam solo usa lo imprescindible: la inyección por el depurador CEF y los eventos de mando `vgp_*`. Todo lo demás tiene alternativa propia.
+- Backend con la **librería estándar de Python**, sin `pip` ni venv. Corre como servicio de **usuario** y nunca necesita root.
 
 ## Requisitos
 - Para usarlo: `python3` (3.9 o superior) y systemd de usuario.
@@ -24,62 +19,30 @@ cd frontend && npm install && npm run build && cd ..
 ./invasor-installation.sh --uninstall            # quita el servicio y ~/.local/share/invasor
 ./invasor-installation.sh --uninstall --purge    # ... y también la configuración (~/.config/invasor)
 ```
-Sin argumentos (o abierto con doble clic) pregunta qué hacer en un diálogo, si `zenity` está
-instalado; si no, muestra su ayuda.
+Sin argumentos (o abierto con doble clic) pregunta qué hacer en un diálogo, si `zenity` está instalado; si no, muestra su ayuda.
 
-- **Instalar / actualizar:** primero lo comprueba todo (Python 3.9+, servicios de usuario de systemd,
-  Steam, un build del frontend al día), luego copia solo lo que ejecuta el servicio (sin tests ni la
-  plantilla `_example`), lo cambia de golpe, y reinicia y comprueba el servicio. Los módulos instalados
-  desde un zip se conservan. Si la versión nueva no arranca, se vuelve a poner la anterior.
-- **Desinstalar:** el overlay sale de Steam al momento, sin reiniciar Steam. Antes, cada módulo deshace
-  lo que dejó fuera de su carpeta (su `uninstall()`). Se borra todo
-  `~/.local/share/invasor`, incluidos los módulos instalados desde un zip. La configuración y los ajustes
-  de los módulos en `~/.config/invasor` se conservan salvo con `--purge` (el diálogo lo pregunta).
+- **Instalar / actualizar:** primero lo comprueba todo (Python 3.9+, servicios de usuario de systemd, Steam, un build del frontend al día), luego copia solo lo que ejecuta el servicio (sin tests ni la plantilla `_example`), lo cambia de golpe, y reinicia y comprueba el servicio. Los módulos instalados desde un zip se conservan. Si la versión nueva no arranca, se vuelve a poner la anterior.
+- **Desinstalar:** el overlay sale de Steam al momento, sin reiniciar Steam. Antes, cada módulo deshace lo que dejó fuera de su carpeta (su `uninstall()`). Se borra todo `~/.local/share/invasor`, incluidos los módulos instalados desde un zip. La configuración y los ajustes de los módulos en `~/.config/invasor` se conservan salvo con `--purge` (el diálogo lo pregunta).
 
-Después de instalar por primera vez, reinicia Steam una vez: el instalador crea
-`~/.steam/steam/.cef-enable-remote-debugging`, igual que Decky. Si algo lo borra más tarde, el servicio lo
-vuelve a crear la próxima vez que arranca (Steam necesita reiniciarse para que surta efecto). Al desinstalar solo
-se borra si lo creó Invasor, el instalador o el servicio, y Decky no está instalado.
+Después de instalar por primera vez, reinicia Steam una vez: el instalador crea `~/.steam/steam/.cef-enable-remote-debugging`, igual que Decky. Si algo lo borra más tarde, el servicio lo vuelve a crear la próxima vez que arranca (Steam necesita reiniciarse para que surta efecto). Al desinstalar solo se borra si lo creó Invasor, el instalador o el servicio, y Decky no está instalado.
 
 ### Paquete para otras máquinas
 ```sh
 python3 tools/pack_release.py --out release/   # compila, prueba y empaqueta
 ```
-Genera `invasor-<versión>.tar.gz` (y su `.sha256`): ya compilado, con el instalador, el core y los
-módulos incluidos. En la Steam Deck / SteamOS de destino no hace falta Node: se extrae (Ark, o
-`tar -xzf`) y se abre `invasor-installation.sh` con doble clic o se ejecuta `./invasor-installation.sh --install`.
+Genera `invasor-<versión>.tar.gz` (y su `.sha256`): ya compilado, con el instalador, el core y los módulos incluidos. En la Steam Deck / SteamOS de destino no hace falta Node: se extrae (Ark, o `tar -xzf`) y se abre `invasor-installation.sh` con doble clic o se ejecuta `./invasor-installation.sh --install`.
 
 ### Actualizaciones
-**⚙ Settings › Manage Invasor** tiene un botón *Check for updates* y otro de instalar. Invasor pregunta a GitHub
-(`api.github.com`, la última release de [Gamemode-Invasor/invasor](https://github.com/Gamemode-Invasor/invasor))
-y, si su etiqueta es una versión superior a la instalada, se activa el botón de instalar. Instalar
-descarga el paquete de la release, lo comprueba con el `.sha256` publicado a su lado y ejecuta su instalador.
-El servicio se reinicia y el panel se recarga solo unos segundos después; Steam y cualquier juego en marcha
-no se reinician.
+**⚙ Settings › Manage Invasor** tiene un botón *Check for updates* y otro de instalar. Invasor pregunta a GitHub (`api.github.com`, la última release de [Gamemode-Invasor/invasor](https://github.com/Gamemode-Invasor/invasor)) y, si su etiqueta es una versión superior a la instalada, se activa el botón de instalar. Instalar descarga el paquete de la release, lo comprueba con el `.sha256` publicado a su lado y ejecuta su instalador. El servicio se reinicia y el panel se recarga solo unos segundos después; Steam y cualquier juego en marcha no se reinician.
 
-Por defecto también comprueba cuando arranca Steam y luego cada día, y Steam muestra una notificación una
-vez por cada versión nueva. A la vez mira en el Market (el catálogo de módulos en GitHub) si hay versiones
-más nuevas de los módulos instalados: si las hay, una única notificación genérica lo indica (nunca por una
-versión más antigua). Aparte de lo que abres tú (el Market), es la única conexión a Internet que hace
-Invasor; se desactiva con *Check for updates
-automatically* (`update_check` en `config.json`). El checksum detecta una descarga corrupta, no una cuenta
-de GitHub comprometida. Los módulos instalados desde un zip no se tocan.
+Por defecto también comprueba cuando arranca Steam y luego cada día, y Steam muestra una notificación una vez por cada versión nueva. A la vez mira en el Market (el catálogo de módulos en GitHub) si hay versiones más nuevas de los módulos instalados: si las hay, una única notificación genérica lo indica (nunca por una versión más antigua). Aparte de lo que abres tú (el Market), es la única conexión a Internet que hace Invasor; se desactiva con *Check for updates automatically* (`update_check` en `config.json`). El checksum detecta una descarga corrupta, no una cuenta de GitHub comprometida. Los módulos instalados desde un zip no se tocan.
 
-**Canal de actualizaciones:** *Stable* (por defecto) solo ofrece versiones finales (`X.Y.Z`). *Beta (pre-releases)*
-(`update_channel`: `"beta"`) ofrece también candidatas (`X.Y.Z-rcN`, por ejemplo `0.1.3-rc1`), que pueden
-ser inestables. Al cambiar de canal se busca una actualización al momento. Una versión final es
-más nueva que sus candidatas (`0.1.3-rc1` < `0.1.3`) y las versiones nunca bajan, con una excepción: desde
-una candidata, elegir *Stable* ofrece la versión estable aunque sea más antigua (*Go back to 0.1.2*); antes
-se pide confirmación. Si es la misma versión, no se ofrece nada.
+**Canal de actualizaciones:** *Stable* (por defecto) solo ofrece versiones finales (`X.Y.Z`). *Beta (pre-releases)* (`update_channel`: `"beta"`) ofrece también candidatas (`X.Y.Z-rcN`, por ejemplo `0.1.3-rc1`), que pueden ser inestables. Al cambiar de canal se busca una actualización al momento. Una versión final es más nueva que sus candidatas (`0.1.3-rc1` < `0.1.3`) y las versiones nunca bajan, con una excepción: desde una candidata, elegir *Stable* ofrece la versión estable aunque sea más antigua (*Go back to 0.1.2*); antes se pide confirmación. Si es la misma versión, no se ofrece nada.
 
-Log: `journalctl --user -u invasor -f`. Configuración opcional:
-`~/.config/invasor/config.json` (`open_combo`, `panel_side`, `targets`, `disabled_modules`, `removed_modules`, `dev_desktop`,
-`handle_icon`, `module_order`, `update_check`, `update_channel`; la mayoría también se cambian desde el panel **⚙ Settings**).
+Log: `journalctl --user -u invasor -f`. Configuración opcional: `~/.config/invasor/config.json` (`open_combo`, `panel_side`, `targets`, `disabled_modules`, `removed_modules`, `dev_desktop`, `handle_icon`, `module_order`, `update_check`, `update_channel`; la mayoría también se cambian desde el panel **⚙ Settings**).
 
 ## Uso con el mando
-La pestaña de Invasor (de color, con el icono o con la letra "I") está siempre en la biblioteca. En el menú rápido (···) solo aparece con un
-juego en marcha, y el panel de ahí omite los módulos que no pintan nada durante la partida
-(`"no_qam": true`, p. ej. Artwork).
+La pestaña de Invasor (de color, con el icono o con la letra "I") está siempre en la biblioteca. En el menú rápido (···) solo aparece con un juego en marcha, y el panel de ahí omite los módulos que no pintan nada durante la partida (`"no_qam": true`, p. ej. Artwork).
 
 | Botón | Acción |
 |---|---|
@@ -94,26 +57,16 @@ juego en marcha, y el panel de ahí omite los módulos que no pintan nada durant
 | Start | Mostrar / ocultar el panel ⚙ Settings (también con su botón ⚙ de la cabecera). Tapa el panel de Invasor como Tasks; B o Start vuelven |
 | Select | Mostrar / ocultar el panel Tasks (también con el botón **Tasks** de la cabecera del panel): lo que corre en segundo plano, con su progreso, y las últimas que terminaron. B también lo cierra, y un botón **Clear recent** olvida las que terminaron. Un punto en el asa «I» y en ese botón late mientras algo corre y se pone rojo si una tarea falló y aún no has mirado |
 
-El panel ocupa el 40 % del ancho de la pantalla en la biblioteca (en Quick Access, la columna visible). Solo se desplaza el contenido; las
-sombras arriba y abajo indican que hay más por ver.
+El panel ocupa el 40 % del ancho de la pantalla en la biblioteca (en Quick Access, la columna visible). Solo se desplaza el contenido; las sombras arriba y abajo indican que hay más por ver.
 
-Mientras el panel está abierto, Steam no recibe ninguna pulsación del mando (los botones
-Steam y ··· propios siempre pasan). También
-se puede abrir con la pestaña azul, con el dedo o con F10.
+Mientras el panel está abierto, Steam no recibe ninguna pulsación del mando (los botones Steam y ··· propios siempre pasan). También se puede abrir con la pestaña azul, con el dedo o con F10.
 
-Se leen tanto los mandos normales (evdev: DualSense, Xbox…) como los de protocolo
-Steam Deck: una Steam Deck real, o handhelds como la Legion Go virtualizados por
-InputPlumber. Para ver qué botones detecta el servicio: `python3 tools/pad.py`.
+Se leen tanto los mandos normales (evdev: DualSense, Xbox…) como los de protocolo Steam Deck: una Steam Deck real, o handhelds como la Legion Go virtualizados por InputPlumber. Para ver qué botones detecta el servicio: `python3 tools/pad.py`.
 
-**Panel ⚙ Settings** (el botón ⚙ de la cabecera del panel, o Start; también sin módulos): activar o
-desactivar módulos (Manage modules), instalar uno desde un zip o desde el Market (solo en la Biblioteca), atajo para abrir el panel, lado del panel (solo en la Biblioteca: Quick Access va siempre a la izquierda), el orden de las pestañas de los módulos (se agarra un módulo con A y se mueve con la cruceta), qué muestra la pestaña (el icono, la letra "I" o nada), color de acento (también de la pestaña), "Manage Invasor" (actualizaciones, reiniciar Invasor o Steam, ver el log, restablecer la configuración, desinstalar) y "About" (versión,
-estado y mandos detectados). La interfaz de invasor está en inglés; cada módulo
-elige su propio idioma.
+**Panel ⚙ Settings** (el botón ⚙ de la cabecera del panel, o Start; también sin módulos): activar o desactivar módulos (Manage modules), instalar uno desde un zip o desde el Market (solo en la Biblioteca), atajo para abrir el panel, lado del panel (solo en la Biblioteca: Quick Access va siempre a la izquierda), el orden de las pestañas de los módulos (se agarra un módulo con A y se mueve con la cruceta), qué muestra la pestaña (el icono, la letra "I" o nada), color de acento (también de la pestaña), "Manage Invasor" (actualizaciones, reiniciar Invasor o Steam, ver el log, restablecer la configuración, desinstalar) y "About" (versión, estado y mandos detectados). La interfaz de invasor está en inglés; cada módulo elige su propio idioma.
 
 ## Módulos
-Invasor trae solo `demo` (una demostración que también usa `tools/smoke.py`) y la plantilla `_example`. Demo se puede desinstalar desde ⚙ Settings › Manage modules (sigue desinstalado tras actualizar; en la misma sección hay un botón *Restore*).
-Los módulos de verdad viven en sus propios repositorios y se instalan como zip desde **⚙ Settings › Install
-module**:
+Invasor trae solo `demo` (una demostración que también usa `tools/smoke.py`) y la plantilla `_example`. Demo se puede desinstalar desde ⚙ Settings › Manage modules (sigue desinstalado tras actualizar; en la misma sección hay un botón *Restore*). Los módulos de verdad viven en sus propios repositorios y se instalan como zip desde **⚙ Settings › Install module**:
 
 - [invasor-artwork](https://github.com/Gamemode-Invasor/invasor-artwork): arte de la comunidad de steamgriddb.com para tus juegos y accesos directos.
 - [invasor-patito](https://github.com/Gamemode-Invasor/invasor-patito): generación de fotogramas con lsfg-vk, configurada por juego.
@@ -138,19 +91,17 @@ modules/<id>/
   dist/ui.js      lo genera `npm run build`
 ```
 
-- **Los ajustes se declaran en `module.json`.** El backend los valida (tipos, rangos, pasos, opciones) y pone
-  los valores por defecto; el panel dibuja el formulario solo, y `backend.py` lee los mismos valores con
-  `ctx.settings.get()`. Un módulo con ajustes y sin `ui.ts` tiene una pestaña con solo su formulario.
+- **Los ajustes se declaran en `module.json`.** El backend los valida (tipos, rangos, pasos, opciones) y pone los valores por defecto; el panel dibuja el formulario solo, y `backend.py` lee los mismos valores con `ctx.settings.get()`. Un módulo con ajustes y sin `ui.ts` tiene una pestaña con solo su formulario.
 - **`ui.ts`** añade todo lo demás. El kit:
   - `ui.settingsForm(ctx)`;
   - controles con `get`/`set`/`setDisabled`;
   - secciones, `confirm`, cuadrículas de imágenes;
-  - vistas ampliadas (`ctx.openWindow`, `ui.windowButton`).
+  - vistas ampliadas (`ctx.openWindow`, `ui.windowButton`);
+  - copiar al portapapeles y un selector de archivos o carpetas (`ctx.copy`, `ctx.pickPath`).
 
   Todo funciona con el mando y con el dedo.
-- **Aislamiento.** Cada módulo se compila y se carga por separado: un `module.json` inválido, un backend roto
-  o una interfaz que falla solo afectan a la pestaña de ese módulo. Los métodos lentos del backend van en su
-  propio hilo.
+- **El `ctx` del backend** da a los módulos lo que si no cada uno escribiría a mano: una notificación como las de los logros de Steam (`ctx.notify`), los juegos y Steam al arrancar y parar (`ctx.events`), el progreso de operaciones largas, que también pueden hacer una pregunta al usuario (`ctx.task`, que se ve en el panel Tasks), las carpetas y los archivos VDF de Steam (`ctx.paths`, `ctx.vdf`) y su idioma (`ctx.steam_language`), descomprimir archivos con seguridad (`ctx.archive`), descargar archivos, preguntando antes al usuario si no hay checksum (`ctx.http`: un diálogo sobre el panel, y una notificación que avisa de que hay una pregunta), y añadir accesos directos y poner opciones de lanzamiento en Steam cuando lo pide el usuario (`ctx.steam`).
+- **Aislamiento.** Cada módulo se compila y se carga por separado: un `module.json` inválido, un backend roto o una interfaz que falla solo afectan a la pestaña de ese módulo. Los métodos lentos del backend van en su propio hilo.
 
 Para empezar, copia `modules/_example/` a `modules/<id>/`. Después:
 
@@ -161,10 +112,7 @@ python3 tools/check_module.py modules/<id>
 ```
 
 ## De qué depende Invasor en Steam
-Aquí está todo lo que Invasor toma del cliente de Steam. Cada punto está marcado `STEAM TOUCHPOINT` en el
-código. Tras una actualización de Steam, `tools/smoke.py` los comprueba todos en un minuto.
-El detalle, cómo puede fallar cada uno y una comparativa con Decky Loader (en inglés): [docs/API-Steam.md](docs/API-Steam.md).
-Los módulos también pueden mostrar una notificación como las de los logros de Steam (`ctx.notify`), reaccionar a los juegos y a Steam (`ctx.events`), informar del progreso de operaciones largas (`ctx.task`, que se ve en el panel Tasks), añadir accesos directos y poner opciones de lanzamiento en Steam cuando lo pide el usuario (el `ctx.steam` del backend), y descargar archivos, preguntando antes al usuario si no hay checksum (`ctx.http`: un diálogo sobre el panel, y una notificación que avisa de que hay una pregunta).
+Aquí está todo lo que Invasor toma del cliente de Steam. Cada punto está marcado `STEAM TOUCHPOINT` en el código. Tras una actualización de Steam, `tools/smoke.py` los comprueba todos en un minuto. El detalle, cómo puede fallar cada uno y una comparativa con Decky Loader (en inglés): [docs/API-Steam.md](docs/API-Steam.md).
 
 | Punto | Para qué | Si Valve lo cambia |
 |---|---|---|
@@ -189,18 +137,7 @@ python3 -m unittest discover -s backend/tests -t backend   # backend, sin Steam
 python3 tools/check_module.py modules/demo modules/_example # el contrato de módulos
 python3 tools/smoke.py                                     # interfaz contra el Steam real
 ```
-El smoke test necesita la interfaz de mando abierta (Game Mode, o Big Picture desde
-el escritorio). Para probar desde el cliente de escritorio existe un **modo
-desarrollo**: `"dev_desktop": true` en `~/.config/invasor/config.json` y
-`systemctl --user restart invasor`. Así invasor se inyecta también en la ventana de
-escritorio. En uso normal debe estar apagado; al apagarlo, el servicio retira solo el
-panel que hubiera quedado en esa ventana.
-`tools/smoke.py` recorre con el mando simulado las pestañas, las subpestañas, las
-secciones, todos los controles de Demo, la vista ampliada, el teclado, el diálogo de
-confirmación y ⚙ Settings. **Pásalo tras cada actualización de Steam:** en un minuto dice si la
-inyección y la navegación siguen funcionando. Al terminar lo deja todo como estaba.
+El smoke test necesita la interfaz de mando abierta (Game Mode, o Big Picture desde el escritorio). Para probar desde el cliente de escritorio existe un **modo desarrollo**: `"dev_desktop": true` en `~/.config/invasor/config.json` y `systemctl --user restart invasor`. Así invasor se inyecta también en la ventana de escritorio. En uso normal debe estar apagado; al apagarlo, el servicio retira solo el panel que hubiera quedado en esa ventana. `tools/smoke.py` recorre con el mando simulado las pestañas, las subpestañas, las secciones, todos los controles de Demo, la vista ampliada, el teclado, el diálogo de confirmación y ⚙ Settings. **Pásalo tras cada actualización de Steam:** en un minuto dice si la inyección y la navegación siguen funcionando. Al terminar lo deja todo como estaba.
 
 ## Licencia
-Invasor es software libre bajo la [Licencia Pública General de GNU v3.0 o posterior](LICENSE) (GPL-3.0-or-later).
-La plantilla de módulos (`modules/_example/`) y los ejemplos de código de [docs/MODULES.md](docs/MODULES.md)
-están bajo la [licencia MIT](LICENSES/MIT.txt): puedes empezar tu propio módulo con ellos y ponerle la licencia que quieras.
+Invasor es software libre bajo la [Licencia Pública General de GNU v3.0 o posterior](LICENSE) (GPL-3.0-or-later). La plantilla de módulos (`modules/_example/`) y los ejemplos de código de [docs/MODULES.md](docs/MODULES.md) están bajo la [licencia MIT](LICENSES/MIT.txt): puedes empezar tu propio módulo con ellos y ponerle la licencia que quieras.

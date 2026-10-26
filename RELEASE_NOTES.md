@@ -1,4 +1,4 @@
-Pre-release of 0.3.0: more for modules, nothing removed. Modules that use the new features set "min_core": "0.3.0-rc1" to run on this pre-release (a release candidate counts as older than its release).
+More for modules, nothing removed. Modules that use the new features set "min_core": "0.3.0".
 
 New for modules
 - Steam's folders and files: the Steam folder, every library (also on SD cards and USB drives), the account in use, a game's compatdata and shader cache, and a reader for Steam's VDF files
@@ -13,6 +13,8 @@ Fixes
 - Updates and the Market: a redirect that leaves https is refused before it is followed, a failed download leaves no partial file, and the catalog tool no longer sends its GitHub token to another host
 - Game names are found in libraries on SD cards and USB drives too
 - What the Tasks panel and the notifications show can't be broken into lines or disguised with hidden characters
+- No module can pass for the core: a module named "Invasor", or with that tab, is refused
+- A module's backend follows the same rules for everything once it's unloaded (Steam calls and notifications too), and a bad game id is refused cleanly
 
 Internal
 - One shared download client and one archive unpacker for the core and modules
