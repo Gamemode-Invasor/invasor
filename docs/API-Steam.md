@@ -1,15 +1,10 @@
 # Invasor and Steam: every touchpoint, how it can fail, and how Decky Loader compares
 
-Steam has no public API for extending its gamepad UI. Everything Invasor takes from the Steam client is
-listed here: how Invasor gets in (CEF), which windows it uses, what it reads from them, which Steam APIs it
-calls, and what it reads from Steam outside its UI. For each one: where it lives in the code, what breaks if
-Valve changes it, and what Invasor does then.
+Steam has no public API for extending its gamepad UI. Everything Invasor takes from the Steam client is listed here: how Invasor gets in (CEF), which windows it uses, what it reads from them, which Steam APIs it calls, and what it reads from Steam outside its UI. For each one: where it lives in the code, what breaks if Valve changes it, and what Invasor does then.
 
-Every point below is marked `STEAM TOUCHPOINT` in the code. The README has the short version
-("What Invasor relies on in Steam"); this is the long one.
+Every point below is marked `STEAM TOUCHPOINT` in the code. The README has the short version ("What Invasor relies on in Steam"); this is the long one.
 
-**Design rule:** as few touchpoints as possible, and each one optional. When one breaks, only the feature
-that needs it stops working: never the panel, never Steam.
+**Design rule:** as few touchpoints as possible, and each one optional. When one breaks, only the feature that needs it stops working: never the panel, never Steam.
 
 ## 1. Overview
 
@@ -42,16 +37,10 @@ that needs it stops working: never the panel, never Steam.
 | CDP over WebSocket: `Runtime.enable`, `Runtime.evaluate`, `Runtime.executionContextCreated` | `cef.CDPSession`, `injector._handle` / `_inject` | Evaluating the bundle in a window, and evaluating it again when the window reloads; also how the backend pushes to the windows what they must show without asking (the open combo, the tasks: `taskpush.py`, so nothing is polled; a window that misses a push asks for the tasks when it loads, opens the Tasks panel or is seen again) (a new default execution context). The WebSocket client is written with the stdlib only. |
 
 How it can fail:
-- **The file is removed** (a Steam reset or reinstall): the service puts it back the next time it starts (it logs
-  `recreated Steam's CEF debugging flag`), but Steam only reads it when it starts, so restart Steam. It isn't
-  checked while the service runs: if the file goes while Steam is closed, restart the service (or log in again)
-  before starting Steam. Nothing is injected meanwhile and the log says `waiting for Steam CEF on 127.0.0.1:8080`.
+- **The file is removed** (a Steam reset or reinstall): the service puts it back the next time it starts (it logs `recreated Steam's CEF debugging flag`), but Steam only reads it when it starts, so restart Steam. It isn't checked while the service runs: if the file goes while Steam is closed, restart the service (or log in again) before starting Steam. Nothing is injected meanwhile and the log says `waiting for Steam CEF on 127.0.0.1:8080`.
 - **The port changes:** same symptom. Fix: change `CEF_PORT` in `cef.py`.
-- **Steam restarts or crashes:** the window list is empty for a while, then the windows come back with new
-  ids and the next round injects them again. Nothing to do.
-- **A window reloads** (Steam does it after some updates or when it changes mode): `executionContextCreated`
-  fires and the bundle is evaluated again. The bundle can be injected twice safely: it tears down the
-  previous copy first (`window.__invasor.destroy()` in `frontend/src/main.ts`).
+- **Steam restarts or crashes:** the window list is empty for a while, then the windows come back with new ids and the next round injects them again. Nothing to do.
+- **A window reloads** (Steam does it after some updates or when it changes mode): `executionContextCreated` fires and the bundle is evaluated again. The bundle can be injected twice safely: it tears down the previous copy first (`window.__invasor.destroy()` in `frontend/src/main.ts`).
 
 ### 2.2 Choosing windows
 
@@ -65,11 +54,8 @@ How it can fail:
 Window titles are localised by Steam, so Invasor matches URL parameters and internal names, not visible titles.
 
 How it can fail:
-- **The useragent or title changes:** no panel in that window (or in Quick Access only). Fix without code:
-  `targets` in `~/.config/invasor/config.json`. Run the service with `log_level: DEBUG` to see every window's
-  title and URL, logged whenever the list changes.
-- **Steam merges or splits windows** (e.g. Quick Access becomes part of the main window): the `quickaccess`
-  role stops matching. The panel still works in the main window.
+- **The useragent or title changes:** no panel in that window (or in Quick Access only). Fix without code: `targets` in `~/.config/invasor/config.json`. Run the service with `log_level: DEBUG` to see every window's title and URL, logged whenever the list changes.
+- **Steam merges or splits windows** (e.g. Quick Access becomes part of the main window): the `quickaccess` role stops matching. The panel still works in the main window.
 
 ### 2.3 SharedJSContext
 
@@ -82,61 +68,66 @@ Steam's hidden page, which holds `SteamClient` and Steam's router. Invasor never
 | `SteamClient.User.StartRestart(false)` (Steam's own *Restart now* call; without the argument it fails with `requires 1 arguments`) | `backend/invasor/core.py` `restart_steam` | ⚙ Settings › Manage Invasor › Restart Steam. If this Steam has no such function the button says so (503); nothing is killed from outside. |
 | `window.NotificationStore.OnNotification(id, 5, bytes)` | `steam.py` `SteamBridge.notify` (a fixed script) | `ctx.notify` / `core.notify`: a notification shown as Steam shows an achievement, with our title, text and icon. Type 5 and the message (`CAchievementNotification`) are Steam's public protobuf definitions (`steammessages_clientnotificationtypes.proto`), encoded by Invasor. Steam's achievement toast setting applies. |
 | `window.NotificationStore.PlayNotificationSound` / `ChooseSound` | `steam.py` `NOTIFY_JS` (only when `sound` is given) | `ctx.notify(…, sound=)`: Steam picks a visible toast's sound in `PlayNotificationSound`, through `ChooseSound`. Invasor wraps `PlayNotificationSound` once (`NotificationStore.__invasorSound = 2`) so a notification it sent (remembered by id, 60 s) is played with Steam's own sound number (enum `1` friend message … `5` achievement, `0` silent). `ProcessNotification` and `OnNotification` are MobX actions: read-only, never replaced. |
+| `SteamClient.Apps.AddShortcut(name, exe, startDir, options)`, then `SetShortcutName` / `SetShortcutStartDir` / `SetShortcutLaunchOptions` | `backend/invasor/steamctx.py` `ModuleSteam.add_to` | `ctx.steam.add_to`: a non-Steam shortcut. `AddShortcut` returns the new appid but ignores the name and the launch options, so the `SetShortcut*` calls apply them; `shortcuts.vdf` (2.5) is then read to see the result. |
+| `SteamClient.Apps.RemoveShortcut(appid)` | `steamctx.py` `remove_shortcut` | `ctx.steam.remove_shortcut`; Steam takes about 0.5–1 s, seen in `shortcuts.vdf`. Only for shortcuts that module added (recorded in `~/.local/share/invasor/steam-shortcuts.json`, core data). |
+| `SteamClient.Apps.SetAppLaunchOptions(appid, line)` / `SetShortcutLaunchOptions(appid, line)` | `steamctx.py` `set_launch_options` | `ctx.steam.set_launch_options`. Both return nothing and never throw, even for a bogus appid, so the line is read back to verify it. |
+| `SteamClient.Apps.RegisterForAppDetails(appid, cb)` (first answer's `strLaunchOptions`, then unregistered; 5 s) | `steamctx.py` `DETAILS_JS` | `ctx.steam.launch_options` of a Steam game, and verifying `set_launch_options`. For shortcuts it lags one write behind, so their line is read from `shortcuts.vdf` instead. `GetLaunchOptionsForApp` is not used: it gives the game's Play entries, not the user's line. |
+| `SteamClient.URL.ExecuteSteamURL("steam://openurl/…")` and `("steam://addnonsteamgame/<.desktop>")` | `steamctx.py` `open_url`, `_add_fallback` | `ctx.steam.open_url`, and `add_to`'s fallback when `AddShortcut` is missing. The `addnonsteamgame` link needs the marker file `/tmp/addnonsteamgamefile` (2.5). |
+| `typeof SteamClient.<path> === 'function'` | `steamctx.py` `TYPEOF_JS` | `ctx.steam.supports(name)`, so a module can show its plan B before the user presses anything. |
 
-The bridge only accepts dotted names (`Apps.SetCustomArtworkForApp`), never `constructor` or `prototype`.
-Arguments must be JSON, at most 176 MB, and each call has a 15 s timeout by default. Connecting to a page (here
-or any window) gives up after 5 s if it accepts the connection but never answers. A missing page, function or
-answer, or a timeout, becomes `Unavailable` (HTTP 503), also for the blocking `ctx.steam_call` / `ctx.notify`
-used from module threads: never an exception that reaches the service, and always what a module's plan B catches.
+The bridge only accepts dotted names (`Apps.SetCustomArtworkForApp`), never `constructor` or `prototype`. Arguments must be JSON, at most 176 MB, and each call has a 15 s timeout by default. Connecting to a page (here or any window) gives up after 5 s if it accepts the connection but never answers. A missing page, function or answer, or a timeout, becomes `Unavailable` (HTTP 503), also for the blocking `ctx.steam_call` / `ctx.notify` used from module threads: never an exception that reaches the service, and always what a module's plan B catches.
 
 How it can fail:
-- **The page hangs** (accepts the connection, never answers): `steam_call` / `notify` answer 503 after the
-  connection or call timeout; the rest of the service keeps running.
-- **The page is renamed** (it's matched by the exact title `SharedJSContext`): `steam_call` answers 503 and the
-  selected game isn't known. The running game still is (2.5), and modules fall back (2.6).
+- **The page hangs** (accepts the connection, never answers): `steam_call` / `notify` answer 503 after the connection or call timeout; the rest of the service keeps running.
+- **The page is renamed** (it's matched by the exact title `SharedJSContext`): `steam_call` answers 503 and the selected game isn't known. The running game still is (2.5), and modules fall back (2.6).
 - **The route format changes:** `selected` is null. Nothing else changes.
-- **A `SteamClient` function is renamed, removed or changes its arguments:** `Unavailable`, or Steam's own
-  error passed through. Each caller must have a plan B (`docs/MODULES.md`).
+- **A `SteamClient` function is renamed, removed or changes its arguments:** `Unavailable`, or Steam's own error passed through. Each caller must have a plan B (`docs/MODULES.md`).
 - **`PlayNotificationSound` / `ChooseSound` change:** the notification still shows, with Steam's own sound, whatever `sound` asked.
-- **`NotificationStore` or its `OnNotification` is renamed:** `notify` is `Unavailable` (503) and no notification
-  shows. If the achievement message changes, the notification may show without some text. Nothing else is affected.
-  The update check (Invasor release and Market module versions) shows its notifications the same way, once Steam has started: if Steam's UI is not ready it retries later without marking them as announced.
-  `ctx.task()` uses the same notification (when it starts and ends, unless `notify=False`): a failure there is only logged and the task itself goes on, so the Tasks panel is unaffected.
+- **`NotificationStore` or its `OnNotification` is renamed:** `notify` is `Unavailable` (503) and no notification shows. If the achievement message changes, the notification may show without some text. Nothing else is affected. The update check (Invasor release and Market module versions) shows its notifications the same way, once Steam has started: if Steam's UI is not ready it retries later without marking them as announced. `ctx.task()` uses the same notification (when it starts and ends, unless `notify=False`): a failure there is only logged and the task itself goes on, so the Tasks panel is unaffected. `ctx.http.download()` without a checksum shows one too ("<module> needs an answer", body "Open Invasor to answer", `notify_sync` in a thread of its own) while the user is asked: if it fails there is just no toast (logged), and the dot on the handle, the dialog when the panel opens and the Tasks panel still show the question.
+- **The `Apps.*` shortcut or launch-option functions change** (`ctx.steam`): `add_to` falls back to the `steam://addnonsteamgame` link (through gio/xdg-open if `ExecuteSteamURL` is gone too), and `open_url` to gio/xdg-open. `remove_shortcut`, `launch_options` and `set_launch_options` have no fallback: `Unavailable`, and `supports()` says `False` beforehand. If a setter stops doing anything while still answering, the read-back catches it: `Unavailable` ("Steam didn't apply…"), or `verified: False` when the line can't be read back. Steam's own notification for each change is the same `notify` as above: if it fails, only the log has it.
 
 ### 2.4 Inside the injected windows
 
-All in `frontend/src`. Plain DOM reads; Invasor never takes Steam's focus and never changes Steam's DOM outside
-its own shadow root.
+All in `frontend/src`. Plain DOM reads; Invasor never takes Steam's focus and never changes Steam's DOM outside its own shadow root.
 
 | What | Where | Used for | If Valve changes it |
 |---|---|---|---|
 | `window.SteamClient`, or `window.opener.SteamClient` | `steam.ts` (`steamAvailable`, `hasApi`, `safeCall`) | `ctx.steam.safeCall` for module UIs. | `safeCall` rejects; the status line says "SteamClient unavailable"; the backend bridge (2.3) is the alternative. |
 | `vgp_onbuttondown` / `vgp_onbuttonup` events, `detail.button` numbers | `ui/gamepad-nav.ts` | Controller navigation inside the panel. While the panel is open these events are stopped in the capture phase, so Steam's UI underneath doesn't move. | The panel still opens (the combo, read by the backend) but can't be driven with the pad; touch and F10 still work. Select (number 13, confirmed in Game Mode) shows and hides the Tasks panel, and Start (number 14, confirmed in Game Mode) the Settings panel. Unknown numbers reach controls as `BTN_<n>` (`invasor:button` events). |
-| CSS class `.gpfocus` | `ui/controls.ts` | Giving focus back to Steam's selected element after typing on a physical keyboard. | Focus isn't given back; nothing else changes. |
+| CSS class `.gpfocus` | `ui/controls.ts`, `ui/clipboard.ts` | Giving focus back to Steam's selected element after typing on a physical keyboard, and after `ctx.copy`'s fallback (it selects a hidden text area). | Focus isn't given back; nothing else changes. |
 | `document.activeElement` with `role="link"`, its `<img>` URL `/assets/<appid>/…` or `/customimages/<appid>…`, its `aria-labelledby` name | `library.ts` | The **highlighted** game (the library tile under the cursor). The name is matched against `shortcuts.vdf` for shortcuts without custom art. | `highlighted` is null; running and selected are unaffected. |
 | `window.screenX`, `innerWidth`, `screen.width` | `ui/overlay.ts` `fitToScreen` | Sizing the panel to the visible part of the Quick Access window (wider than what gamescope shows; it reports x=0 while sliding in). | The learned width (`qam_visible_w`, 348 px measured on a Legion Go) is used. |
 | `document.hidden`, `document.hasFocus()`, `blur` / `visibilitychange` | `ui/overlay.ts`, `main.ts` `__invasor.state()` | Closing a panel whose window left the screen, and deciding which window the open/close combo opens in (`backend/invasor/combo.py`). Quick Access shows the "I" only while a game runs (`core.game`), and reports to the backend (`core.set_qam_shown`) whether it shows it (`available` and not `document.hidden`): the library window hides its own "I" meanwhile, so two don't show with the panel on the left. | If focus is never reported, the combo ignores the window instead of opening an invisible panel. Touch and F10 still work. If `document.hidden` never turns true in Quick Access, the library's "I" stays hidden while a game runs; the combo and F10 still open the panel. |
 
 ### 2.5 Steam outside its UI
 
-Read from disk and `/proc`, as the same user, without root. These are not part of Steam's UI, so they change
-far less often.
+Read from disk and `/proc`, as the same user, without root. These are not part of Steam's UI, so they change far less often.
 
 | What | Where | Used for |
 |---|---|---|
 | `SteamAppId` / `SteamGameId` in `/proc/<pid>/environ` | `context.py` `_running_appid` | The **running** game; a change of it is the modules' `game_started` / `game_stopped` events. For a non-Steam shortcut the game id is 64-bit: `(appid << 32) \| 0x02000000`. |
-| `steamapps/libraryfolders.vdf`, `steamapps/appmanifest_<appid>.acf` | `context.py` | Names of installed Steam games. |
+| `steamapps/libraryfolders.vdf` (text VDF) | `paths.py` `libraries()`, read with `vdf.py` | Every Steam library folder, for game names (`context.py`) and modules (`ctx.paths`). |
+| `/run/media/*/steamapps`, `/run/media/*/*/steamapps` | `paths.py` `libraries()` | Libraries on SD cards and USB drives, also when `libraryfolders.vdf` no longer lists them. |
+| `steamapps/appmanifest_<appid>.acf` | `context.py`, `paths.py` | Names of installed Steam games; which library holds a game (`ctx.paths.compatdata` / `shadercache`). |
+| `config/loginusers.vdf` (text VDF) | `paths.py` `userdata()` | The account in use: the `MostRecent` user, else the newest `timestamp`; its folder is `userdata/<SteamID64 - 76561197960265728>`. |
+| `userdata/<account>/` | `paths.py` | The account's folder for modules (`ctx.paths.userdata()`, `grid_dir()`). |
 | `userdata/*/config/shortcuts.vdf` (binary VDF) | `vdf.py`, `context.py` | Names and executables of non-Steam shortcuts; re-read only when the files change. |
+| `userdata/*/config/shortcuts.vdf`, again | `steamctx.py` `_shortcuts` | `ctx.steam`: what Steam really did after adding or removing a shortcut or setting its launch options (polled every 0.5 s for a few seconds), and a shortcut's launch options. |
+| `~/.steam/registry.vdf` (text VDF), `Registry/HKCU/Software/Valve/Steam/language` | `steamctx.py` `language` | `ctx.steam_language()`. |
+| `/tmp/addnonsteamgamefile` (empty marker) | `steamctx.py` `_add_fallback` | Without it Steam shows a dialog or does nothing for a `steam://addnonsteamgame` link. Created only if missing (never through a link someone left there) and removed afterwards. |
+| `gio open` / `xdg-open`, with the graphical session's variables from `/proc/<pid>/environ` of `steam` / `steamwebhelper` | `steamctx.py` `session_env`, `_open_with_desktop` | `ctx.steam`'s fallbacks when `ExecuteSteamURL` can't be called: the service has no `DISPLAY` / `WAYLAND_DISPLAY` / `DBUS_SESSION_BUS_ADDRESS` of its own. |
 | evdev `/dev/input/event*`; hidraw with Valve's vendor id `28de` | `gamepad.py` | The open/close combo. Read-only and non-exclusive: Steam and games still get every input. The hidraw layout is Valve's hardware protocol (as in the kernel's `hid-steam.c`), not Steam client code. |
 
 How it can fail:
-- **Steam stops putting `SteamAppId`/`SteamGameId` in the game's environment:** `running` is null and the
-  `game_started` / `game_stopped` events stop; selected and highlighted still work.
+- **Steam stops putting `SteamAppId`/`SteamGameId` in the game's environment:** `running` is null and the `game_started` / `game_stopped` events stop; selected and highlighted still work.
 - **The binary VDF format or the shortcut id formula changes:** shortcut names are missing (ids still show).
-- **Several Steam accounts in `userdata/`:** shortcut names are read from all of them. Artwork has to pick one
-  account (the only one, or the most recent login in `loginusers.vdf`) and says so when it can't tell.
-- **Steam grabs a hidraw device exclusively, or InputPlumber changes the virtual device:** the combo doesn't
-  fire. The "I" handle and F10 still open the panel.
+- **Several Steam accounts in `userdata/`:** shortcut names are read from all of them. Artwork has to pick one account (the only one, or the most recent login in `loginusers.vdf`) and says so when it can't tell.
+- **The text VDF format changes, or `libraryfolders.vdf` is missing or unreadable:** only the main library and the ones under `/run/media` are found; games in other libraries have no name and `ctx.paths.compatdata` / `shadercache` fall back to the main library.
+- **`loginusers.vdf` is missing, has no `MostRecent` or `timestamp`, or points to an account with no folder, and there are several accounts:** `ctx.paths.userdata()` raises `Unavailable` ("couldn't tell which Steam account is in use"); `userdata(all=True)` still lists them all.
+- **Steam's folder isn't in `~/.steam/steam` or `~/.local/share/Steam`:** every `ctx.paths` function raises `Unavailable`; game names and shortcuts are missing.
+- **`registry.vdf` moves or its `language` key changes:** `ctx.steam_language()` gives `"en"` (`""` with `raw=True`).
+- **Steam no longer reads the `addnonsteamgamefile` marker, or gio/xdg-open can't reach the session:** `add_to`'s fallback times out with `Unavailable` (only matters when `AddShortcut` is gone too).
+- **Steam grabs a hidraw device exclusively, or InputPlumber changes the virtual device:** the combo doesn't fire. The "I" handle and F10 still open the panel.
 
 ### 2.6 What modules add
 
@@ -153,14 +144,9 @@ How it can fail:
 
 ### 2.7 The local API
 
-The injected UI talks to the service over `http://127.0.0.1:33801` (`backend/invasor/server.py`). It listens
-on loopback only. Every call needs the per-run token that's injected with the bundle (`X-Invasor-Token`,
-compared in constant time). If the port is taken, the service stops with an error in the log and systemd
-restarts it every 3 s, so no panel is injected until the port is free; it can be changed with `api_port` in
-`config.json`.
+The injected UI talks to the service over `http://127.0.0.1:33801` (`backend/invasor/server.py`). It listens on loopback only. Every call needs the per-run token that's injected with the bundle (`X-Invasor-Token`, compared in constant time). If the port is taken, the service stops with an error in the log and systemd restarts it every 3 s, so no panel is injected until the port is free; it can be changed with `api_port` in `config.json`.
 
-**Security note**, the same as for Decky: while CEF remote debugging is on, any local process of any user can
-drive Steam's pages through port 8080. That's a property of Steam's debugging port, not of Invasor.
+**Security note**, the same as for Decky: while CEF remote debugging is on, any local process of any user can drive Steam's pages through port 8080. That's a property of Steam's debugging port, not of Invasor.
 
 ## 3. Failure catalogue
 
@@ -176,9 +162,11 @@ drive Steam's pages through port 8080. That's a property of Steam's debugging po
 | Route URL format changed | No "Selected" game | Running and highlighted still work | `context.py` route parsing |
 | `SteamClient` API renamed or re-signed | A module's live action fails, with its fallback; ⚙ Settings › Manage Invasor › Restart Steam says it's unavailable (`User.StartRestart`) | `Unavailable` (503), one log line per call | The module's plan B; the new name in Steam's JS |
 | `NotificationStore` changed | No notifications (e.g. from Popy) | `notify` answers 503 | `window.NotificationStore` in `SharedJSContext`; `SteamBridge.notify` |
+| `Apps.AddShortcut` / `URL.ExecuteSteamURL` changed | A module's "Add to Steam" or web link goes through the fallback, or fails | `add_to` uses the `steam://addnonsteamgame` link, `open_url` gio/xdg-open; else `Unavailable` | `supports()` in Demo's Steam section; `steamctx.py` |
+| `Apps.RemoveShortcut`, `SetAppLaunchOptions`, `SetShortcutLaunchOptions` or `RegisterForAppDetails` changed | A module's remove / launch-options button fails and shows its plan B | `Unavailable`, or `set_launch_options` gives `verified: False` when it can't read the line back | `supports()` in Demo's Steam section; `steamctx.py` |
 | `vgp_` events or button numbers changed | The pad doesn't move in the panel (and Select / Start don't open Tasks / Settings) | Touch, F10, the backend combo and the Tasks and ⚙ buttons in the panel's header still work | `detail.button` of Steam's `vgp_onbuttondown` events (button numbers in `gamepad-nav.ts`) |
 | Library tile DOM changed | No "Highlighted" game | `highlighted` is null | `library.ts` (`appidFromArt` has unit tests) |
-| `.gpfocus` renamed | Focus not returned after keyboard typing | Nothing else | `controls.ts` |
+| `.gpfocus` renamed | Focus not returned after keyboard typing or `ctx.copy`'s fallback | Nothing else | `controls.ts`, `clipboard.ts` |
 | Quick Access geometry changed | Panel too wide or narrow in ··· | Learned width (348 px) | `report` lines (`refit`) in the log; `fitToScreen` |
 | Focus/visibility semantics changed | The combo does nothing, or the panel closes by itself | Never opens a panel in a window that's off screen | `__invasor.state()` in each window; `combo.py` |
 | `SteamAppId` no longer in game env | No "Playing" game; no "I" in Quick Access | Selected and highlighted still work | `_running_appid` in `context.py` |
@@ -186,16 +174,11 @@ drive Steam's pages through port 8080. That's a property of Steam's debugging po
 | Exclusive input grab | Combo doesn't open the panel | "I" handle and F10 still work | `watching …` lines in the log (`gamepad.py`) |
 | API port taken | No "I" anywhere | Service exits; systemd restarts it every 3 s | The error in the log; `api_port` in `config.json` |
 
-**After every Steam update:** run `python3 tools/smoke.py` with the gamepad UI open (or with `dev_desktop` on).
-In about a minute it checks injection, the panel, tabs, every control, the keyboard, dialogs and module
-installs. Then `journalctl --user -u invasor -f` for anything new.
+**After every Steam update:** run `python3 tools/smoke.py` with the gamepad UI open (or with `dev_desktop` on). In about a minute it checks injection, the panel, tabs, every control, the keyboard, dialogs and module installs. Then `journalctl --user -u invasor -f` for anything new.
 
 ## 4. Comparison with Decky Loader
 
-A light comparison, from Decky Loader's own source as of October 2026
-([github.com/SteamDeckHomebrew/decky-loader](https://github.com/SteamDeckHomebrew/decky-loader), files
-`backend/decky_loader/injector.py`, `frontend/src/tabs-hook.tsx`, `frontend/src/router-hook.tsx` and
-`backend/decky_loader/plugin/sandboxed_plugin.py` there).
+A light comparison, from Decky Loader's own source as of October 2026 ([github.com/SteamDeckHomebrew/decky-loader](https://github.com/SteamDeckHomebrew/decky-loader), files `backend/decky_loader/injector.py`, `frontend/src/tabs-hook.tsx`, `frontend/src/router-hook.tsx` and `backend/decky_loader/plugin/sandboxed_plugin.py` there).
 
 | | Decky Loader | Invasor |
 |---|---|---|
@@ -212,7 +195,4 @@ A light comparison, from Decky Loader's own source as of October 2026
 | Typical break after a Steam update | Webpack/React patches miss after Valve rebuilds its UI: the Quick Access tab or plugin pages disappear until Decky (and sometimes each plugin) is updated | Only the feature on the changed touchpoint degrades (see the catalogue); the panel keeps working |
 | What it can do that the other can't | Deep UI integration: change Steam's own pages (e.g. a game's page), use Steam's components and focus | Survive Steam UI rebuilds without updates; modules that never touch Steam's UI code |
 
-**In short:** both get in the same way. Decky lives inside Steam's UI: it patches React and finds code by
-webpack exports, which looks native and integrates deeply, but depends on Steam's internal build. Invasor
-lives next to Steam's UI: it reads a handful of stable signals (window URLs, a few DOM attributes, Steam's
-files, `/proc`) and draws its own panel. It integrates less, and has far fewer ways to break.
+**In short:** both get in the same way. Decky lives inside Steam's UI: it patches React and finds code by webpack exports, which looks native and integrates deeply, but depends on Steam's internal build. Invasor lives next to Steam's UI: it reads a handful of stable signals (window URLs, a few DOM attributes, Steam's files, `/proc`) and draws its own panel. It integrates less, and has far fewer ways to break.

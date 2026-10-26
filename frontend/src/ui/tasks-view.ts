@@ -8,10 +8,13 @@ export interface TaskInfo {
   /** A module id, or "core" for what Invasor itself does (updates, Market installs). */
   module: string;
   label: string;
-  state: "running" | "done" | "failed";
+  /** "waiting": it asks the user `question` and waits for Accept / Deny. */
+  state: "running" | "waiting" | "done" | "failed";
   /** 0 to 1, or null when the task can't tell how far it is. */
   fraction: number | null;
   text: string;
+  /** What a waiting task asks the user; null (or missing) in every other state. */
+  question?: string | null;
   started: number;
   updated: number;
   finished: number | null;
@@ -32,14 +35,16 @@ export function parseSnapshot(value: unknown): TasksSnapshot | null {
   const ok = (t: unknown): t is TaskInfo => {
     const x = t as Partial<TaskInfo> | null;
     return !!x && typeof x.id === "number" && typeof x.label === "string" && typeof x.module === "string" &&
-      (x.state === "running" || x.state === "done" || x.state === "failed");
+      (x.state === "running" || x.state === "waiting" || x.state === "done" || x.state === "failed");
   };
   return { active: v.active.filter(ok), recent: v.recent.filter(ok) };
 }
 
 export interface TasksSummary {
-  /** How many are running now. */
+  /** How many are running now (waiting ones included). */
   active: number;
+  /** How many wait for the user's answer. */
+  waiting: number;
   /** Failed ones the user hasn't seen yet (the Tasks panel hasn't been open since). */
   unseenFailed: number;
 }
@@ -47,12 +52,17 @@ export interface TasksSummary {
 export function summarize(snapshot: TasksSnapshot, seen: ReadonlySet<number>): TasksSummary {
   return {
     active: snapshot.active.length,
+    waiting: snapshot.active.filter((t) => t.state === "waiting").length,
     unseenFailed: snapshot.recent.filter((t) => t.state === "failed" && !seen.has(t.id)).length,
   };
 }
 
-/** What the handle and the "Tasks" button show: red for a failure not seen yet, else a pulse while something runs. */
-export function marker(summary: TasksSummary): "failed" | "running" | "" {
+/**
+ * What the handle and the "Tasks" button show: a question waiting for the user first, then red for a
+ * failure not seen yet, else a pulse while something runs.
+ */
+export function marker(summary: TasksSummary): "waiting" | "failed" | "running" | "" {
+  if (summary.waiting > 0) return "waiting";
   return summary.unseenFailed > 0 ? "failed" : summary.active > 0 ? "running" : "";
 }
 
@@ -75,6 +85,8 @@ export interface RenderOptions {
   nameOf(owner: string): string;
   /** The user asked to forget the tasks that ended (the "Clear recent" button). */
   onClear?(): void;
+  /** The user answered a waiting task's question (its Accept / Deny buttons). */
+  onAnswer?(id: number, accept: boolean): void;
 }
 
 interface Row {
@@ -86,6 +98,12 @@ interface Row {
   fill: HTMLElement;
   text: HTMLElement;
   when: HTMLElement;
+  /** The question and its Accept / Deny: made with the row, shown only while it waits. */
+  ask: HTMLElement;
+  question: HTMLElement;
+  buttons: HTMLButtonElement[];
+  /** The snapshot on screen when Accept / Deny was pressed: the buttons stay off until another one comes. */
+  sentWith: TasksSnapshot | null;
 }
 
 interface Group {
@@ -99,7 +117,10 @@ interface View {
   /** Forgets the ones that ended; shown only when there are some. */
   clear: HTMLButtonElement;
   onClear: (() => void) | undefined;
+  onAnswer: ((id: number, accept: boolean) => void) | undefined;
   rows: Map<number, Row>;
+  /** The snapshot drawn last (a redraw of the same one, e.g. the ages ticking, isn't news). */
+  shown: TasksSnapshot | null;
 }
 
 const views = new WeakMap<HTMLElement, View>();
@@ -120,13 +141,13 @@ function build(content: HTMLElement): View {
   clear.className = "tasks-clear";
   clear.textContent = "Clear recent";
   clear.hidden = true;
-  const view: View = { empty, groups, clear, onClear: undefined, rows: new Map() };
+  const view: View = { empty, groups, clear, onClear: undefined, onAnswer: undefined, rows: new Map(), shown: null };
   clear.addEventListener("click", () => view.onClear?.());
   content.append(empty, groups.active.title, groups.active.list, groups.recent.title, groups.recent.list, clear);
   return view;
 }
 
-function newRow(): Row {
+function newRow(view: View, id: number): Row {
   const row = el("div", "task-row");
   const head = el("div", "task-head");
   const label = el("span", "task-label");
@@ -141,8 +162,24 @@ function newRow(): Row {
   bar.append(fill);
   const text = el("div", "task-text");
   const when = el("div", "task-when");
-  row.append(head, bar, text, when);
-  return { el: row, label, owner, state, bar, fill, text, when };
+  const ask = el("div", "task-ask");
+  const question = el("div", "task-question");
+  // Deny first, as in the question's dialog: the safe answer is where the ring lands.
+  const buttons = (["Deny", "Accept"] as const).map((name) => {
+    const b = document.createElement("button");
+    b.textContent = name;
+    b.addEventListener("click", () => {
+      buttons.forEach((x) => (x.disabled = true)); // until the next snapshot says how it went
+      made.sentWith = view.shown;
+      view.onAnswer?.(id, name === "Accept");
+    });
+    return b;
+  });
+  ask.append(question, ...buttons);
+  ask.hidden = true;
+  row.append(head, bar, text, ask, when);
+  const made: Row = { el: row, label, owner, state, bar, fill, text, when, ask, question, buttons, sentWith: null };
+  return made;
 }
 
 // Only writes what changed, so a screen that updates every second doesn't restart animations or lose its scroll.
@@ -150,7 +187,7 @@ function setText(node: HTMLElement, value: string) {
   if (node.textContent !== value) node.textContent = value;
 }
 
-function fillRow(row: Row, task: TaskInfo, { now, nameOf }: RenderOptions) {
+function fillRow(row: Row, task: TaskInfo, snapshot: TasksSnapshot, { now, nameOf }: RenderOptions) {
   row.el.dataset.state = task.state;
   setText(row.label, task.label);
   setText(row.owner, nameOf(task.module));
@@ -165,8 +202,13 @@ function fillRow(row: Row, task: TaskInfo, { now, nameOf }: RenderOptions) {
   else row.bar.removeAttribute("aria-valuenow");
   setText(row.text, task.text);
   row.text.hidden = !task.text;
-  setText(row.when, task.state === "running" ? "" : relativeTime(task.finished ?? task.updated, now));
-  row.when.hidden = task.state === "running";
+  const waiting = task.state === "waiting";
+  setText(row.question, waiting ? String(task.question ?? "") : "");
+  row.ask.hidden = !waiting;
+  for (const b of row.buttons) b.disabled = row.sentWith === snapshot;
+  const live = task.state === "running" || waiting;
+  setText(row.when, live ? "" : relativeTime(task.finished ?? task.updated, now));
+  row.when.hidden = live;
 }
 
 /**
@@ -182,8 +224,8 @@ export function renderTasks(content: HTMLElement, snapshot: TasksSnapshot, optio
     for (const task of snapshot[key]) {
       live.add(task.id);
       let row = view.rows.get(task.id);
-      if (!row) view.rows.set(task.id, (row = newRow()));
-      fillRow(row, task, options);
+      if (!row) view.rows.set(task.id, (row = newRow(view, task.id)));
+      fillRow(row, task, snapshot, options);
       wanted.push(row.el);
     }
     // Put them in order, moving only what isn't where it should be.
@@ -200,6 +242,8 @@ export function renderTasks(content: HTMLElement, snapshot: TasksSnapshot, optio
     }
   }
   view.empty.hidden = live.size > 0;
+  view.shown = snapshot;
   view.onClear = options.onClear;
+  view.onAnswer = options.onAnswer;
   view.clear.hidden = !snapshot.recent.length;
 }

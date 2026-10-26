@@ -462,7 +462,7 @@ class Downloads(unittest.TestCase):
         self._answer = Answer(data)
         fake = mock.Mock()
         fake.open.return_value = self._answer
-        patch(self, "invasor.updater._opener", lambda: fake)
+        patch(self, "invasor.http._opener", lambda: fake)
 
     def test_a_download_that_stays_on_https_is_saved(self):
         self.opener("https://objects.githubusercontent.com/x")

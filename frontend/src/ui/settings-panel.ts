@@ -11,9 +11,13 @@ interface SettingsDeps {
   nav: GamepadNav;
   /** Draws the settings into `el` (ui/settings.ts renderSettings, with its dependencies). */
   render(el: HTMLElement): Promise<void>;
+  /** The panel was just opened. */
+  onOpen?(): void;
+  /** The panel was just closed. */
+  onClose?(): void;
 }
 
-export function createSettingsPanel({ stage, panel, nav, render }: SettingsDeps): CoverPanel {
+export function createSettingsPanel({ stage, panel, nav, render, onOpen, onClose }: SettingsDeps): CoverPanel {
   let built = false;
   return createCoverPanel({
     stage,
@@ -22,7 +26,9 @@ export function createSettingsPanel({ stage, panel, nav, render }: SettingsDeps)
     kind: "settings",
     title: "Settings",
     backHint: "Start back",
+    onClose,
     async onOpen(content) {
+      onOpen?.();
       if (built) return;
       built = true;
       try {

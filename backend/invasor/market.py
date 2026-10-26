@@ -29,7 +29,7 @@ from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from . import __version__, config, install, schema, updater
+from . import __version__, config, http, install, schema, updater
 from .schema import InvalidArgument, SchemaError, Unavailable
 from .version import parse_version
 
@@ -96,7 +96,7 @@ def release_urls(repo, tag, mid, version):
 
 
 def fetch_text(url, limit=MAX_CONF):
-    with updater._opener().open(updater._request(url), timeout=updater.TIMEOUT) as r:
+    with http.open_url(url, headers=updater.GITHUB_HEADERS) as r:
         data = r.read(limit + 1)
     if len(data) > limit:
         raise ValueError("answer too large")

@@ -6,6 +6,7 @@ error with its exact path (e.g. "settings[2].max: must be a number"), never a gu
 """
 import math
 import re
+import unicodedata
 from decimal import Decimal
 
 from .version import parse_version
@@ -63,6 +64,13 @@ def _is_number(v):
 
 def _is_int(v):
     return isinstance(v, int) and not isinstance(v, bool)
+
+
+def _bare(text):
+    """`text` as it reads: compatibility forms folded (NFKC: full-width letters…), invisible characters
+    (zero-width, bidi marks and other format characters) and spaces dropped, case folded."""
+    text = unicodedata.normalize("NFKC", text)
+    return "".join(c for c in text if not c.isspace() and unicodedata.category(c) != "Cf").casefold()
 
 
 def _str(data, key, path, required=False, default=None):
@@ -342,6 +350,11 @@ def parse_manifest(data, module_id):
     tree, fields = parse_settings(data.get("settings"))
     forms, form_fields = parse_forms(data.get("forms"))
     name = _str(data, "name", "", required=True)
+    tab = _str(data, "tab", "", default=None)
+    # The core's own name: in Tasks, a question's dialog or the tab bar a module must never pass for it.
+    for key, value in (("name", name), ("tab", tab)):
+        if value is not None and _bare(value) == "invasor":
+            _fail(key, '"Invasor" is the core\'s own name')
     author = _str(data, "author", "", default="")
     if len(author) > AUTHOR_MAX or "\n" in author or "\r" in author:
         _fail("author", f"must be one line of up to {AUTHOR_MAX} characters")
@@ -357,7 +370,7 @@ def parse_manifest(data, module_id):
         "author": author,
         "author_name": author_name(author),
         "order": order,
-        "tab": _str(data, "tab", "", default=None) or name,
+        "tab": tab or name,
         "settings": tree,
         "fields": fields,
         # True: not shown in the Quick Access (···) panel, only in the library's.

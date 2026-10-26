@@ -17,7 +17,7 @@ class Registry(unittest.TestCase):
         task = self.registry.start("rakun", "Installing")
         self.assertEqual(self.registry.snapshot(), {"recent": [], "active": [{
             "id": 1, "module": "rakun", "label": "Installing", "state": "running", "fraction": None,
-            "text": "", "started": 100.0, "updated": 100.0, "finished": None}]})
+            "text": "", "started": 100.0, "updated": 100.0, "finished": None, "question": None}]})
         self.now = 101.0
         task.update(0.5, "halfway")
         view = self.registry.snapshot()["active"][0]
@@ -28,7 +28,7 @@ class Registry(unittest.TestCase):
         self.assertEqual(snap["active"], [])
         self.assertEqual(snap["recent"], [{
             "id": 1, "module": "rakun", "label": "Installing", "state": "done", "fraction": 1.0,
-            "text": "all set", "started": 100.0, "updated": 102.0, "finished": 102.0}])
+            "text": "all set", "started": 100.0, "updated": 102.0, "finished": 102.0, "question": None}])
 
     def test_a_task_callback_hears_its_start_and_its_end(self):
         heard = []
@@ -275,3 +275,214 @@ class Progress(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+import time  # noqa: E402  (for the tests below)
+
+
+class _Box(list):
+    worker = None
+
+
+class Asking(unittest.TestCase):
+    """A task that waits for the user: ask() in a worker thread, answer() from the panel."""
+
+    def setUp(self):
+        self.events = []
+        self.changes = []
+        self.registry = TaskRegistry(on_event=lambda name, payload: self.events.append((name, payload)))
+        self.registry.watch(lambda: self.changes.append(1))
+        self.task = self.registry.start("good", "Downloading")
+
+    def asking(self, question="Download it?", **kw):
+        """Start task.ask() in a thread, wait until it waits. A list that gets the answer."""
+        box = _Box()
+        worker = threading.Thread(target=lambda: box.append(self.task.ask(question, **kw)), daemon=True)
+        worker.start()
+        self.addCleanup(worker.join, 2)
+        deadline = time.monotonic() + 3
+        while self.task.state != "waiting" and worker.is_alive() and time.monotonic() < deadline:
+            time.sleep(0.002)
+        self.assertEqual(self.task.state, "waiting")
+        box.worker = worker
+        return box
+
+    def ended(self, box, within=1.0):
+        box.worker.join(within)
+        self.assertFalse(box.worker.is_alive(), "the waiter didn't wake up")
+        return box[0]
+
+    def view(self):
+        return self.registry.snapshot()["active"][0]
+
+    def test_accept(self):
+        box = self.asking("Download x from y?")
+        view = self.view()
+        self.assertEqual((view["state"], view["question"]), ("waiting", "Download x from y?"))
+        self.assertTrue(self.registry.answer(self.task.id, True))
+        self.assertIs(self.ended(box), True)
+        self.assertEqual((self.task.state, self.view()["state"], self.view()["question"]), ("running", "running", None))
+        self.task.update(0.5, "goes on")
+        self.assertEqual(self.view()["fraction"], 0.5)
+        self.task.done()
+        self.assertEqual(self.registry.snapshot()["recent"][0]["state"], "done")
+
+    def test_deny(self):
+        box = self.asking()
+        self.assertTrue(self.registry.answer(self.task.id, False))
+        self.assertIs(self.ended(box), False)
+        self.assertEqual(self.view()["question"], None)
+
+    def test_the_question_is_none_when_not_waiting(self):
+        self.assertIsNone(self.view()["question"])
+        self.task.done()
+        self.assertIsNone(self.registry.snapshot()["recent"][0]["question"])
+
+    def test_timeout_is_a_no(self):
+        start = time.monotonic()
+        self.assertIs(self.task.ask("anyone?", timeout=0.05), False)
+        self.assertLess(time.monotonic() - start, 2)
+        self.assertNotEqual(self.task.state, "waiting")
+        self.assertIsNone(self.view()["question"])
+        self.assertFalse(self.registry.answer(self.task.id, True))  # too late
+
+    def test_ending_it_while_waiting_wakes_the_waiter(self):
+        for end in (lambda: self.task.done("x"), lambda: self.task.fail("x"),
+                    lambda: self.registry.close_owner("good", "module unloaded")):
+            with self.subTest(end=end):
+                self.task = self.registry.start("good", "Downloading")
+                box = self.asking()
+                end()
+                self.assertIs(self.ended(box, within=1.0), False)
+                self.assertIn(self.task.state, ("done", "failed"))
+                self.assertFalse(self.registry.answer(self.task.id, True))
+
+    def test_asking_an_ended_or_waiting_task_is_a_no_at_once(self):
+        box = self.asking()
+        start = time.monotonic()
+        self.assertIs(self.task.ask("twice?"), False)  # already waiting
+        self.assertEqual(self.view()["question"], "Download it?")
+        self.registry.answer(self.task.id, True)
+        self.ended(box)
+        self.task.done()
+        self.assertIs(self.task.ask("after the end?"), False)
+        self.assertLess(time.monotonic() - start, 1)
+
+    def test_update_is_ignored_while_waiting(self):
+        self.task.update(0.3, "before")
+        box = self.asking()
+        self.task.update(0.9, "while waiting")
+        view = self.view()
+        self.assertEqual((view["state"], view["fraction"], view["text"], view["question"]),
+                         ("waiting", 0.3, "before", "Download it?"))
+        self.registry.answer(self.task.id, True)
+        self.ended(box)
+
+    def test_the_question_is_checked_and_cut(self):
+        for bad in ("", None, 5, b"x"):
+            with self.subTest(question=bad), self.assertRaises(InvalidArgument):
+                self.task.ask(bad, timeout=0.01)
+        self.assertEqual(self.task.state, "running")
+        box = self.asking("q" * 1000)
+        self.assertEqual(len(self.view()["question"]), MAX_TEXT)
+        self.registry.answer(self.task.id, False)
+        self.ended(box)
+
+    def test_answer_with_nobody_waiting(self):
+        self.assertFalse(self.registry.answer(self.task.id, True))  # running, not waiting
+        self.assertFalse(self.registry.answer(9999, True))
+        self.assertEqual(self.task.state, "running")
+
+    def test_answer_checks_its_types(self):
+        for task_id, accept in ((True, True), (str(self.task.id), True), (1.0, True), (None, True),
+                                (self.task.id, "yes"), (self.task.id, 1), (self.task.id, None)):
+            with self.subTest(id=task_id, accept=accept), self.assertRaises(InvalidArgument):
+                self.registry.answer(task_id, accept)
+
+    def test_waiting_is_an_event_and_a_change(self):
+        events_before, changes_before = len(self.events), len(self.changes)
+        box = self.asking()
+        self.assertIn("waiting", [p["state"] for _, p in self.events[events_before:]])
+        waiting_event = [p for _, p in self.events if p["state"] == "waiting"][0]
+        self.assertEqual(waiting_event["question"], "Download it?")
+        self.assertGreater(len(self.changes), changes_before)
+        changes_waiting = len(self.changes)
+        self.registry.answer(self.task.id, True)
+        self.ended(box)
+        self.assertGreater(len(self.changes), changes_waiting)
+
+    def test_core_task_answer(self):
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+        from invasor import core
+        from invasor.context import GameContext
+        from invasor.gamepad import ComboWatcher
+        from invasor.modules import ModuleManager
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        with mock.patch("invasor.modules.MODULES_DIR", root / "m"), \
+                mock.patch("invasor.modules.USER_MODULES_DIR", root / "um"), \
+                mock.patch("invasor.modules.DATA_DIR", root / "d"), \
+                mock.patch("invasor.config.CONFIG_FILE", root / "config.json"):
+            cfg = {"open_combo": ["L3", "R3"], "panel_side": "auto", "disabled_modules": []}
+            manager = ModuleManager(cfg, GameContext())
+            api = core.make_methods(manager, GameContext(), ComboWatcher(cfg["open_combo"], lambda: None), cfg)
+            self.registry = manager.tasks
+            self.task = manager.tasks.start("good", "Downloading")
+            box = self.asking()
+            answer = api["task_answer"](self.task.id, True)
+            self.assertIs(self.ended(box), True)
+            self.assertEqual(answer["active"], api["tasks"]()["active"])
+            self.assertIn("recent", answer)
+            if "answered" in answer:
+                self.assertIs(answer["answered"], True)
+                self.assertIs(api["task_answer"](self.task.id, True)["answered"], False)
+            with self.assertRaises(InvalidArgument):
+                api["task_answer"]("1", True)
+            self.task.done()
+
+
+class AskRules(unittest.TestCase):
+    def setUp(self):
+        self.registry = TaskRegistry()
+        self.task = self.registry.start("good", "Downloading")
+
+    def test_bad_timeouts_are_refused(self):
+        for bad in (0, -1, 3601, True, "10", None, float("nan")):
+            with self.assertRaises(InvalidArgument, msg=repr(bad)):
+                self.task.ask("Now?", timeout=bad)
+        self.assertEqual(self.task.state, "running")
+
+    def test_on_the_event_loop_it_is_refused_and_ask_async_works(self):
+        async def run():
+            with self.assertRaises(Unavailable):
+                self.task.ask("Now?")
+            waiting = asyncio.ensure_future(self.task.ask_async("Now?"))
+            while self.task.state != "waiting":
+                await asyncio.sleep(0.005)
+            self.registry.answer(self.task.id, True)
+            return await waiting
+
+        self.assertIs(asyncio.run(run()), True)
+
+
+class WhatTheUserReads(unittest.TestCase):
+    """Control characters and bidi overrides never reach the Tasks panel or a toast."""
+
+    def test_label_text_and_question_are_cleaned(self):
+        registry = TaskRegistry()
+        task = registry.start("good", "Line\nbreak‮evil")
+        task.update(None, "two\nlines⁦")
+        view = registry.snapshot()["active"][0]
+        self.assertEqual((view["label"], view["text"]), ("Line break evil", "two lines "))
+        asked = threading.Thread(target=lambda: task.ask("Download x\n‮gnp.exe?", timeout=5), daemon=True)
+        asked.start()
+        for _ in range(500):
+            if task.state == "waiting":
+                break
+            time.sleep(0.002)
+        self.assertEqual(registry.snapshot()["active"][0]["question"], "Download x  gnp.exe?")
+        registry.answer(task.id, False)
+        asked.join(2)

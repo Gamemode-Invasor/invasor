@@ -3,16 +3,20 @@ for its own long operations (updates, Market installs).
 
 The registry is in memory only: it holds the tasks that are running and the last few that
 ended, so any part of the UI can show them (`core.tasks()`), and it says when one starts or
-ends (the `task` event of the module event bus). It never persists anything and never
+ends (the `task` event of the module event bus). A task may also stop to ask the user a
+question (Task.ask, answered with TaskRegistry.answer). It never persists anything and never
 starts a thread, so with no task open it costs nothing.
 """
+import asyncio
 import logging
 import math
+import re
 import threading
 import time
 from collections import deque
 from numbers import Real
 
+from . import calls
 from .schema import InvalidArgument, Unavailable
 
 log = logging.getLogger("invasor.tasks")
@@ -21,18 +25,29 @@ MAX_LABEL = 64
 MAX_TEXT = 256
 MAX_ACTIVE = 32  # a module that never ends its tasks can't make the registry grow without end
 MAX_RECENT = 20
+ASK_TIMEOUT = 600  # seconds a question waits for the user before it counts as a no
+MAX_ASK_TIMEOUT = 3600
+
+
+# Control characters and bidi overrides: in what the user reads (the Tasks panel, toasts) they could
+# break a line or make one text look like another. They become spaces.
+UNSAFE = re.compile("[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]")
+
+
+def _clean(value):
+    return UNSAFE.sub(" ", value)
 
 
 def _text(value, what):
     if not isinstance(value, str):
         raise InvalidArgument(f"{what} must be text")
-    return value[:MAX_TEXT]
+    return _clean(value[:MAX_TEXT])
 
 
 def _label(value):
     if not isinstance(value, str) or not value.strip():
         raise InvalidArgument("a task needs a label (some text)")
-    return value.strip()[:MAX_LABEL]
+    return _clean(value.strip()[:MAX_LABEL])
 
 
 def _fraction(value):
@@ -51,7 +66,7 @@ def _fraction(value):
 
 
 class Task:
-    """One long operation. Its methods are quick and never block, so the same object works
+    """One long operation. Its methods (but ask()) are quick and never block, so the same object works
     in threads and in `async def` code, and as a context manager (`with` / `async with`):
     leaving normally calls done(); leaving with an exception calls fail(str(error)) and the
     exception goes on. Once it's done or failed, further calls do nothing."""
@@ -65,6 +80,8 @@ class Task:
         self.state = "running"
         self.fraction = None
         self.text = ""
+        self.question = None  # while waiting: what the user is asked
+        self._pending = None  # while waiting: {"woken": threading.Event, "accept": bool}
         self.started = self.updated = now
         self.finished = None
 
@@ -78,6 +95,22 @@ class Task:
 
     def fail(self, text):
         self._registry._finish(self, "failed", _text(text, "text"))
+
+    def ask(self, question, timeout=ASK_TIMEOUT):
+        """Ask the user `question` (Accept / Deny in a dialog over the open panel, and in the Tasks panel) and wait for the answer:
+        True for Accept; False for Deny, after `timeout` seconds, if the task ends meanwhile (its
+        module unloaded, say) or isn't running. While it waits, update() is ignored.
+        It blocks (Unavailable on the event loop's thread): in `async def`, ask_async()."""
+        calls.not_on_loop("t.ask()")
+        if not isinstance(question, str) or not question.strip():
+            raise InvalidArgument("a question needs some text")
+        if isinstance(timeout, bool) or not isinstance(timeout, Real) or not 0 < timeout <= MAX_ASK_TIMEOUT:
+            raise InvalidArgument(f"timeout must be a number of seconds, more than 0 and up to {MAX_ASK_TIMEOUT}")
+        return self._registry._ask(self, _clean(question.strip()[:MAX_TEXT]), timeout)
+
+    async def ask_async(self, question, timeout=ASK_TIMEOUT):
+        """The same as ask(), for `async def` code."""
+        return await asyncio.to_thread(self.ask, question, timeout)
 
     def progress(self, low, high, text=""):
         """A `callback(done, total)` that maps a transfer onto the `low`..`high` stretch of the bar."""
@@ -105,14 +138,14 @@ class Task:
     def _view(self):
         return {
             "id": self.id, "module": self.owner, "label": self.label, "state": self.state,
-            "fraction": self.fraction, "text": self.text,
+            "fraction": self.fraction, "text": self.text, "question": self.question,
             "started": self.started, "updated": self.updated, "finished": self.finished,
         }
 
 
 class TaskRegistry:
     """The tasks of the whole core: `owner` is a module id, or "core". `on_event(name, payload)`
-    hears `task` when one starts, ends or fails (not on every update: that would be a thread
+    hears `task` when one starts, waits for an answer, ends or fails (not on every update: that would be a thread
     per step for whoever listens). `watch(fn)` is for whoever must know of every change, updates
     included, and only that something changed (fn() takes nothing and must be quick: it's called
     from the thread that changed it). Both are called outside the lock and a failure is logged."""
@@ -165,6 +198,21 @@ class TaskRegistry:
             self._changed()
         return count
 
+    def answer(self, task_id, accept):
+        """The user's answer to a waiting task's question: True if one was waiting with that id."""
+        if isinstance(task_id, bool) or not isinstance(task_id, int):
+            raise InvalidArgument("the task id must be a whole number")
+        if not isinstance(accept, bool):
+            raise InvalidArgument("accept must be True or False")
+        with self._lock:
+            task = self._active.get(task_id)
+            if task is None or task.state != "waiting":
+                return False
+            task._pending["accept"] = accept
+            self._resume(task)
+        self._changed()
+        return True
+
     def close_owner(self, owner, text):
         """Fail what `owner` left running (its module was unloaded)."""
         with self._lock:
@@ -179,11 +227,38 @@ class TaskRegistry:
             task.fraction, task.text, task.updated = fraction, text, self._clock()
         self._changed()
 
-    def _finish(self, task, state, text, quiet=False):
+    def _ask(self, task, question, timeout):
         with self._lock:
             if task.state != "running":
+                return False
+            task.state, task.question, task.updated = "waiting", question, self._clock()
+            mine = task._pending = {"woken": threading.Event(), "accept": False}
+            view = task._view()
+        self._emit(view)
+        self._changed()
+        mine["woken"].wait(timeout)
+        with self._lock:
+            timed_out = task._pending is mine  # nobody answered: a no
+            if timed_out:
+                self._resume(task)
+        if timed_out:
+            self._changed()
+        return mine["accept"]
+
+    def _resume(self, task):
+        """Back to running after a question (under the lock)."""
+        task.state, task.question, task.updated = "running", None, self._clock()
+        task._pending["woken"].set()
+        task._pending = None
+
+    def _finish(self, task, state, text, quiet=False):
+        with self._lock:
+            if task.state not in ("running", "waiting"):
                 return
-            task.state, task.text = state, text
+            if task._pending is not None:  # the one asking wakes up to a no
+                task._pending["woken"].set()
+                task._pending = None
+            task.state, task.text, task.question = state, text, None
             if state == "done":
                 task.fraction = 1.0
             task.updated = task.finished = self._clock()

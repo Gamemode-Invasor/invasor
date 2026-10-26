@@ -10,13 +10,18 @@ module.json rules (when, disabled_when), backend calls and errors (every notific
 button and sound, ui.choose, ui.form), the stats line, windows opened with a handle, a
 standalone ui.number and Control.get(), the keyboard's show/hide key, a custom control, the
 Settings tab, installing a module zip and its upgrade/uninstall hooks, backend
-validation of settings and the isolation of a broken module UI. Needs Steam running with
-CEF debugging, the invasor service installed and the "demo" module enabled.
+validation of settings and the isolation of a broken module UI, a task that asks (Accept /
+Deny in a dialog and in the Tasks panel), core.browse_path, ctx.pickPath, ctx.copy, and Demo's read-only
+ctx.steam / ctx.paths calls. Needs Steam running with CEF debugging, the invasor service
+installed and the "demo" module enabled.
+
+Nothing changes the user's Steam unless asked: --steam-shortcut also adds Demo's own shortcut,
+reads and sets its launch options and removes it again.
 
 At the end Demo's values and config.json are restored and the service restarted,
 so the overlay is re-injected exactly as it was.
 
-    python3 tools/smoke.py
+    python3 tools/smoke.py [--steam-shortcut]
 """
 import asyncio
 import json
@@ -29,7 +34,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from invasor import cef, context  # noqa: E402
+from invasor import cef, paths  # noqa: E402
 from invasor.config import CONFIG_DIR, CONFIG_FILE  # noqa: E402
 
 BTN = {"A": 1, "B": 2, "X": 3, "Y": 4, "L1": 5, "R1": 6, "L2": 7, "R2": 8, "UP": 9, "DOWN": 10, "LEFT": 11, "RIGHT": 12, "SELECT": 13, "START": 14}
@@ -56,6 +61,7 @@ STATE = f"""(() => {{
     listOpen: !!list && !list.hidden,
     keyboard: !!f?.querySelector('.kbd'),
     modal: !!r.querySelector('.modal'),
+    modalText: r.querySelector('.modal p')?.textContent ?? null,
     toast: r.querySelector('.toast:not([hidden])')?.textContent ?? null,
     about: (top.querySelector('.pane:not([hidden])') ?? top.querySelector('.content'))?.querySelector('.section:last-of-type')?.textContent ?? '',
     scroll: Math.round(top.querySelector('.content').scrollTop),
@@ -91,9 +97,10 @@ WINDOW = f"""(() => {{
 
 
 class Smoke:
-    def __init__(self, session):
+    def __init__(self, session, steam_shortcut=False):
         self.s = session
         self.failures = 0
+        self.steam_shortcut = steam_shortcut
 
     async def js(self, expr):
         return await self.s.evaluate(expr)
@@ -338,7 +345,9 @@ class Smoke:
                    hint: t?.querySelector('.hints')?.textContent ?? '',
                    handle: r.querySelector('.handle').dataset.tasks ?? '', button: r.querySelector('.tasks-btn').dataset.tasks ?? '',
                    rows: [...(t?.querySelectorAll('.task-row') ?? [])].map(e => ({{label: e.querySelector('.task-label').textContent,
-                          state: e.dataset.state, pct: e.querySelector('.task-bar').getAttribute('aria-valuenow')}}))}}; }})()""")
+                          state: e.dataset.state, pct: e.querySelector('.task-bar').getAttribute('aria-valuenow'),
+                          question: e.querySelector('.task-question').textContent,
+                          answers: [...e.querySelectorAll('.task-ask:not([hidden]) button')].map(b => b.textContent)}}))}}; }})()""")
 
     async def nudge(self):
         """Change the focused value with → (or ← at the end). Returns (before, after, undo button)."""
@@ -682,6 +691,66 @@ class Smoke:
         recent = [(t["module"], t["state"]) for t in (listing or {}).get("recent", [])]
         self.check("tasks: core.tasks() lists both as ended, the newest first",
                    listing is not None and recent[:2] == [("demo", "failed"), ("demo", "done")] and not listing["active"], (st, body))
+        # core.browse_path (what ctx.pickPath lists): home by default, dot entries only with hidden.
+        st, body = await self.api("browse_path")
+        home = (body.get("result") or {}) if st == 200 else {}
+        self.check("browse_path: home by default, with its folders", "path" in home and isinstance(home.get("dirs"), list), (st, body))
+        st, body = await self.api("browse_path", hidden=True)
+        names = [d["name"] for d in (body.get("result") or {}).get("dirs", [])] if st == 200 else []
+        if (Path.home() / ".config").is_dir():
+            self.check("browse_path: hidden lists dot folders (~/.config)", ".config" in names, (st, names[:20]))
+            self.check("browse_path: without hidden they're left out", ".config" not in [d["name"] for d in home.get("dirs", [])], home)
+        st, body = await self.api("browse_path", files="x")
+        self.check("browse_path: a bad argument answers 400", st == 400, (st, body))
+        # Demo's read-only ctx.steam / ctx.paths / ctx.archive calls (nothing changes, no network).
+        st, body = await self.api("steam_supports", feature="demo")
+        sup = body.get("result") if st == 200 else None
+        self.check("ctx.steam.supports: five features, each a bool",
+                   isinstance(sup, dict) and len(sup) == 5 and all(isinstance(v, bool) for v in sup.values()), (st, body))
+        st, body = await self.api("steam_supports_async", feature="demo")
+        self.check("ctx.steam.supports_async: the same answer", st == 200 and body.get("result") == sup, (st, body))
+        st, body = await self.api("steam_language", feature="demo")
+        code = (body.get("result") or {}).get("code") if st == 200 else None
+        self.check("ctx.steam_language: a 2-letter code", isinstance(code, str) and len(code) == 2, (st, body))
+        st, body = await self.api("steam_folders", feature="demo")
+        folders = (body.get("result") or {}) if st == 200 else {}
+        self.check("ctx.paths: Steam's root is found", folders.get("root") is not None, (st, body))
+        self.check("ctx.paths.shortcuts: a count", isinstance(folders.get("shortcuts"), int), (st, body))
+        game = folders.get("game")
+        if game:  # only with a Steam game running or selected
+            self.check("ctx.paths: the game's compatdata / shadercache / appmanifest", game.get("compatdata") and game.get("shadercache")
+                       and "appmanifest" in game, game)
+        for method in ("unpack_sample", "unpack_sample_async"):
+            st, body = await self.api(method, feature="demo")
+            self.check(f"ctx.archive: {method} gives 3 files", st == 200 and len((body.get("result") or {}).get("files", [])) == 3, (st, body))
+        # Network: GitHub's answer, or a clean 503 (offline, rate limit).
+        for method in ("latest_release", "latest_release_async"):
+            st, body = await self.api(method, feature="demo")
+            self.check(f"ctx.http.get_json: {method} gives a tag, or a clean 503",
+                       (st == 200 and isinstance((body.get("result") or {}).get("tag"), str)) or st == 503, (st, body))
+        st, body = await self.api("download_sample_async", feature="demo", checked=True)
+        self.check("ctx.http.download_async: the checked sample, or a clean 503",
+                   (st == 200 and body["result"]["sha256"] == "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986") or st == 503, (st, body))
+        if not self.steam_shortcut:
+            print("  skipped: --steam-shortcut not given (Demo's shortcut in Steam)")
+        else:
+            for twin in ("", "_async"):  # the plain methods, then their `async def` twins
+                appid = None
+                try:
+                    st, body = await self.api("steam_shortcut_add" + twin, feature="demo")
+                    appid = (body.get("result") or {}).get("appid") if st == 200 else None
+                    self.check(f"ctx.steam.add_to{twin}: Demo's shortcut added, with its appid", isinstance(appid, int), (st, body))
+                    st, body = await self.api("steam_shortcut_options" + twin, feature="demo")
+                    self.check(f"ctx.steam.launch_options{twin}: reads DEMO=1", st == 200 and body["result"]["options"] == "DEMO=1 %command%", (st, body))
+                    st, body = await self.api("steam_shortcut_options" + twin, feature="demo", line="DEMO=2 %command%")
+                    self.check(f"ctx.steam.set_launch_options{twin}: DEMO=2, verified", st == 200 and body["result"].get("verified") is True
+                               and body["result"]["options"] == "DEMO=2 %command%", (st, body))
+                    st, body = await self.api("steam_shortcut_remove" + twin, feature="demo")
+                    self.check(f"ctx.steam.remove_shortcut{twin}: removed", st == 200 and body["result"].get("removed") is True, (st, body))
+                    appid = None if st == 200 else appid
+                finally:
+                    if appid is not None:
+                        await self.api("steam_shortcut_remove", feature="demo")
         # Every notification button: Steam's own sounds, with the toast of the answer.
         for label in ["Default (Steam decides)", *(f"Sound: {s}" for s in SOUNDS)]:
             await self.goto(label, limit=6)
@@ -694,7 +763,7 @@ class Smoke:
             ("Steam info (backend)", '"available"'),
             ("Steam info (async method)", '"available"'),
         ):
-            await self.goto(label, limit=6)
+            await self.goto(label, limit=12)
             st = await self.press("A", wait=1.5)
             self.check(f"call: {label}", want in (st["toast"] or ""), st)
         await self.goto("Steam info (from here)", limit=6)
@@ -715,6 +784,21 @@ class Smoke:
         await self.goto("Unavailable (503)", limit=4, button="RIGHT")
         st = await self.press("A", wait=1.0)
         self.check("ui.choose: the chosen value reaches the backend", not st["modal"] and "Unavailable: 503" in (st["toast"] or ""), st)
+        # ctx.copy: CEF may refuse the clipboard; either answer is fine, as long as it answers.
+        await self.goto("Copy a line", limit=6)
+        st = await self.press("A", wait=1.0)
+        self.check("ctx.copy: answers Copied or Couldn't copy it", st["toast"] in ("Copied", "Couldn't copy it"), st)
+        st = await self.state()
+        self.check("ctx.copy: the ring stays on its button", st["label"] == "Copy a line", st)
+        # ctx.pickPath: a big window with the folder browser; B closes it and the module gets null.
+        await self.goto("Pick a folder", limit=4)
+        await self.press("A", wait=1.0)
+        w = await self.window()
+        choose = await self.js(f"[...{SR}.querySelectorAll('.iwin .ctl-button')].some(b => b.textContent === 'Choose this folder')")
+        self.check("ctx.pickPath: opens a big window with Choose this folder", w is not None and choose, (w, choose))
+        st = await self.press("B", wait=0.6)
+        self.check("ctx.pickPath: B closes it, the module gets null (Cancelled)",
+                   await self.window() is None and st["toast"] == "Cancelled" and st["label"] == "Pick a folder", st)
         # ui.form: the Profile section is stored by the module itself (a TOML file outside Invasor's folders).
         profile = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "invasor-demo" / "profile.toml"
         existed = profile.exists()
@@ -765,23 +849,25 @@ class Smoke:
         demo = await self.js(f"""(() => {{ const c = [...{SR}.querySelectorAll('.ctl')].find(c => c.querySelector('.ctl-label')?.textContent?.startsWith('Demo ('));
           return c ? [c.querySelector('.ctl-label').textContent, c.dataset.hint ?? ''] : null; }})()""")
         self.check("Modules: Demo's label shows version and author (no email), its hint the description",
-                   bool(demo) and demo[0] == "Demo (0.2.0) by FranjeGueje" and "Showcase" in demo[1], demo)
+                   bool(demo) and demo[0] == "Demo (0.3.0) by FranjeGueje" and "Showcase" in demo[1], demo)
 
         print(" Settings")
         await self.unfold("Manage Invasor")
         await self.goto("Check for updates")
-        await self.press("A", wait=0.5)  # asks GitHub: no release yet, or up to date, are both fine
+        await self.press("A", wait=0.5)  # asks GitHub: no release yet, up to date, or a pre-release ahead of stable
+        ANSWERS = ("Couldn't check", "up to date", "The stable version is")
         # Its answer redraws the section (the button under the ring is replaced): wait for it, whatever it takes
         # (a fixed wait made the next steps race against it), then let the ring settle.
         for _ in range(40):
             updates = await self.js(f"""(() => [...{SR}.querySelectorAll('.section')].find(s => s.textContent.startsWith('Manage Invasor'))
               ?.textContent ?? '')()""")
-            if "Couldn't check" in updates or "up to date" in updates:
+            if any(t in updates for t in ANSWERS):
                 break
             await asyncio.sleep(0.5)
         await asyncio.sleep(0.6)
-        self.check("Manage Invasor: shows the installed version, and says it couldn't check or that it's up to date",
-                   "Installed:" in updates and ("Couldn't check" in updates or "up to date" in updates), updates[:160])
+        self.check("Manage Invasor: shows the installed version, and says it couldn't check, that it's up to date "
+                   "or (on a pre-release) which the stable version is",
+                   "Installed:" in updates and any(t in updates for t in ANSWERS), updates[:160])
         st = await self.unfold("Controller")
         st = await self.goto("Open/close panel")
         before_cfg = CONFIG_FILE.read_text() if CONFIG_FILE.exists() else ""
@@ -815,7 +901,7 @@ class Smoke:
         self.check("Settings: B goes back to the Invasor panel on the tab it was on", st["open"] and st["tab"] == before_cover["tab"], (st, before_cover))
 
         print(" Highlighted game")
-        installed = sorted(p.name[12:-4] for lib in context._library_dirs() for p in (lib / "steamapps").glob("appmanifest_*.acf"))
+        installed = sorted(p.name[12:-4] for lib in paths.libraries() for p in lib.glob("appmanifest_*.acf"))
         if not installed:
             self.check("highlighted: needs an installed Steam game", False, "none found")
         else:
@@ -937,6 +1023,69 @@ class Smoke:
         await self.press("SELECT", wait=0.5)
         t = await self.tasks_state()
         self.check("tasks: looking at it clears the dot", t["handle"] == "" and t["button"] == "", t)
+        # A task that asks (Demo's ask_task): it waits for Accept / Deny; the call answers when the user does.
+        # With the panel open the question also shows as a dialog: answered there (A on Accept), put off
+        # with B and answered in the Tasks panel, or answered elsewhere (core.task_answer: it closes by itself).
+        question = "Demo asks: is this fine?"
+        for how, accept in (("dialog", True), ("tasks", True), ("elsewhere", False)):
+            # The last round goes through the `async def` twin (t.ask_async).
+            call = asyncio.create_task(self.api("ask_task_async" if how == "elsewhere" else "ask_task", feature="demo"))
+            waiting = None
+            for _ in range(25):
+                await asyncio.sleep(0.2)
+                _, body = await self.api("tasks")
+                waiting = next((x for x in (body.get("result") or {}).get("active", [])
+                                if x["label"] == "Demo: a question" and x["state"] == "waiting"), None)
+                if waiting:
+                    break
+            self.check(f"ask: the task waits with its question ({how})",
+                       waiting is not None and waiting["question"] == question, waiting)
+            if waiting is None:
+                call.cancel()  # nothing to answer: don't wait for its timeout
+                continue
+            for _ in range(15):  # task changes reach the panel at most once a second (taskpush.min_gap)
+                t, st = await self.tasks_state(), await self.state()
+                if t["handle"] == "waiting" and st["modal"]:
+                    break
+                await asyncio.sleep(0.2)
+            self.check(f"ask: the handle shows it and a dialog asks, with the module's name, on Deny ({how})",
+                       t["handle"] == "waiting" and st["modalText"] == f"Demo: {question}" and st["label"] == "Deny", (t, st))
+            pressed = False
+            if how == "dialog":
+                st = await self.press("RIGHT")
+                if st["label"] == "Accept":
+                    await self.press("A", wait=0.5)
+                    pressed = True
+            elif how == "tasks":
+                st = await self.press("B", wait=0.4)
+                t = await self.tasks_state()
+                self.check("ask: B puts the dialog off without answering", not st["modal"] and st["open"] and t["handle"] == "waiting", (st, t))
+                await self.press("SELECT", wait=0.5)
+                t = await self.tasks_state()
+                row = next((r for r in t["rows"] if r["state"] == "waiting"), None)
+                self.check("ask: its row waits, shows the question, with Deny and Accept",
+                           row is not None and row["question"] == question and row["answers"] == ["Deny", "Accept"], t)
+                st = await self.goto("Accept", limit=6)
+                if st["label"] == "Accept":
+                    await self.press("A", wait=0.5)
+                    pressed = True
+            if not pressed:
+                st, body = await self.api("task_answer", id=waiting["id"], accept=accept)
+                self.check("ask: core.task_answer answers it", st == 200 and body["result"]["answered"], (st, body))
+            st, body = await call
+            self.check(f"ask: the call gets accepted={accept} ({how}" + (", A on Accept)" if pressed else ")"),
+                       st == 200 and body.get("result") == {"accepted": accept}, (st, body))
+            for _ in range(15):
+                st = await self.state()
+                if not st["modal"]:
+                    break
+                await asyncio.sleep(0.2)
+            self.check(f"ask: no dialog is left ({how})", not st["modal"], st)
+            _, body = await self.api("tasks")
+            last = next((x for x in (body.get("result") or {}).get("recent", []) if x["label"] == "Demo: a question"), None)
+            self.check("ask: the task ends done", (last or {}).get("state") == "done", last)
+            if (await self.tasks_state())["open"]:
+                await self.press("SELECT", wait=0.4)
         # Clear recent: the ones that ended are in the list (Demo's two tasks); A on the button forgets them.
         await self.press("SELECT", wait=0.5)
         t = await self.tasks_state()
@@ -983,7 +1132,7 @@ async def main():
     # Demo's settings and data (Backend counts visits, per game too) and config.json.
     saved = {p: p.read_bytes() for p in [*DEMO_DIR.rglob("*"), CONFIG_FILE] if p.is_file()}
     session = await cef.CDPSession.connect(targets[0]["webSocketDebuggerUrl"])
-    smoke = Smoke(session)
+    smoke = Smoke(session, steam_shortcut="--steam-shortcut" in sys.argv[1:])
     print(f"Smoke test on \"{targets[0]['title']}\"" + (" (development mode: desktop window)" if dev else ""))
     try:
         await smoke.run()
