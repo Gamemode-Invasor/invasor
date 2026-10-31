@@ -4,7 +4,7 @@ Every change since the first release, newest first. Pre-releases (`-rcN`) are fo
 
 ---
 
-## Unreleased
+## 0.3.1 (2026-10-31)
 
 ### Fixes
 
