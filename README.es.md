@@ -61,7 +61,7 @@ El panel ocupa el 40 % del ancho de la pantalla en la biblioteca (en Quick Acces
 
 Mientras el panel está abierto, Steam no recibe ninguna pulsación del mando (los botones Steam y ··· propios siempre pasan). También se puede abrir con la pestaña azul, con el dedo o con F10.
 
-Se leen tanto los mandos normales (evdev: DualSense, Xbox…) como los de protocolo Steam Deck: una Steam Deck real, o handhelds como la Legion Go virtualizados por InputPlumber. Para ver qué botones detecta el servicio: `python3 tools/pad.py`.
+Se leen los mandos normales (evdev: DualSense, Xbox…), los de protocolo Steam Deck (una Steam Deck real, o handhelds como la Legion Go virtualizados por InputPlumber) y el Steam Controller nuevo (por Bluetooth, por cable USB o con su receptor USB). Para ver qué botones detecta el servicio: `python3 tools/pad.py`.
 
 **Panel ⚙ Settings** (el botón ⚙ de la cabecera del panel, o Start; también sin módulos): activar o desactivar módulos (Manage modules), instalar uno desde un zip o desde el Market (solo en la Biblioteca), atajo para abrir el panel, lado del panel (solo en la Biblioteca: Quick Access va siempre a la izquierda), el orden de las pestañas de los módulos (se agarra un módulo con A y se mueve con la cruceta), qué muestra la pestaña (el icono, la letra "I" o nada), color de acento (también de la pestaña), "Manage Invasor" (actualizaciones, reiniciar Invasor o Steam, ver el log, restablecer la configuración, desinstalar) y "About" (versión, estado y mandos detectados). La interfaz de invasor está en inglés; cada módulo elige su propio idioma.
 
