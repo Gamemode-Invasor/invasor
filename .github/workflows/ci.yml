@@ -15,7 +15,8 @@ concurrency:
 jobs:
   backend:
     name: Backend (Python ${{ matrix.python }})
-    runs-on: ubuntu-latest
+    # setup-python has no 3.9 for Ubuntu 26.04 (ubuntu-latest now): keep that job on 24.04.
+    runs-on: ${{ matrix.python == '3.9' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:

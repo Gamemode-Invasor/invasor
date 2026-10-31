@@ -61,7 +61,7 @@ The panel takes 40% of the screen width in the Library (in Quick Access, the vis
 
 While the panel is open, Steam gets none of the panel's buttons (its own Steam and ··· buttons always go through). It can also be opened with the blue tab, by touch, or with F10.
 
-Both regular controllers (evdev: DualSense, Xbox…) and Steam Deck-protocol ones are read: a real Steam Deck, or handhelds such as the Legion Go virtualised by InputPlumber. To see which buttons the service detects: `python3 tools/pad.py`.
+Regular controllers (evdev: DualSense, Xbox…), Steam Deck-protocol ones (a real Steam Deck, or handhelds such as the Legion Go virtualised by InputPlumber) and the new Steam Controller (Bluetooth, USB cable or its USB receiver) are read. To see which buttons the service detects: `python3 tools/pad.py`.
 
 **⚙ Settings panel** (the ⚙ button in the panel's header, or Start; it works even with no modules): enable or disable modules (Manage modules), install one from a zip or from the Market (Library only), the shortcut that opens the panel, the panel side (Library only: Quick Access is always on the left), the order of the modules' tabs (grab a module with A, move it with the D-pad), what the handle shows (the icon, the letter "I" or nothing), the accent colour (also of the handle), "Manage Invasor" (updates, restart Invasor or Steam, view the log, reset the configuration, uninstall) and "About" (version, status and detected controllers). Invasor's own UI is in English; each module chooses its own language.
 

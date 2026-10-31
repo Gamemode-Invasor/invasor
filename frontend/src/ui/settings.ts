@@ -56,6 +56,9 @@ interface UpdateInfo {
   notes: string;
 }
 
+/** How the About section names each `kind` of controller the backend reads. */
+const PAD_KINDS: Record<string, string> = { evdev: "evdev", deck: "Steam Deck protocol", steamctrl: "Steam Controller" };
+
 interface Pad {
   device: string;
   name: string;
@@ -493,7 +496,7 @@ export async function renderSettings(el: HTMLElement, deps: SettingsDeps) {
         ui.info(`Invasor ${deps.version} · backend ${info.version} · Python ${info.python}`),
         ui.info(steamAvailable() ? "SteamClient: available" : "SteamClient: unavailable"),
         ui.info(`Controllers detected: ${pads.length ? "" : "none"}`),
-        ...pads.map((p) => ui.info(`  · ${p.name} (${p.kind === "deck" ? "Steam Deck protocol" : "evdev"})`)),
+        ...pads.map((p) => ui.info(`  · ${p.name} (${PAD_KINDS[p.kind] ?? p.kind})`)),
       );
     } catch (e) {
       if (seq === aboutSeq) about.append(ui.info(`Backend unavailable: ${(e as Error).message}`));

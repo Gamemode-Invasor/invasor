@@ -4,6 +4,19 @@ Every change since the first release, newest first. Pre-releases (`-rcN`) are fo
 
 ---
 
+## 0.3.1 (2026-10-31)
+
+### Fixes
+
+- **The new Steam Controller opens the panel.** The 2026 Steam Controller (Bluetooth, USB cable or its USB "Puck" receiver) was read as a Steam Deck, whose reports have another layout, so none of its buttons were seen and L3 + R3 did nothing. Its own state reports are decoded now, with every button but the trigger clicks; a Valve pad whose layout isn't known is still read but never misread. ⚙ Settings > About names it "Steam Controller"
+- **Controllers that open the panel**, all read without taking them from Steam or the game:
+  - **Standard gamepads** (evdev, any the kernel shows as a gamepad): DualSense, DualShock 4, Xbox (cable, Bluetooth or wireless adapter), Switch Pro, 8BitDo and others in Xbox mode, and Steam's own virtual pad
+  - **Steam Deck protocol** (hidraw): a real Steam Deck, and handhelds InputPlumber presents as one, such as the Legion Go
+  - **2026 Steam Controller** (hidraw): Bluetooth, USB cable and the USB "Puck" receiver
+  - **Not yet:** generic "DirectInput" pads (they report other button codes) and the original 2015 Steam Controller while Steam owns it
+
+---
+
 ## 0.3.0 (2026-10-26)
 
 Pre-releases: rc1 (2026-10-25), rc2 (2026-10-26).

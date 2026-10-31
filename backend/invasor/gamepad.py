@@ -5,11 +5,16 @@ receiving every input), both readable without root because logind/udev grant the
 seat user access:
 
 - evdev gamepads (/dev/input/event*): DualSense, Xbox pads, Steam's own virtual pad.
-- Steam Deck protocol over hidraw (Valve vendor id 28de): a real Steam Deck, or a
-  handheld virtualised as one by InputPlumber (e.g. Legion Go -> "deck-uhid").
-  These never show up as evdev gamepads while Steam owns them. The report layout
-  is Valve's hardware protocol (see the kernel's drivers/hid/hid-steam.c), not
-  Steam client internals, so it doesn't change with Steam updates.
+- Valve pads over hidraw (vendor id 28de), which never show up as evdev gamepads
+  while Steam owns them:
+  - Steam Deck protocol: a real Steam Deck, or a handheld virtualised as one by
+    InputPlumber (e.g. Legion Go -> "deck-uhid").
+  - The 2026 Steam Controller (product ids 1302-1305, Bluetooth or its USB "Puck"
+    receiver), whose state reports have a layout of their own.
+  The report layouts are Valve's hardware protocol (see the kernel's
+  drivers/hid/hid-steam.c), not Steam client internals, so they don't change with
+  Steam updates. Each decoder checks the report's header, so a pad whose layout
+  isn't known is read but never misread.
 """
 import asyncio
 import logging
@@ -41,7 +46,23 @@ DECK_BUTTONS = {
     "L4": (13, 1), "R4": (13, 2), "QAM": (14, 2),
 }
 
-BUTTONS = sorted(set(EVDEV_BUTTONS.values()) | set(DECK_BUTTONS))
+# 2026 Steam Controller: product ids, as in hid-steam.c (1302 USB cable, 1303 Bluetooth, 1304 the USB Puck).
+STEAM_CONTROLLER_IDS = {0x1302, 0x1303, 0x1304, 0x1305}
+# Report ids (data[0]) of its controller state: 0x42 over USB (cable), 0x45 over
+# Bluetooth. Both carry the buttons in the same bytes.
+STEAM_CONTROLLER_STATES = {0x42, 0x45}
+# (byte, bit) of each button in its state report, measured on a real pad. The
+# trigger clicks are left out: the analog triggers are at bytes 6-9 and their
+# digital bit wasn't pinned down. Byte 4 bit 4 and byte 5 are touch sensors.
+STEAM_CONTROLLER_BUTTONS = {
+    "A": (2, 0), "B": (2, 1), "X": (2, 2), "Y": (2, 3),
+    "QAM": (2, 4), "R3": (2, 5), "START": (2, 6), "R4": (2, 7),
+    "R5": (3, 0), "RB": (3, 1), "DOWN": (3, 2), "RIGHT": (3, 3),
+    "LEFT": (3, 4), "UP": (3, 5), "BACK": (3, 6), "L3": (3, 7),
+    "GUIDE": (4, 0), "L4": (4, 1), "L5": (4, 2), "LB": (4, 3),
+}
+
+BUTTONS = sorted(set(EVDEV_BUTTONS.values()) | set(DECK_BUTTONS) | set(STEAM_CONTROLLER_BUTTONS))
 RESCAN_SECONDS = 5
 # One physical pad often shows up twice (a DualSense plus Steam's virtual X-Box pad,
 # a Deck hidraw plus Steam's pad…), so a combo seen on several devices fires once.
@@ -68,6 +89,21 @@ def deck_pressed(report):
     return {name for name, (byte, bit) in DECK_BUTTONS.items() if report[byte] >> bit & 1}
 
 
+def steam_controller_pressed(report):
+    """Names of the buttons held in a 2026 Steam Controller state report, or None if it isn't one."""
+    if len(report) < 5 or report[0] not in STEAM_CONTROLLER_STATES:
+        return None
+    return {name for name, (byte, bit) in STEAM_CONTROLLER_BUTTONS.items() if report[byte] >> bit & 1}
+
+
+# Per hidraw kind: the state decoder and the bytes that hold its buttons (only a
+# change there is decoded, as these pads stream reports continuously).
+HID_DECODERS = {
+    "deck": (deck_pressed, slice(8, 15)),
+    "steamctrl": (steam_controller_pressed, slice(2, 5)),
+}
+
+
 def _evdev_pads():
     for d in Path("/sys/class/input").glob("event*"):
         try:
@@ -82,21 +118,22 @@ def _evdev_pads():
             yield dev, name, "evdev"
 
 
-def _deck_pads():
+def _valve_pads():
     for d in Path("/sys/class/hidraw").glob("hidraw*"):
         try:
             uevent = dict(line.split("=", 1) for line in (d / "device/uevent").read_text().splitlines() if "=" in line)
-            vendor = int(uevent.get("HID_ID", "0:0:0").split(":")[1], 16)
-        except (OSError, ValueError, IndexError):
+            _, vendor, product = (int(x, 16) for x in uevent.get("HID_ID", "0:0:0").split(":"))
+        except (OSError, ValueError):
             continue
         dev = f"/dev/{d.name}"
         if vendor == VALVE_VENDOR and os.access(dev, os.R_OK):
-            yield dev, uevent.get("HID_NAME", d.name), "deck"
+            kind = "steamctrl" if product in STEAM_CONTROLLER_IDS else "deck"
+            yield dev, uevent.get("HID_NAME", d.name).strip(), kind
 
 
 def pads():
     yield from _evdev_pads()
-    yield from _deck_pads()
+    yield from _valve_pads()
 
 
 def watch_buttons(dev, kind, on_change):
@@ -112,16 +149,17 @@ def watch_buttons(dev, kind, on_change):
                 (held.add if value else held.discard)(name)
                 on_change(set(held))
         else:
-            # Deck pads stream state reports continuously (~250/s); only changes matter,
-            # so skip decoding unless the button bytes (8..14) differ from last time.
+            # Valve pads stream state reports continuously (~250/s); only changes matter,
+            # so skip decoding unless the button bytes differ from last time.
+            decode, button_bytes = HID_DECODERS[kind]
             last = None
             while data := f.read(64):
-                if data[8:15] == last:
+                if data[button_bytes] == last:
                     continue
-                now = deck_pressed(data)
+                now = decode(data)
                 if now is None:
                     continue
-                last = data[8:15]
+                last = data[button_bytes]
                 if now != held:
                     held = now
                     on_change(set(held))

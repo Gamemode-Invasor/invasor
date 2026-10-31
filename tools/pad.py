@@ -24,7 +24,7 @@ def main():
         print("No readable controller found.")
         return 1
     for dev, name, kind in found:
-        print(f"reading {dev:18} {kind:5} {name}")
+        print(f"reading {dev:18} {kind:9} {name}")
         label = f"{name} ({kind})"
 
         def show(held, label=label):
